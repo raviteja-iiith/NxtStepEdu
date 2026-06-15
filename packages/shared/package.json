@@ -1,0 +1,12 @@
+{
+  "name": "@school-erp/shared",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "scripts": {},
+  "dependencies": {
+    "zod": "^3.25.76",
+    "zustand": "^5.0.14"
+  }
+}
