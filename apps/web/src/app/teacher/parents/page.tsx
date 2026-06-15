@@ -23,6 +23,11 @@ export default function TeacherParentsPage() {
     const userId = (await supabase.auth.getUser()).data.user?.id;
     if (!userId) { setLoading(false); return; }
 
+    // Get the teacher's school_id
+    const { data: userRow } = await supabase.from('users').select('school_id').eq('id', userId).single();
+    const schoolId = userRow?.school_id;
+    if (!schoolId) { setLoading(false); return; }
+
     // Get sections this teacher is assigned to
     const { data: assignments } = await supabase
       .from('teacher_section_assignments')
@@ -30,15 +35,28 @@ export default function TeacherParentsPage() {
       .eq('teacher_id', userId);
 
     const sectionIds = [...new Set((assignments || []).map((a: any) => a.section_id))];
-    if (sectionIds.length === 0) { setLoading(false); return; }
 
-    // Get all students in these sections
-    const { data: studentData } = await supabase
-      .from('students')
-      .select('id, full_name, sections(name)')
-      .in('section_id', sectionIds)
-      .eq('is_active', true)
-      .order('full_name');
+    // Fetch students: from assigned sections if available, else all active students in school
+    let studentData: any[] | null = null;
+    if (sectionIds.length > 0) {
+      const { data } = await supabase
+        .from('students')
+        .select('id, full_name, sections(name)')
+        .in('section_id', sectionIds)
+        .eq('is_active', true)
+        .order('full_name');
+      studentData = data;
+    }
+    // Fallback: no section assignments or no students found in sections
+    if (!studentData || studentData.length === 0) {
+      const { data } = await supabase
+        .from('students')
+        .select('id, full_name, sections(name)')
+        .eq('school_id', schoolId)
+        .eq('is_active', true)
+        .order('full_name');
+      studentData = data;
+    }
 
     if (studentData) {
       setStudents(studentData.map((s: any) => ({ id: s.id, full_name: s.full_name, section_name: s.sections?.name || '' })));
@@ -53,9 +71,19 @@ export default function TeacherParentsPage() {
       .select('parent_id, students(full_name, sections(name)), users(id, full_name, phone, is_active)')
       .in('student_id', studentIds);
 
+    // Also fetch any parents directly in this school not yet linked (to show all)
+    const { data: allParents } = await supabase
+      .from('users')
+      .select('id, full_name, phone, is_active')
+      .eq('school_id', schoolId)
+      .eq('role', 'parent')
+      .order('full_name');
+
+    const seen = new Set<string>();
+    const list: ParentRecord[] = [];
+
+    // First add linked parents (they have student info)
     if (links) {
-      const seen = new Set<string>();
-      const list: ParentRecord[] = [];
       links.forEach((l: any) => {
         if (!l.parent_id || seen.has(l.parent_id)) return;
         seen.add(l.parent_id);
@@ -68,8 +96,25 @@ export default function TeacherParentsPage() {
           section_name: l.students?.sections?.name || '',
         });
       });
-      setParents(list);
     }
+
+    // Then add any unlinked parents in this school
+    if (allParents) {
+      allParents.forEach((p: any) => {
+        if (seen.has(p.id)) return;
+        seen.add(p.id);
+        list.push({
+          id: p.id,
+          full_name: p.full_name || 'Unknown',
+          phone: p.phone || null,
+          is_active: p.is_active ?? true,
+          student_name: '',
+          section_name: '',
+        });
+      });
+    }
+
+    setParents(list);
     setLoading(false);
   }, [supabase]);
 

@@ -3,10 +3,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
-interface FeeStructure { id: string; name: string; fee_type: string; amount: number; due_date: string | null; is_recurring: boolean; recurring_interval: string | null; class_name?: string; }
-interface ClassItem { id: string; name: string; }
+interface FeeStructure { id:string; name:string; fee_type:string; amount:number; due_date:string|null; is_recurring:boolean; recurring_interval:string|null; class_name?:string; }
+interface ClassItem { id:string; name:string; }
+const FEE_TYPES=['tuition','transport','hostel','examination','activity','library','uniform','miscellaneous'];
+const IS: React.CSSProperties = { width:'100%', padding:'10px 14px', border:'1px solid #E2E8F0', borderRadius:10, fontSize:13, outline:'none', background:'white', boxSizing:'border-box', fontFamily:'inherit' };
+const LS: React.CSSProperties = { display:'block', fontSize:12, fontWeight:600, color:'#475569', marginBottom:5 };
+const overlay: React.CSSProperties = { position:'fixed', inset:0, zIndex:50, display:'flex', alignItems:'center', justifyContent:'center', padding:16, background:'rgba(15,23,42,0.5)', backdropFilter:'blur(4px)' };
 
-const FEE_TYPES = ['tuition','transport','hostel','examination','activity','library','uniform','miscellaneous'];
+const FEE_TYPE_COLORS: Record<string,{bg:string;color:string}> = { tuition:{bg:'#EFF6FF',color:'#1D4ED8'}, transport:{bg:'#F0FDF4',color:'#16A34A'}, hostel:{bg:'#F5F3FF',color:'#7C3AED'}, examination:{bg:'#FFFBEB',color:'#D97706'}, activity:{bg:'#FDF2F8',color:'#BE185D'}, library:{bg:'#F0FDFA',color:'#0F766E'}, uniform:{bg:'#FEF2F2',color:'#DC2626'}, miscellaneous:{bg:'#F8FAFC',color:'#475569'} };
 
 export default function FeesPage() {
   const supabase = createClient();
@@ -16,170 +20,176 @@ export default function FeesPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
-  const [tab, setTab] = useState<'structures' | 'collection'>('structures');
-  const [collectionStats, setCollectionStats] = useState({ collected: 0, pending: 0, overdue: 0 });
-
-  const [form, setForm] = useState({ name: '', fee_type: 'tuition', class_id: '', amount: '', due_date: '', is_recurring: false, recurring_interval: 'monthly' });
+  const [tab, setTab] = useState<'structures'|'collection'>('structures');
+  const [collectionStats, setCollectionStats] = useState({ collected:0, pending:0, overdue:0 });
+  const [form, setForm] = useState({ name:'', fee_type:'tuition', class_id:'', amount:'', due_date:'', is_recurring:false, recurring_interval:'monthly' });
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const userId = (await supabase.auth.getUser()).data.user?.id;
+    const userId=(await supabase.auth.getUser()).data.user?.id;
     if (!userId) { setLoading(false); return; }
-    const { data: userData } = await supabase.from('users').select('school_id').eq('id', userId).single();
-    if (!userData?.school_id) { setLoading(false); return; }
-    const schoolId = userData.school_id;
-
-    const { data } = await supabase.from('fee_structures').select('*, classes(name)').eq('school_id', schoolId).order('created_at', { ascending: false });
-    if (data) setStructures(data.map((f: Record<string, unknown>) => ({ ...f, class_name: (f.classes as Record<string, string>)?.name })) as FeeStructure[]);
-    
-    const { data: yr } = await supabase.from('academic_years').select('id').eq('is_current', true).maybeSingle();
-    if (yr) { const { data: c } = await supabase.from('classes').select('id, name').eq('academic_year_id', yr.id).order('numeric_order'); if (c) setClasses(c); }
-
-    // Fetch real collection stats from fees table
-    const currentYear = new Date().getFullYear();
-    const currentMonth = new Date().getMonth();
-    const monthStart = new Date(currentYear, currentMonth, 1).toISOString().split('T')[0];
-    const monthEnd = new Date(currentYear, currentMonth + 1, 0).toISOString().split('T')[0];
-
-    // Collected this month — sum of amount_paid in fee_payments for this school's fees this month
-    const { data: payments } = await supabase
-      .from('fee_payments')
-      .select('amount_paid')
-      .eq('school_id', schoolId)
-      .gte('payment_date', monthStart)
-      .lte('payment_date', monthEnd + 'T23:59:59');
-    const collected = payments ? payments.reduce((a: number, p: any) => a + (p.amount_paid || 0), 0) : 0;
-
-    // Pending dues — sum of (amount - discount_amount) for pending/partially_paid fees
-    const { data: pendingFees } = await supabase
-      .from('fees')
-      .select('amount, discount_amount')
-      .eq('school_id', schoolId)
-      .in('status', ['pending', 'partially_paid']);
-    const pending = pendingFees ? pendingFees.reduce((a: number, f: any) => a + Math.max(0, (f.amount || 0) - (f.discount_amount || 0)), 0) : 0;
-
-    // Overdue fees
-    const today = new Date().toISOString().split('T')[0];
-    const { data: overdueFees } = await supabase
-      .from('fees')
-      .select('amount, discount_amount')
-      .eq('school_id', schoolId)
-      .eq('status', 'overdue');
-    const overdue = overdueFees ? overdueFees.reduce((a: number, f: any) => a + Math.max(0, (f.amount || 0) - (f.discount_amount || 0)), 0) : 0;
-
-    setCollectionStats({ collected, pending, overdue });
+    const { data: ud } = await supabase.from('users').select('school_id').eq('id',userId).single();
+    if (!ud?.school_id) { setLoading(false); return; }
+    const schoolId=ud.school_id;
+    const { data } = await supabase.from('fee_structures').select('*,classes(name)').eq('school_id',schoolId).order('created_at',{ascending:false});
+    if (data) setStructures(data.map((f:any)=>({...f,class_name:f.classes?.name})) as FeeStructure[]);
+    const { data: yr } = await supabase.from('academic_years').select('id').eq('is_current',true).maybeSingle();
+    if (yr) { const { data: c } = await supabase.from('classes').select('id,name').eq('academic_year_id',yr.id).order('numeric_order'); if (c) setClasses(c); }
+    const m=new Date().getMonth(), y=new Date().getFullYear();
+    const ms=new Date(y,m,1).toISOString().split('T')[0], me=new Date(y,m+1,0).toISOString().split('T')[0];
+    const { data: payments } = await supabase.from('fee_payments').select('amount_paid').eq('school_id',schoolId).gte('payment_date',ms).lte('payment_date',me+'T23:59:59');
+    const collected=payments?payments.reduce((a:number,p:any)=>a+(p.amount_paid||0),0):0;
+    const { data: pf } = await supabase.from('fees').select('amount,discount_amount').eq('school_id',schoolId).in('status',['pending','partially_paid']);
+    const pending=pf?pf.reduce((a:number,f:any)=>a+Math.max(0,(f.amount||0)-(f.discount_amount||0)),0):0;
+    const { data: of_ } = await supabase.from('fees').select('amount,discount_amount').eq('school_id',schoolId).eq('status','overdue');
+    const overdue=of_?of_.reduce((a:number,f:any)=>a+Math.max(0,(f.amount||0)-(f.discount_amount||0)),0):0;
+    setCollectionStats({collected,pending,overdue});
     setLoading(false);
   }, [supabase]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleCreate = async () => {
-    if (!form.name || !form.amount) { setFormError('Name and amount required'); return; }
+    if (!form.name||!form.amount) { setFormError('Name and amount required'); return; }
     setSaving(true); setFormError('');
-    const { data: yr } = await supabase.from('academic_years').select('id').eq('is_current', true).maybeSingle();
-    const { data: userData } = await supabase.from('users').select('school_id').eq('id', (await supabase.auth.getUser()).data.user?.id || '').single();
-    const { error } = await supabase.from('fee_structures').insert({
-      name: form.name, fee_type: form.fee_type, class_id: form.class_id || null, amount: parseFloat(form.amount),
-      due_date: form.due_date || null, is_recurring: form.is_recurring, recurring_interval: form.is_recurring ? form.recurring_interval : null,
-      academic_year_id: yr?.id, school_id: userData?.school_id, created_by: (await supabase.auth.getUser()).data.user?.id,
-    });
+    const { data: yr } = await supabase.from('academic_years').select('id').eq('is_current',true).maybeSingle();
+    const { data: ud } = await supabase.from('users').select('school_id').eq('id',(await supabase.auth.getUser()).data.user?.id||'').single();
+    const { error } = await supabase.from('fee_structures').insert({ name:form.name, fee_type:form.fee_type, class_id:form.class_id||null, amount:parseFloat(form.amount), due_date:form.due_date||null, is_recurring:form.is_recurring, recurring_interval:form.is_recurring?form.recurring_interval:null, academic_year_id:yr?.id, school_id:ud?.school_id, created_by:(await supabase.auth.getUser()).data.user?.id });
     if (error) { setFormError(error.message); setSaving(false); return; }
-    setShowAdd(false); setForm({ name: '', fee_type: 'tuition', class_id: '', amount: '', due_date: '', is_recurring: false, recurring_interval: 'monthly' });
+    setShowAdd(false); setForm({name:'',fee_type:'tuition',class_id:'',amount:'',due_date:'',is_recurring:false,recurring_interval:'monthly'});
     fetchData(); setSaving(false);
   };
 
-  const inputCls = "w-full px-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
+  const totalAmount=structures.reduce((a,f)=>a+f.amount,0);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div><h2 className="text-2xl font-bold text-gray-900">Fee Management</h2><p className="text-gray-500 text-sm mt-1">Fee structures, collection, and defaulters</p></div>
-        <button onClick={() => { setShowAdd(true); setFormError(''); }} className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white hover:shadow-lg" style={{ background: '#1E40AF' }}>+ Add Fee Structure</button>
+    <div style={{ maxWidth:1100, margin:'0 auto', display:'flex', flexDirection:'column', gap:24 }}>
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
+        <div>
+          <h2 style={{ fontSize:22, fontWeight:800, color:'#0F172A', letterSpacing:'-0.02em', margin:0 }}>Fee Management</h2>
+          <p style={{ fontSize:13, color:'#94A3B8', marginTop:4 }}>Fee structures, collection, and defaulters</p>
+        </div>
+        <button onClick={()=>{setShowAdd(true);setFormError('');}} style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 20px', background:'linear-gradient(135deg,#1E3A8A,#3B82F6)', color:'white', border:'none', borderRadius:10, fontSize:13, fontWeight:700, cursor:'pointer', boxShadow:'0 4px 12px rgba(59,130,246,0.3)', whiteSpace:'nowrap' }}>
+          <span style={{fontSize:16}}>+</span> Add Fee Structure
+        </button>
       </div>
 
-      <div className="flex gap-1 p-1 rounded-xl" style={{ background: '#F1F5F9' }}>
-        {[{ key: 'structures' as const, label: '📋 Fee Structures' }, { key: 'collection' as const, label: '💰 Collection Overview' }].map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)} className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all"
-            style={{ background: tab === t.key ? 'white' : 'transparent', color: tab === t.key ? '#1E40AF' : '#64748B', boxShadow: tab === t.key ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>{t.label}</button>
+      {/* Tabs */}
+      <div style={{ display:'flex', gap:4, padding:4, background:'#F1F5F9', borderRadius:12, width:'fit-content' }}>
+        {[{key:'structures' as const,label:'Fee Structures'},{key:'collection' as const,label:'Collection Overview'}].map(t=>(
+          <button key={t.key} onClick={()=>setTab(t.key)} style={{ padding:'8px 18px', borderRadius:9, border:'none', fontSize:13, fontWeight:600, cursor:'pointer', background:tab===t.key?'white':'transparent', color:tab===t.key?'#1D4ED8':'#64748B', boxShadow:tab===t.key?'0 1px 3px rgba(0,0,0,0.08)':'none', transition:'all 0.15s' }}>{t.label}</button>
         ))}
       </div>
 
-      {tab === 'structures' ? (
-        <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E2E8F0' }}>
-          {loading ? <div className="p-8 space-y-3">{[1,2,3].map(i => <div key={i} className="skeleton h-14 rounded-lg" />)}</div> : (
-            <table className="w-full">
-              <thead><tr style={{ background: '#F8FAFC' }}>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Fee Name</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Type</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Class</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Amount</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Due Date</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Recurring</th>
-              </tr></thead>
-              <tbody className="divide-y" style={{ borderColor: '#F1F5F9' }}>
-                {structures.length === 0 ? (
-                  <tr><td colSpan={6} className="px-6 py-12 text-center text-gray-400"><p className="text-3xl mb-2">💰</p><p className="text-sm">No fee structures yet.</p></td></tr>
-                ) : structures.map(f => (
-                  <tr key={f.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 text-sm font-semibold text-gray-900">{f.name}</td>
-                    <td className="px-6 py-4"><span className="text-xs font-medium px-2.5 py-1 rounded-full capitalize" style={{ background: '#F1F5F9' }}>{f.fee_type}</span></td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{f.class_name || 'All Classes'}</td>
-                    <td className="px-6 py-4 text-sm font-bold" style={{ color: '#1E40AF' }}>₹{f.amount.toLocaleString('en-IN')}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{f.due_date ? new Date(f.due_date).toLocaleDateString('en-IN') : '—'}</td>
-                    <td className="px-6 py-4">{f.is_recurring ? <span className="text-xs font-medium px-2 py-1 rounded-full capitalize" style={{ background: '#EFF6FF', color: '#1E40AF' }}>{f.recurring_interval}</span> : <span className="text-xs text-gray-400">One-time</span>}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {[
-              { label: 'Collected This Month', value: `₹${collectionStats.collected.toLocaleString('en-IN')}`, icon: '✅', bg: '#F0FDF4', color: '#16A34A' },
-              { label: 'Pending Dues', value: `₹${collectionStats.pending.toLocaleString('en-IN')}`, icon: '⏳', bg: '#FFFBEB', color: '#D97706' },
-              { label: 'Overdue Amount', value: `₹${collectionStats.overdue.toLocaleString('en-IN')}`, icon: '⚠️', bg: '#FEF2F2', color: '#DC2626' },
-            ].map((c, i) => (
-              <div key={i} className="p-6 rounded-2xl border bg-white" style={{ borderColor: '#E2E8F0' }}>
-                <div className="w-12 h-12 rounded-xl flex items-center justify-center text-xl mb-3" style={{ background: c.bg }}>{c.icon}</div>
-                <p className="text-2xl font-bold" style={{ color: c.color }}>
-                  {loading ? <span className="inline-block w-24 h-7 bg-slate-100 rounded animate-pulse" /> : c.value}
+      {tab==='structures' ? (
+        <>
+          {/* Stats Row */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:14 }}>
+            {[{ label:'Fee Structures', value:structures.length, color:'#1D4ED8', bg:'#EFF6FF', border:'#DBEAFE' },
+              { label:'Total Amount', value:`₹${totalAmount.toLocaleString('en-IN')}`, color:'#0F766E', bg:'#F0FDF4', border:'#CCFBF1' },
+              { label:'Recurring', value:structures.filter(f=>f.is_recurring).length, color:'#7C3AED', bg:'#F5F3FF', border:'#EDE9FE' }
+            ].map((s,i)=>(
+              <div key={i} style={{ background:s.bg, border:`1px solid ${s.border}`, borderRadius:12, padding:'16px 20px' }}>
+                <p style={{ fontSize:11, fontWeight:700, color:s.color, textTransform:'uppercase', letterSpacing:'0.06em', margin:0 }}>{s.label}</p>
+                <p style={{ fontSize:26, fontWeight:800, color:'#0F172A', margin:'6px 0 0' }}>
+                  {loading?<span style={{ display:'inline-block', width:50, height:26, background:'rgba(0,0,0,0.08)', borderRadius:6 }}/>:s.value}
                 </p>
-                <p className="text-sm text-gray-600 mt-1">{c.label}</p>
               </div>
             ))}
           </div>
-          <div className="bg-white rounded-2xl border p-6" style={{ borderColor: '#E2E8F0' }}>
-            <p className="text-sm text-gray-500 font-medium">Fee collection summary reflects all payments recorded in the system. Create fee structures and record payments to see detailed breakdowns.</p>
+          <div style={{ background:'white', borderRadius:14, border:'1px solid #E8ECF0', overflow:'hidden', boxShadow:'0 1px 3px rgba(0,0,0,0.04)' }}>
+            <div style={{ display:'grid', gridTemplateColumns:'2fr 120px 120px 100px 110px 110px', padding:'12px 20px', background:'#F8FAFC', borderBottom:'1px solid #F1F5F9' }}>
+              {['Fee Name','Type','Class','Amount','Due Date','Recurring'].map(h=>(
+                <p key={h} style={{ fontSize:11, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', letterSpacing:'0.06em', margin:0 }}>{h}</p>
+              ))}
+            </div>
+            {loading ? (
+              <div style={{ padding:24, display:'flex', flexDirection:'column', gap:12 }}>
+                {[1,2,3].map(i=><div key={i} style={{ height:48, background:'#F8FAFC', borderRadius:8 }}/>)}
+              </div>
+            ) : structures.length===0 ? (
+              <div style={{ padding:'60px 24px', textAlign:'center' }}>
+                <div style={{ width:52, height:52, borderRadius:14, background:'#F0FDF4', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 14px', fontSize:22 }}>💰</div>
+                <p style={{ fontWeight:700, color:'#1E293B', fontSize:15, margin:0 }}>No fee structures yet</p>
+                <p style={{ fontSize:13, color:'#94A3B8', marginTop:6 }}>Click <strong>+ Add Fee Structure</strong> to create one</p>
+              </div>
+            ) : structures.map((f,idx)=>{
+              const tc=FEE_TYPE_COLORS[f.fee_type]||{bg:'#F1F5F9',color:'#475569'};
+              return (
+                <div key={f.id} style={{ display:'grid', gridTemplateColumns:'2fr 120px 120px 100px 110px 110px', padding:'14px 20px', borderBottom:idx<structures.length-1?'1px solid #F8FAFC':'none', alignItems:'center' }}>
+                  <p style={{ fontWeight:700, fontSize:13, color:'#0F172A', margin:0 }}>{f.name}</p>
+                  <span style={{ fontSize:11, fontWeight:700, padding:'3px 9px', borderRadius:99, background:tc.bg, color:tc.color, textTransform:'capitalize', width:'fit-content' }}>{f.fee_type}</span>
+                  <p style={{ fontSize:13, color:'#475569', margin:0 }}>{f.class_name||'All Classes'}</p>
+                  <p style={{ fontSize:13, fontWeight:800, color:'#1D4ED8', margin:0 }}>₹{f.amount.toLocaleString('en-IN')}</p>
+                  <p style={{ fontSize:13, color:'#475569', margin:0 }}>{f.due_date?new Date(f.due_date).toLocaleDateString('en-IN'):'—'}</p>
+                  {f.is_recurring ? <span style={{ fontSize:11, fontWeight:700, padding:'3px 9px', borderRadius:99, background:'#EFF6FF', color:'#1D4ED8', textTransform:'capitalize', width:'fit-content' }}>{f.recurring_interval}</span> : <span style={{ fontSize:12, color:'#CBD5E1', fontStyle:'italic' }}>One-time</span>}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      ) : (
+        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:16 }}>
+            {[{ label:'Collected This Month', value:`₹${collectionStats.collected.toLocaleString('en-IN')}`, color:'#16A34A', bg:'#F0FDF4', border:'#DCFCE7', icon:'✅' },
+              { label:'Pending Dues', value:`₹${collectionStats.pending.toLocaleString('en-IN')}`, color:'#D97706', bg:'#FFFBEB', border:'#FDE68A', icon:'⏳' },
+              { label:'Overdue Amount', value:`₹${collectionStats.overdue.toLocaleString('en-IN')}`, color:'#DC2626', bg:'#FEF2F2', border:'#FEE2E2', icon:'⚠️' }
+            ].map((c,i)=>(
+              <div key={i} style={{ background:c.bg, border:`1px solid ${c.border}`, borderRadius:14, padding:'20px 22px' }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
+                  <p style={{ fontSize:11, fontWeight:700, color:c.color, textTransform:'uppercase', letterSpacing:'0.06em', margin:0 }}>{c.label}</p>
+                  <span style={{ fontSize:20 }}>{c.icon}</span>
+                </div>
+                <p style={{ fontSize:26, fontWeight:800, color:'#0F172A', margin:0 }}>
+                  {loading?<span style={{ display:'inline-block', width:80, height:26, background:'rgba(0,0,0,0.08)', borderRadius:6 }}/>:c.value}
+                </p>
+              </div>
+            ))}
+          </div>
+          <div style={{ background:'white', borderRadius:14, border:'1px solid #E8ECF0', padding:'20px 24px', boxShadow:'0 1px 3px rgba(0,0,0,0.04)' }}>
+            <p style={{ fontSize:13, color:'#64748B', margin:0, lineHeight:1.6 }}>
+              Fee collection summary reflects all payments recorded in the system. Create fee structures and record payments to see detailed breakdowns here.
+            </p>
           </div>
         </div>
       )}
 
+      {/* Add Fee Modal */}
       {showAdd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 animate-scale-in">
-            <div className="flex items-center justify-between mb-6"><h3 className="text-xl font-bold text-gray-900">Add Fee Structure</h3><button onClick={() => setShowAdd(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button></div>
-            {formError && <div className="mb-4 p-3 rounded-lg text-sm" style={{ background: '#FEF2F2', color: '#DC2626' }}>{formError}</div>}
-            <div className="space-y-4">
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Fee Name *</label><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder='e.g. "Term 1 Tuition"' className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Fee Type</label><select value={form.fee_type} onChange={e => setForm(f => ({ ...f, fee_type: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }}>{FEE_TYPES.map(t => <option key={t} value={t} className="capitalize">{t}</option>)}</select></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Class</label><select value={form.class_id} onChange={e => setForm(f => ({ ...f, class_id: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }}><option value="">All Classes</option>{classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Amount (₹) *</label><input type="number" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label><input type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
-              </div>
-              <div className="flex items-center gap-3 p-3 rounded-lg" style={{ background: '#F8FAFC' }}>
-                <input type="checkbox" id="recurring" checked={form.is_recurring} onChange={e => setForm(f => ({ ...f, is_recurring: e.target.checked }))} className="w-4 h-4" />
-                <label htmlFor="recurring" className="text-sm font-medium text-gray-700">Recurring Fee</label>
-                {form.is_recurring && <select value={form.recurring_interval} onChange={e => setForm(f => ({ ...f, recurring_interval: e.target.value }))} className="ml-auto px-3 py-1 border rounded-lg text-sm" style={{ borderColor: '#E2E8F0' }}><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="annual">Annual</option></select>}
+        <div style={overlay}>
+          <div style={{ width:'100%', maxWidth:460, background:'white', borderRadius:18, boxShadow:'0 24px 64px rgba(0,0,0,0.2)', display:'flex', flexDirection:'column' }}>
+            <div style={{ padding:'24px 28px 18px', borderBottom:'1px solid #F1F5F9', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <div><h3 style={{ fontSize:17, fontWeight:800, color:'#0F172A', margin:0 }}>Add Fee Structure</h3><p style={{ fontSize:12, color:'#94A3B8', marginTop:3 }}>Define a new fee for the school</p></div>
+              <button onClick={()=>setShowAdd(false)} style={{ width:32, height:32, borderRadius:'50%', border:'1px solid #E2E8F0', background:'white', cursor:'pointer', color:'#64748B', fontSize:16, display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
+            </div>
+            <div style={{ padding:'20px 28px' }}>
+              {formError && <div style={{ marginBottom:14, padding:'10px 14px', background:'#FEF2F2', border:'1px solid #FEE2E2', borderRadius:9, fontSize:13, color:'#DC2626' }}>{formError}</div>}
+              <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+                <div><label style={LS}>Fee Name <span style={{color:'#EF4444'}}>*</span></label><input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder='e.g. "Term 1 Tuition"' style={IS}/></div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                  <div><label style={LS}>Fee Type</label>
+                    <select value={form.fee_type} onChange={e=>setForm(f=>({...f,fee_type:e.target.value}))} style={IS}>{FEE_TYPES.map(t=><option key={t} value={t} className="capitalize">{t}</option>)}</select>
+                  </div>
+                  <div><label style={LS}>Class</label>
+                    <select value={form.class_id} onChange={e=>setForm(f=>({...f,class_id:e.target.value}))} style={IS}><option value="">All Classes</option>{classes.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
+                  </div>
+                </div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                  <div><label style={LS}>Amount (₹) <span style={{color:'#EF4444'}}>*</span></label><input type="number" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))} style={IS}/></div>
+                  <div><label style={LS}>Due Date</label><input type="date" value={form.due_date} onChange={e=>setForm(f=>({...f,due_date:e.target.value}))} style={IS}/></div>
+                </div>
+                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 14px', background:'#F8FAFC', borderRadius:10, border:'1px solid #F1F5F9' }}>
+                  <input type="checkbox" id="recurring" checked={form.is_recurring} onChange={e=>setForm(f=>({...f,is_recurring:e.target.checked}))} style={{ width:16, height:16, accentColor:'#3B82F6' }}/>
+                  <label htmlFor="recurring" style={{ fontSize:13, fontWeight:600, color:'#334155', flex:1, cursor:'pointer' }}>Recurring Fee</label>
+                  {form.is_recurring && <select value={form.recurring_interval} onChange={e=>setForm(f=>({...f,recurring_interval:e.target.value}))} style={{ ...IS, width:'auto', padding:'6px 10px' }}><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="annual">Annual</option></select>}
+                </div>
               </div>
             </div>
-            <div className="flex gap-3 pt-6">
-              <button onClick={() => setShowAdd(false)} className="flex-1 py-2.5 rounded-xl text-sm font-medium border text-gray-700 hover:bg-gray-50" style={{ borderColor: '#E2E8F0' }}>Cancel</button>
-              <button onClick={handleCreate} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 hover:shadow-lg" style={{ background: '#1E40AF' }}>{saving ? 'Creating...' : 'Create'}</button>
+            <div style={{ padding:'0 28px 24px', display:'flex', gap:10 }}>
+              <button onClick={()=>setShowAdd(false)} style={{ flex:1, padding:11, borderRadius:10, border:'1px solid #E2E8F0', background:'white', fontSize:13, fontWeight:600, color:'#475569', cursor:'pointer' }}>Cancel</button>
+              <button onClick={handleCreate} disabled={saving} style={{ flex:1, padding:11, borderRadius:10, border:'none', background:saving?'#93C5FD':'linear-gradient(135deg,#1E3A8A,#3B82F6)', color:'white', fontSize:13, fontWeight:700, cursor:saving?'not-allowed':'pointer' }}>
+                {saving?'Creating...':'Create Fee'}
+              </button>
             </div>
           </div>
         </div>

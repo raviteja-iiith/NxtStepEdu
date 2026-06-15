@@ -31,12 +31,33 @@ export default function TimetablePage() {
     const { data: userRow } = await supabase.from('users').select('school_id').eq('id', userId).single();
     const schoolId = userRow?.school_id;
     if (!schoolId) { setLoading(false); return; }
+
+    // Academic year is optional — always fall back to school_id
     const { data: yr } = await supabase.from('academic_years').select('id').eq('is_current', true).eq('school_id', schoolId).maybeSingle();
-    if (!yr) { setLoading(false); return; }
-    const { data: sec } = await supabase.from('sections').select('id, name, classes(name)').eq('school_id', schoolId).eq('academic_year_id', yr.id);
-    if (sec) setSections(sec.map((s: Record<string, unknown>) => ({ id: s.id as string, name: s.name as string, class_name: (s.classes as Record<string, string>)?.name || '' })));
-    const { data: sub } = await supabase.from('subjects').select('id, name').eq('school_id', schoolId).eq('academic_year_id', yr.id);
-    if (sub) setSubjects(sub);
+
+    // Sections: try with academic year, fall back to all sections in school
+    let secQuery = supabase.from('sections').select('id, name, classes(name)').eq('school_id', schoolId);
+    if (yr?.id) secQuery = secQuery.eq('academic_year_id', yr.id);
+    const { data: secWithYear } = await secQuery;
+    // If no sections found with year filter, load ALL sections for this school
+    let secData = secWithYear;
+    if (!secData || secData.length === 0) {
+      const { data: allSec } = await supabase.from('sections').select('id, name, classes(name)').eq('school_id', schoolId);
+      secData = allSec;
+    }
+    if (secData) setSections(secData.map((s: Record<string, unknown>) => ({ id: s.id as string, name: s.name as string, class_name: (s.classes as Record<string, string>)?.name || '' })));
+
+    // Subjects: same fallback pattern
+    let subQuery = supabase.from('subjects').select('id, name').eq('school_id', schoolId);
+    if (yr?.id) subQuery = subQuery.eq('academic_year_id', yr.id);
+    const { data: subWithYear } = await subQuery;
+    let subData = subWithYear;
+    if (!subData || subData.length === 0) {
+      const { data: allSub } = await supabase.from('subjects').select('id, name').eq('school_id', schoolId);
+      subData = allSub;
+    }
+    if (subData) setSubjects(subData);
+
     const { data: t } = await supabase.from('users').select('id, full_name').eq('school_id', schoolId).eq('role', 'teacher').eq('is_active', true).order('full_name');
     if (t) setTeachers(t);
     setLoading(false);

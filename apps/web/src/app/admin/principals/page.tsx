@@ -67,11 +67,13 @@ export default function PrincipalsPage() {
     const school = schools.find(s => s.id === form.school_id);
     if (!school) { setFormError('Select a school.'); setSaving(false); return; }
     const username = `principal@${school.code}`;
+    // Auth email must be valid — replace the @ in username with a dot
+    const authEmail = `principal.${school.code}@schoolerp.local`;
     const tempPassword = generatePassword();
     try {
       const res = await fetch('/api/auth/create-user', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: `${username}@schoolerp.local`, password: tempPassword, role: 'principal', school_id: school.id, full_name: form.full_name, phone: form.phone, user_email: form.email, username, employee_id: form.employee_id, qualification: form.qualification }),
+        body: JSON.stringify({ email: authEmail, password: tempPassword, role: 'principal', school_id: school.id, full_name: form.full_name, phone: form.phone, user_email: form.email, username, employee_id: form.employee_id, qualification: form.qualification }),
       });
       const result = await res.json();
       if (!res.ok) { setFormError(result.error || 'Failed to create principal.'); setSaving(false); return; }

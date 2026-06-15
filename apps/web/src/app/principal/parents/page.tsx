@@ -3,14 +3,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
-interface Parent {
-  id: string;
-  full_name: string;
-  phone: string | null;
-  email: string | null;
-  is_active: boolean;
-  student_name?: string;
-}
+interface Parent { id: string; full_name: string; phone: string | null; email: string | null; is_active: boolean; student_name?: string; }
+
+const IS = { width:'100%',padding:'10px 14px',border:'1px solid #E2E8F0',borderRadius:10,fontSize:13,outline:'none',background:'white',boxSizing:'border-box' as const,fontFamily:'inherit' };
+const LS: React.CSSProperties = { display:'block',fontSize:12,fontWeight:600,color:'#475569',marginBottom:5 };
 
 export default function PrincipalParentsPage() {
   const supabase = createClient();
@@ -22,112 +18,91 @@ export default function PrincipalParentsPage() {
     setLoading(true);
     const userId = (await supabase.auth.getUser()).data.user?.id;
     if (!userId) { setLoading(false); return; }
-    const { data: currentUser } = await supabase.from('users').select('school_id').eq('id', userId).single();
-    if (!currentUser?.school_id) { setLoading(false); return; }
-
-    // Get parents linked to students of this school
-    const { data } = await supabase
-      .from('users')
-      .select('id, full_name, phone, email, is_active')
-      .eq('school_id', currentUser.school_id)
-      .eq('role', 'parent')
-      .order('full_name');
-
+    const { data: cu } = await supabase.from('users').select('school_id').eq('id', userId).single();
+    if (!cu?.school_id) { setLoading(false); return; }
+    const { data } = await supabase.from('users').select('id, full_name, phone, email, is_active').eq('school_id', cu.school_id).eq('role', 'parent').order('full_name');
     if (data) {
-      // Get student links
-      const parentIds = data.map((p: any) => p.id);
-      const { data: links } = await supabase
-        .from('student_parent_links')
-        .select('parent_id, students(full_name)')
-        .in('parent_id', parentIds);
-
-      const linkMap: Record<string, string> = {};
-      if (links) {
-        links.forEach((l: any) => { linkMap[l.parent_id] = l.students?.full_name || ''; });
-      }
-      setParents(data.map((p: any) => ({ ...p, student_name: linkMap[p.id] || '' })));
+      const ids = data.map((p: any) => p.id);
+      const { data: links } = await supabase.from('student_parent_links').select('parent_id, students(full_name)').in('parent_id', ids);
+      const map: Record<string,string> = {};
+      if (links) links.forEach((l: any) => { map[l.parent_id] = l.students?.full_name || ''; });
+      setParents(data.map((p: any) => ({ ...p, student_name: map[p.id] || '' })));
     }
     setLoading(false);
   }, [supabase]);
 
   useEffect(() => { fetchParents(); }, [fetchParents]);
-
-  const filtered = parents.filter(p =>
-    p.full_name.toLowerCase().includes(search.toLowerCase()) ||
-    (p.phone || '').includes(search) ||
-    (p.student_name || '').toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = parents.filter(p => p.full_name.toLowerCase().includes(search.toLowerCase()) || (p.phone||'').includes(search) || (p.student_name||'').toLowerCase().includes(search.toLowerCase()));
+  const activeCount = parents.filter(p => p.is_active).length;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div style={{ maxWidth:1100, margin:'0 auto', display:'flex', flexDirection:'column', gap:24 }}>
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">Parent Management</h2>
-          <p className="text-slate-500 text-sm mt-1">Parents linked to students in your school</p>
+          <h2 style={{ fontSize:22, fontWeight:800, color:'#0F172A', letterSpacing:'-0.02em', margin:0 }}>Parent Management</h2>
+          <p style={{ fontSize:13, color:'#94A3B8', marginTop:4 }}>Parents linked to students in your school</p>
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
-        <div className="flex-1 relative">
-          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
-          <input
-            type="text"
-            placeholder="Search by name, phone or student..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full pl-11 pr-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            style={{ borderColor: '#E2E8F0' }}
-          />
-        </div>
-        <span className="text-sm text-gray-500">{filtered.length} parent{filtered.length !== 1 ? 's' : ''}</span>
+      {/* Stat Cards */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:14 }}>
+        {[{ label:'Total Parents', value:parents.length, color:'#7C3AED', bg:'#F5F3FF', border:'#EDE9FE' },
+          { label:'Active', value:activeCount, color:'#16A34A', bg:'#F0FDF4', border:'#DCFCE7' },
+          { label:'Linked to Students', value:parents.filter(p=>p.student_name).length, color:'#1D4ED8', bg:'#EFF6FF', border:'#DBEAFE' }
+        ].map((s,i) => (
+          <div key={i} style={{ background:s.bg, border:`1px solid ${s.border}`, borderRadius:12, padding:'16px 20px' }}>
+            <p style={{ fontSize:11, fontWeight:700, color:s.color, textTransform:'uppercase', letterSpacing:'0.06em', margin:0 }}>{s.label}</p>
+            <p style={{ fontSize:28, fontWeight:800, color:'#0F172A', margin:'6px 0 0' }}>
+              {loading ? <span style={{ display:'inline-block', width:32, height:28, background:'rgba(0,0,0,0.08)', borderRadius:6 }}/> : s.value}
+            </p>
+          </div>
+        ))}
       </div>
 
-      <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E2E8F0' }}>
+      {/* Search */}
+      <div style={{ position:'relative', maxWidth:400 }}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)' }}>
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+        </svg>
+        <input type="text" placeholder="Search by name, phone or student..." value={search} onChange={e=>setSearch(e.target.value)} style={{ ...IS, paddingLeft:36 }}/>
+      </div>
+
+      {/* List */}
+      <div style={{ background:'white', borderRadius:14, border:'1px solid #E8ECF0', overflow:'hidden', boxShadow:'0 1px 3px rgba(0,0,0,0.04)' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'2fr 140px 1.5fr 100px', padding:'12px 20px', background:'#F8FAFC', borderBottom:'1px solid #F1F5F9' }}>
+          {['Parent','Phone','Child','Status'].map(h => (
+            <p key={h} style={{ fontSize:11, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', letterSpacing:'0.06em', margin:0 }}>{h}</p>
+          ))}
+        </div>
         {loading ? (
-          <div className="p-8 space-y-3">{[1,2,3].map(i => <div key={i} className="skeleton h-14 rounded-lg" />)}</div>
-        ) : (
-          <table className="w-full">
-            <thead>
-              <tr style={{ background: '#F8FAFC' }}>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Parent</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Phone</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Child</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y" style={{ borderColor: '#F1F5F9' }}>
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="px-6 py-12 text-center text-gray-400">
-                    <p className="text-3xl mb-2">👨‍👩‍👧</p>
-                    <p className="text-sm">No parents found. Parents are added when teachers create parent accounts.</p>
-                  </td>
-                </tr>
-              ) : filtered.map(p => (
-                <tr key={p.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold" style={{ background: '#F5F3FF', color: '#7C3AED' }}>
-                        {p.full_name.charAt(0)}
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900">{p.full_name}</p>
-                        {p.email && <p className="text-xs text-gray-400">{p.email}</p>}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{p.phone || '—'}</td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{p.student_name || <span className="text-gray-300 italic">Not linked</span>}</td>
-                  <td className="px-6 py-4">
-                    <span className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ background: p.is_active ? '#F0FDF4' : '#FEF2F2', color: p.is_active ? '#16A34A' : '#DC2626' }}>
-                      {p.is_active ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+          <div style={{ padding:24, display:'flex', flexDirection:'column', gap:12 }}>
+            {[1,2,3].map(i => <div key={i} style={{ height:52, background:'#F8FAFC', borderRadius:8 }}/>)}
+          </div>
+        ) : filtered.length === 0 ? (
+          <div style={{ padding:'60px 24px', textAlign:'center' }}>
+            <div style={{ width:52, height:52, borderRadius:14, background:'#F5F3FF', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 14px', fontSize:24 }}>👨‍👩‍👧</div>
+            <p style={{ fontWeight:700, color:'#1E293B', fontSize:15, margin:0 }}>No parents yet</p>
+            <p style={{ fontSize:13, color:'#94A3B8', marginTop:6 }}>Parents are added when teacher accounts are created</p>
+          </div>
+        ) : filtered.map((p, idx) => (
+          <div key={p.id} style={{ display:'grid', gridTemplateColumns:'2fr 140px 1.5fr 100px', padding:'14px 20px', borderBottom:idx<filtered.length-1?'1px solid #F8FAFC':'none', alignItems:'center' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+              <div style={{ width:36, height:36, borderRadius:'50%', background:'linear-gradient(135deg, #7C3AED, #A78BFA)', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:800, flexShrink:0 }}>
+                {p.full_name.charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <p style={{ fontWeight:700, fontSize:13, color:'#0F172A', margin:0 }}>{p.full_name}</p>
+                {p.email && <p style={{ fontSize:11, color:'#94A3B8', margin:'1px 0 0' }}>{p.email}</p>}
+              </div>
+            </div>
+            <p style={{ fontSize:13, color:'#475569', margin:0 }}>{p.phone||'—'}</p>
+            <p style={{ fontSize:13, color:p.student_name?'#334155':'#CBD5E1', margin:0, fontStyle:p.student_name?'normal':'italic' }}>{p.student_name||'Not linked'}</p>
+            <span style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:99, background:p.is_active?'#F0FDF4':'#FEF2F2', color:p.is_active?'#16A34A':'#DC2626', width:'fit-content' }}>
+              <span style={{ width:6, height:6, borderRadius:'50%', background:p.is_active?'#16A34A':'#DC2626' }}/>
+              {p.is_active?'Active':'Inactive'}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );

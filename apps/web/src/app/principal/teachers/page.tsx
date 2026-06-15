@@ -3,15 +3,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
-interface Teacher {
-  id: string; full_name: string; phone: string; email: string | null;
-  is_active: boolean; last_login_at: string | null; username: string;
-  profile?: { employee_id: string | null; qualification: string | null; specialization: string | null; joining_date: string | null; };
-}
+interface Teacher { id:string; full_name:string; phone:string; email:string|null; is_active:boolean; last_login_at:string|null; username:string; profile?:{ employee_id:string|null; qualification:string|null; specialization:string|null; joining_date:string|null; }; }
+interface Section { id:string; name:string; class_name:string; }
+interface Subject { id:string; name:string; class_id:string; }
+interface Assignment { id:string; teacher_id:string; section_id:string; subject_id:string; }
 
-interface Section { id: string; name: string; class_name: string; }
-interface Subject { id: string; name: string; class_id: string; }
-interface Assignment { id: string; teacher_id: string; section_id: string; subject_id: string; }
+const IS: React.CSSProperties = { width:'100%', padding:'10px 14px', border:'1px solid #E2E8F0', borderRadius:10, fontSize:13, outline:'none', background:'white', boxSizing:'border-box', fontFamily:'inherit' };
+const LS: React.CSSProperties = { display:'block', fontSize:12, fontWeight:600, color:'#475569', marginBottom:5 };
+const overlay: React.CSSProperties = { position:'fixed', inset:0, zIndex:50, display:'flex', alignItems:'center', justifyContent:'center', padding:16, background:'rgba(15,23,42,0.5)', backdropFilter:'blur(4px)' };
+const modal: React.CSSProperties = { width:'100%', maxWidth:500, background:'white', borderRadius:18, boxShadow:'0 24px 64px rgba(0,0,0,0.2)', display:'flex', flexDirection:'column', maxHeight:'90vh' };
 
 export default function TeachersPage() {
   const supabase = createClient();
@@ -19,15 +19,11 @@ export default function TeachersPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showAdd, setShowAdd] = useState(false);
-  const [showAssign, setShowAssign] = useState<string | null>(null);
-  const [showCreds, setShowCreds] = useState<{ username: string; password: string } | null>(null);
+  const [showAssign, setShowAssign] = useState<string|null>(null);
+  const [showCreds, setShowCreds] = useState<{username:string;password:string}|null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
-
-  // Add form
-  const [form, setForm] = useState({ full_name: '', phone: '', email: '', employee_id: '', qualification: '', specialization: '', joining_date: '' });
-
-  // Assignment state
+  const [form, setForm] = useState({ full_name:'', phone:'', email:'', employee_id:'', qualification:'', specialization:'', joining_date:'' });
   const [sections, setSections] = useState<Section[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -36,169 +32,172 @@ export default function TeachersPage() {
 
   const fetchTeachers = useCallback(async () => {
     setLoading(true);
-    const { data: currentUser } = await supabase.from('users').select('school_id').eq('id', (await supabase.auth.getUser()).data.user?.id || '').single();
-    if (!currentUser?.school_id) { setLoading(false); return; }
-    const { data } = await supabase.from('users').select('id, full_name, phone, email, is_active, last_login_at, username, teacher_profiles(employee_id, qualification, specialization, joining_date)')
-      .eq('role', 'teacher').eq('school_id', currentUser.school_id).order('full_name');
-    if (data) setTeachers(data.map((t: Record<string, unknown>) => ({ ...t, profile: Array.isArray(t.teacher_profiles) ? t.teacher_profiles[0] : t.teacher_profiles })) as Teacher[]);
+    const { data: cu } = await supabase.from('users').select('school_id').eq('id',(await supabase.auth.getUser()).data.user?.id||'').single();
+    if (!cu?.school_id) { setLoading(false); return; }
+    const { data } = await supabase.from('users').select('id,full_name,phone,email,is_active,last_login_at,username,teacher_profiles(employee_id,qualification,specialization,joining_date)').eq('role','teacher').eq('school_id',cu.school_id).order('full_name');
+    if (data) setTeachers(data.map((t:any)=>({...t,profile:Array.isArray(t.teacher_profiles)?t.teacher_profiles[0]:t.teacher_profiles})) as Teacher[]);
     setLoading(false);
   }, [supabase]);
 
   useEffect(() => { fetchTeachers(); }, [fetchTeachers]);
 
   const handleAddTeacher = async () => {
-    if (!form.full_name || !form.phone) { setFormError('Name and phone required'); return; }
+    if (!form.full_name||!form.phone) { setFormError('Name and phone required'); return; }
     setSaving(true); setFormError('');
-
-    const empId = form.employee_id || `T${String(teachers.length + 1).padStart(3, '0')}`;
+    const empId = form.employee_id||`T${String(teachers.length+1).padStart(3,'0')}`;
     const firstName = form.full_name.split(' ')[0].toLowerCase();
-
-    // Get school code from school
-    const { data: userData } = await supabase.from('users').select('school_id').eq('id', (await supabase.auth.getUser()).data.user?.id || '').single();
-    let schoolCode = 'school';
-    if (userData?.school_id) {
-      const { data: school } = await supabase.from('schools').select('code').eq('id', userData.school_id).single();
-      if (school) schoolCode = school.code;
-    }
-
-    const username = `${firstName}.${empId.toLowerCase()}@${schoolCode}`;
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-    const password = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-
+    const { data: ud } = await supabase.from('users').select('school_id').eq('id',(await supabase.auth.getUser()).data.user?.id||'').single();
+    let schoolCode='school';
+    if (ud?.school_id) { const { data: sc } = await supabase.from('schools').select('code').eq('id',ud.school_id).single(); if(sc) schoolCode=sc.code; }
+    const username=`${firstName}.${empId.toLowerCase()}@${schoolCode}`;
+    const chars='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    const password=Array.from({length:8},()=>chars[Math.floor(Math.random()*chars.length)]).join('');
     try {
-      const res = await fetch('/api/auth/create-user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          // Convert username@SCHOOLCODE → username.SCHOOLCODE@schoolerp.local
-          // e.g. srl.t005@NXTS → srl.t005.NXTS@schoolerp.local (single @ only)
-          email: `${username.replace('@', '.')}@schoolerp.local`,
-          password, role: 'teacher', full_name: form.full_name, phone: form.phone,
-          username, school_id: userData?.school_id,
-          profile_data: { employee_id: empId, qualification: form.qualification, specialization: form.specialization, joining_date: form.joining_date || null }
-        })
-      });
+      const res = await fetch('/api/auth/create-user',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ email:`${username.replace('@','.')}@schoolerp.local`, password, role:'teacher', full_name:form.full_name, phone:form.phone, username, school_id:ud?.school_id, profile_data:{employee_id:empId,qualification:form.qualification,specialization:form.specialization,joining_date:form.joining_date||null} }) });
       const result = await res.json();
-      if (!res.ok) { setFormError(result.error || 'Failed to create teacher'); setSaving(false); return; }
-
-      setShowAdd(false);
-      setShowCreds({ username, password });
-      setForm({ full_name: '', phone: '', email: '', employee_id: '', qualification: '', specialization: '', joining_date: '' });
+      if (!res.ok) { setFormError(result.error||'Failed to create teacher'); setSaving(false); return; }
+      setShowAdd(false); setShowCreds({username,password});
+      setForm({full_name:'',phone:'',email:'',employee_id:'',qualification:'',specialization:'',joining_date:''});
       fetchTeachers();
     } catch { setFormError('Network error'); }
     setSaving(false);
   };
 
-  const toggleActive = async (id: string, current: boolean) => {
-    await supabase.from('users').update({ is_active: !current }).eq('id', id);
-    fetchTeachers();
-  };
+  const toggleActive = async (id:string, current:boolean) => { await supabase.from('users').update({is_active:!current}).eq('id',id); fetchTeachers(); };
 
-  // Assignment modal
-  const openAssign = async (teacherId: string) => {
+  const openAssign = async (teacherId:string) => {
     setShowAssign(teacherId);
-    // Get the teacher's school_id to scope sections/subjects
-    const { data: teacherUser } = await supabase.from('users').select('school_id').eq('id', teacherId).single();
-    const schoolId = teacherUser?.school_id;
-    if (!schoolId) return;
-    const { data: yr } = await supabase.from('academic_years').select('id').eq('is_current', true).eq('school_id', schoolId).maybeSingle();
-    const { data: sec } = await supabase.from('sections').select('id, name, classes(name)').eq('school_id', schoolId);
-    if (sec) setSections(sec.map((s: Record<string, unknown>) => ({ id: s.id as string, name: s.name as string, class_name: (s.classes as Record<string, string>)?.name || '' })));
-    const { data: sub } = await supabase.from('subjects').select('id, name, class_id').eq('school_id', schoolId);
+    const { data: tu } = await supabase.from('users').select('school_id').eq('id',teacherId).single();
+    const schoolId=tu?.school_id; if(!schoolId) return;
+    const { data: sec } = await supabase.from('sections').select('id,name,classes(name)').eq('school_id',schoolId);
+    if (sec) setSections(sec.map((s:any)=>({id:s.id,name:s.name,class_name:s.classes?.name||''})));
+    const { data: sub } = await supabase.from('subjects').select('id,name,class_id').eq('school_id',schoolId);
     if (sub) setSubjects(sub as Subject[]);
-    const { data: asgn } = await supabase.from('teacher_section_assignments').select('*').eq('teacher_id', teacherId);
+    const { data: asgn } = await supabase.from('teacher_section_assignments').select('*').eq('teacher_id',teacherId);
     if (asgn) setAssignments(asgn as Assignment[]);
   };
 
   const addAssignment = async () => {
-    if (!selectedSection || !selectedSubject || !showAssign) return;
-    // Get teacher's school_id for RLS compliance
-    const { data: teacherUser } = await supabase.from('users').select('school_id').eq('id', showAssign).single();
-    const schoolId = teacherUser?.school_id;
-    const { data: yr } = await supabase.from('academic_years').select('id').eq('is_current', true).maybeSingle();
-    await supabase.from('teacher_section_assignments').insert({
-      teacher_id: showAssign, section_id: selectedSection, subject_id: selectedSubject,
-      academic_year_id: yr?.id, school_id: schoolId || null,
-    });
-    openAssign(showAssign);
-    setSelectedSection(''); setSelectedSubject('');
+    if (!selectedSection||!selectedSubject||!showAssign) return;
+    const { data: tu } = await supabase.from('users').select('school_id').eq('id',showAssign).single();
+    const { data: yr } = await supabase.from('academic_years').select('id').eq('is_current',true).maybeSingle();
+    await supabase.from('teacher_section_assignments').insert({ teacher_id:showAssign, section_id:selectedSection, subject_id:selectedSubject, academic_year_id:yr?.id, school_id:tu?.school_id||null });
+    openAssign(showAssign); setSelectedSection(''); setSelectedSubject('');
   };
 
-  const removeAssignment = async (id: string) => {
-    await supabase.from('teacher_section_assignments').delete().eq('id', id);
-    if (showAssign) openAssign(showAssign);
-  };
-
-  const filtered = teachers.filter(t => t.full_name.toLowerCase().includes(search.toLowerCase()) || t.username?.toLowerCase().includes(search.toLowerCase()));
-
-  const inputCls = "w-full px-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
-  const btnPrimary = "px-5 py-2.5 rounded-xl text-sm font-semibold text-white hover:shadow-lg transition-all";
+  const removeAssignment = async (id:string) => { await supabase.from('teacher_section_assignments').delete().eq('id',id); if(showAssign) openAssign(showAssign); };
+  const filtered = teachers.filter(t=>t.full_name.toLowerCase().includes(search.toLowerCase())||t.username?.toLowerCase().includes(search.toLowerCase()));
+  const activeCount = teachers.filter(t=>t.is_active).length;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div><h2 className="text-2xl font-bold text-gray-900">Teacher Management</h2><p className="text-gray-500 text-sm mt-1">Manage teachers, assignments, and credentials</p></div>
-        <button onClick={() => { setShowAdd(true); setFormError(''); }} className={btnPrimary} style={{ background: '#1E40AF' }}>+ Add Teacher</button>
+    <div style={{ maxWidth:1100, margin:'0 auto', display:'flex', flexDirection:'column', gap:24 }}>
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
+        <div>
+          <h2 style={{ fontSize:22, fontWeight:800, color:'#0F172A', letterSpacing:'-0.02em', margin:0 }}>Teacher Management</h2>
+          <p style={{ fontSize:13, color:'#94A3B8', marginTop:4 }}>Manage teachers, assignments, and credentials</p>
+        </div>
+        <button onClick={()=>{setShowAdd(true);setFormError('');}} style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 20px', background:'linear-gradient(135deg, #1E3A8A, #3B82F6)', color:'white', border:'none', borderRadius:10, fontSize:13, fontWeight:700, cursor:'pointer', boxShadow:'0 4px 12px rgba(59,130,246,0.3)', whiteSpace:'nowrap' }}>
+          <span style={{fontSize:16}}>+</span> Add Teacher
+        </button>
       </div>
 
-      <div className="flex items-center gap-4">
-        <div className="flex-1 relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
-          <input type="text" placeholder="Search by name or username..." value={search} onChange={e => setSearch(e.target.value)} className="w-full pl-11 pr-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" style={{ borderColor: '#E2E8F0' }} /></div>
-        <span className="text-sm text-gray-500">{filtered.length} teacher{filtered.length !== 1 ? 's' : ''}</span>
+      {/* Stats */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:14 }}>
+        {[{ label:'Total Teachers', value:teachers.length, color:'#1D4ED8', bg:'#EFF6FF', border:'#DBEAFE' },
+          { label:'Active', value:activeCount, color:'#16A34A', bg:'#F0FDF4', border:'#DCFCE7' },
+          { label:'Inactive', value:teachers.length-activeCount, color:'#DC2626', bg:'#FEF2F2', border:'#FEE2E2' }
+        ].map((s,i)=>(
+          <div key={i} style={{ background:s.bg, border:`1px solid ${s.border}`, borderRadius:12, padding:'16px 20px' }}>
+            <p style={{ fontSize:11, fontWeight:700, color:s.color, textTransform:'uppercase', letterSpacing:'0.06em', margin:0 }}>{s.label}</p>
+            <p style={{ fontSize:28, fontWeight:800, color:'#0F172A', margin:'6px 0 0' }}>
+              {loading?<span style={{ display:'inline-block', width:32, height:28, background:'rgba(0,0,0,0.08)', borderRadius:6 }}/>:s.value}
+            </p>
+          </div>
+        ))}
       </div>
 
-      <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E2E8F0' }}>
-        {loading ? <div className="p-8 space-y-3">{[1,2,3].map(i => <div key={i} className="skeleton h-14 rounded-lg" />)}</div> : (
-          <table className="w-full">
-            <thead><tr style={{ background: '#F8FAFC' }}>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Teacher</th>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Employee ID</th>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Contact</th>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
-              <th className="text-right px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Actions</th>
-            </tr></thead>
-            <tbody className="divide-y" style={{ borderColor: '#F1F5F9' }}>
-              {filtered.length === 0 ? (
-                <tr><td colSpan={5} className="px-6 py-12 text-center text-gray-400"><p className="text-3xl mb-2">👨‍🏫</p><p className="text-sm">No teachers found.</p></td></tr>
-              ) : filtered.map(t => (
-                <tr key={t.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4"><p className="text-sm font-semibold text-gray-900">{t.full_name}</p><p className="text-xs text-gray-400 font-mono">{t.username}</p></td>
-                  <td className="px-6 py-4"><code className="text-xs px-2 py-1 rounded" style={{ background: '#F1F5F9' }}>{t.profile?.employee_id || '—'}</code></td>
-                  <td className="px-6 py-4"><p className="text-sm text-gray-600">{t.phone}</p>{t.email && <p className="text-xs text-gray-400">{t.email}</p>}</td>
-                  <td className="px-6 py-4"><span className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ background: t.is_active ? '#F0FDF4' : '#FEF2F2', color: t.is_active ? '#16A34A' : '#DC2626' }}>{t.is_active ? 'Active' : 'Inactive'}</span></td>
-                  <td className="px-6 py-4 text-right space-x-2">
-                    <button onClick={() => openAssign(t.id)} className="text-xs text-blue-600 hover:underline">Assign</button>
-                    <button onClick={() => toggleActive(t.id, t.is_active)} className="text-xs hover:underline" style={{ color: t.is_active ? '#DC2626' : '#16A34A' }}>{t.is_active ? 'Deactivate' : 'Activate'}</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+      {/* Search */}
+      <div style={{ position:'relative', maxWidth:400 }}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)' }}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input type="text" placeholder="Search by name or username..." value={search} onChange={e=>setSearch(e.target.value)} style={{ ...IS, paddingLeft:36 }}/>
+      </div>
+
+      {/* List */}
+      <div style={{ background:'white', borderRadius:14, border:'1px solid #E8ECF0', overflow:'hidden', boxShadow:'0 1px 3px rgba(0,0,0,0.04)' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'2fr 110px 1.2fr 100px 140px', padding:'12px 20px', background:'#F8FAFC', borderBottom:'1px solid #F1F5F9' }}>
+          {['Teacher','Employee ID','Contact','Status','Actions'].map((h,i)=>(
+            <p key={h} style={{ fontSize:11, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', letterSpacing:'0.06em', margin:0, textAlign:i===4?'right':'left' }}>{h}</p>
+          ))}
+        </div>
+        {loading ? (
+          <div style={{ padding:24, display:'flex', flexDirection:'column', gap:12 }}>
+            {[1,2,3].map(i=><div key={i} style={{ height:52, background:'#F8FAFC', borderRadius:8 }}/>)}
+          </div>
+        ) : filtered.length===0 ? (
+          <div style={{ padding:'60px 24px', textAlign:'center' }}>
+            <div style={{ width:52, height:52, borderRadius:14, background:'#EFF6FF', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 14px', fontSize:22 }}>👨‍🏫</div>
+            <p style={{ fontWeight:700, color:'#1E293B', fontSize:15, margin:0 }}>No teachers yet</p>
+            <p style={{ fontSize:13, color:'#94A3B8', marginTop:6 }}>Click <strong>+ Add Teacher</strong> to get started</p>
+          </div>
+        ) : filtered.map((t,idx)=>(
+          <div key={t.id} style={{ display:'grid', gridTemplateColumns:'2fr 110px 1.2fr 100px 140px', padding:'14px 20px', borderBottom:idx<filtered.length-1?'1px solid #F8FAFC':'none', alignItems:'center' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+              <div style={{ width:36, height:36, borderRadius:'50%', background:'linear-gradient(135deg, #1E3A8A, #3B82F6)', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:800, flexShrink:0 }}>
+                {t.full_name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase()}
+              </div>
+              <div>
+                <p style={{ fontWeight:700, fontSize:13, color:'#0F172A', margin:0 }}>{t.full_name}</p>
+                <code style={{ fontSize:10, color:'#94A3B8', background:'#F1F5F9', padding:'1px 5px', borderRadius:4 }}>{t.username}</code>
+              </div>
+            </div>
+            <code style={{ fontSize:11, padding:'3px 8px', background:'#F1F5F9', color:'#475569', borderRadius:6 }}>{t.profile?.employee_id||'—'}</code>
+            <div>
+              <p style={{ fontSize:13, color:'#475569', margin:0 }}>{t.phone}</p>
+              {t.email && <p style={{ fontSize:11, color:'#94A3B8', margin:'1px 0 0' }}>{t.email}</p>}
+            </div>
+            <span style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:99, background:t.is_active?'#F0FDF4':'#FEF2F2', color:t.is_active?'#16A34A':'#DC2626', width:'fit-content' }}>
+              <span style={{ width:6, height:6, borderRadius:'50%', background:t.is_active?'#16A34A':'#DC2626' }}/>
+              {t.is_active?'Active':'Inactive'}
+            </span>
+            <div style={{ display:'flex', gap:6, justifyContent:'flex-end' }}>
+              <button onClick={()=>openAssign(t.id)} style={{ fontSize:12, fontWeight:600, padding:'6px 12px', borderRadius:8, border:'1px solid #DBEAFE', background:'#EFF6FF', color:'#1D4ED8', cursor:'pointer' }}>Assign</button>
+              <button onClick={()=>toggleActive(t.id,t.is_active)} style={{ fontSize:12, fontWeight:600, padding:'6px 12px', borderRadius:8, border:`1px solid ${t.is_active?'#FEE2E2':'#DCFCE7'}`, background:t.is_active?'#FEF2F2':'#F0FDF4', color:t.is_active?'#DC2626':'#16A34A', cursor:'pointer' }}>
+                {t.is_active?'Deactivate':'Activate'}
+              </button>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Add Teacher Modal */}
       {showAdd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
-          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl p-8 animate-scale-in max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6"><h3 className="text-xl font-bold text-gray-900">Add Teacher</h3><button onClick={() => setShowAdd(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button></div>
-            {formError && <div className="mb-4 p-3 rounded-lg text-sm" style={{ background: '#FEF2F2', color: '#DC2626' }}>{formError}</div>}
-            <div className="space-y-4">
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label><input value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Phone *</label><input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Email</label><input value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Employee ID</label><input placeholder="Auto-generated" value={form.employee_id} onChange={e => setForm(f => ({ ...f, employee_id: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Joining Date</label><input type="date" value={form.joining_date} onChange={e => setForm(f => ({ ...f, joining_date: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
-              </div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Qualification</label><input value={form.qualification} onChange={e => setForm(f => ({ ...f, qualification: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Specialization</label><input value={form.specialization} onChange={e => setForm(f => ({ ...f, specialization: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
+        <div style={overlay}>
+          <div style={modal}>
+            <div style={{ padding:'24px 28px 18px', borderBottom:'1px solid #F1F5F9', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
+              <div><h3 style={{ fontSize:17, fontWeight:800, color:'#0F172A', margin:0 }}>Add Teacher</h3><p style={{ fontSize:12, color:'#94A3B8', marginTop:3 }}>Create teacher account and credentials</p></div>
+              <button onClick={()=>setShowAdd(false)} style={{ width:32, height:32, borderRadius:'50%', border:'1px solid #E2E8F0', background:'white', cursor:'pointer', color:'#64748B', fontSize:16, display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
             </div>
-            <div className="flex gap-3 pt-6">
-              <button onClick={() => setShowAdd(false)} className="flex-1 py-2.5 rounded-xl text-sm font-medium border text-gray-700 hover:bg-gray-50" style={{ borderColor: '#E2E8F0' }}>Cancel</button>
-              <button onClick={handleAddTeacher} disabled={saving} className={`flex-1 ${btnPrimary} disabled:opacity-50`} style={{ background: '#1E40AF' }}>{saving ? 'Creating...' : 'Create Teacher'}</button>
+            <div style={{ padding:'20px 28px', overflowY:'auto', flex:1 }}>
+              {formError && <div style={{ marginBottom:14, padding:'10px 14px', background:'#FEF2F2', border:'1px solid #FEE2E2', borderRadius:9, fontSize:13, color:'#DC2626' }}>{formError}</div>}
+              <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+                <div><label style={LS}>Full Name <span style={{color:'#EF4444'}}>*</span></label><input value={form.full_name} onChange={e=>setForm(f=>({...f,full_name:e.target.value}))} style={IS}/></div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                  <div><label style={LS}>Phone <span style={{color:'#EF4444'}}>*</span></label><input value={form.phone} onChange={e=>setForm(f=>({...f,phone:e.target.value}))} style={IS}/></div>
+                  <div><label style={LS}>Email</label><input value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} style={IS}/></div>
+                </div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                  <div><label style={LS}>Employee ID</label><input placeholder="Auto-generated" value={form.employee_id} onChange={e=>setForm(f=>({...f,employee_id:e.target.value}))} style={IS}/></div>
+                  <div><label style={LS}>Joining Date</label><input type="date" value={form.joining_date} onChange={e=>setForm(f=>({...f,joining_date:e.target.value}))} style={IS}/></div>
+                </div>
+                <div><label style={LS}>Qualification</label><input value={form.qualification} onChange={e=>setForm(f=>({...f,qualification:e.target.value}))} style={IS}/></div>
+                <div><label style={LS}>Specialization</label><input value={form.specialization} onChange={e=>setForm(f=>({...f,specialization:e.target.value}))} style={IS}/></div>
+              </div>
+            </div>
+            <div style={{ padding:'16px 28px', borderTop:'1px solid #F1F5F9', display:'flex', gap:10, flexShrink:0 }}>
+              <button onClick={()=>setShowAdd(false)} style={{ flex:1, padding:11, borderRadius:10, border:'1px solid #E2E8F0', background:'white', fontSize:13, fontWeight:600, color:'#475569', cursor:'pointer' }}>Cancel</button>
+              <button onClick={handleAddTeacher} disabled={saving} style={{ flex:1, padding:11, borderRadius:10, border:'none', background:saving?'#93C5FD':'linear-gradient(135deg,#1E3A8A,#3B82F6)', color:'white', fontSize:13, fontWeight:700, cursor:saving?'not-allowed':'pointer' }}>
+                {saving?'Creating...':'Create Teacher'}
+              </button>
             </div>
           </div>
         </div>
@@ -206,50 +205,68 @@ export default function TeachersPage() {
 
       {/* Credentials Modal */}
       {showCreds && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
-          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-8 animate-scale-in text-center">
-            <div className="text-4xl mb-4">🎉</div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2">Teacher Created!</h3>
-            <p className="text-gray-500 text-sm mb-6">Share these credentials with the teacher</p>
-            <div className="p-4 rounded-xl space-y-3" style={{ background: '#F1F5F9' }}>
-              <div><p className="text-xs text-gray-500">Username</p><p className="font-mono font-bold text-gray-900">{showCreds.username}</p></div>
-              <div><p className="text-xs text-gray-500">Temporary Password</p><p className="font-mono font-bold text-gray-900">{showCreds.password}</p></div>
+        <div style={overlay}>
+          <div style={{ width:'100%', maxWidth:420, background:'white', borderRadius:18, boxShadow:'0 24px 64px rgba(0,0,0,0.2)', overflow:'hidden' }}>
+            <div style={{ padding:'28px 28px 20px', textAlign:'center', borderBottom:'1px solid #F1F5F9' }}>
+              <div style={{ width:52, height:52, borderRadius:14, background:'#F0FDF4', border:'1px solid #DCFCE7', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 14px', fontSize:24 }}>🎉</div>
+              <h3 style={{ fontSize:17, fontWeight:800, color:'#0F172A', margin:0 }}>Teacher Created!</h3>
+              <p style={{ fontSize:13, color:'#64748B', marginTop:5 }}>Share these credentials with the teacher</p>
             </div>
-            <p className="text-xs text-gray-400 mt-3">Teacher will be asked to change password on first login</p>
-            <button onClick={() => setShowCreds(null)} className={`w-full mt-6 ${btnPrimary}`} style={{ background: '#1E40AF' }}>Done</button>
+            <div style={{ padding:'20px 28px' }}>
+              <div style={{ background:'#F8FAFC', border:'1px solid #E2E8F0', borderRadius:12, padding:16, display:'flex', flexDirection:'column', gap:12 }}>
+                {[{label:'Username',value:showCreds.username,color:'#1D4ED8'},{label:'Password',value:showCreds.password,color:'#DC2626'}].map(item=>(
+                  <div key={item.label} style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                    <span style={{ fontSize:13, color:'#64748B' }}>{item.label}</span>
+                    <code style={{ fontSize:13, fontWeight:700, color:item.color, background:'white', border:'1px solid #E2E8F0', padding:'3px 10px', borderRadius:7 }}>{item.value}</code>
+                  </div>
+                ))}
+              </div>
+              <p style={{ fontSize:12, color:'#F59E0B', marginTop:12, textAlign:'center' }}>⚠ Password will be changed on first login</p>
+            </div>
+            <div style={{ padding:'0 28px 24px' }}>
+              <button onClick={()=>setShowCreds(null)} style={{ width:'100%', padding:12, borderRadius:10, border:'none', background:'linear-gradient(135deg,#1E3A8A,#3B82F6)', color:'white', fontSize:13, fontWeight:700, cursor:'pointer' }}>Done</button>
+            </div>
           </div>
         </div>
       )}
 
       {/* Assign Modal */}
       {showAssign && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
-          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl p-8 animate-scale-in max-h-[80vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6"><h3 className="text-xl font-bold text-gray-900">Section & Subject Assignments</h3><button onClick={() => setShowAssign(null)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button></div>
-            <div className="space-y-3 mb-6">
-              {assignments.length === 0 ? <p className="text-sm text-gray-400 text-center py-4">No assignments yet</p> :
-                assignments.map(a => {
-                  const sec = sections.find(s => s.id === a.section_id);
-                  const sub = subjects.find(s => s.id === a.subject_id);
-                  return (
-                    <div key={a.id} className="flex items-center justify-between p-3 rounded-lg" style={{ background: '#F8FAFC' }}>
-                      <span className="text-sm"><strong>{sec?.class_name} - {sec?.name}</strong> → {sub?.name}</span>
-                      <button onClick={() => removeAssignment(a.id)} className="text-xs text-red-500 hover:text-red-700">Remove</button>
-                    </div>
-                  );
-                })}
+        <div style={overlay}>
+          <div style={{ width:'100%', maxWidth:500, background:'white', borderRadius:18, boxShadow:'0 24px 64px rgba(0,0,0,0.2)', overflow:'hidden' }}>
+            <div style={{ padding:'24px 28px 18px', borderBottom:'1px solid #F1F5F9', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <div><h3 style={{ fontSize:17, fontWeight:800, color:'#0F172A', margin:0 }}>Assignments</h3><p style={{ fontSize:12, color:'#94A3B8', marginTop:3 }}>Section & subject assignments</p></div>
+              <button onClick={()=>setShowAssign(null)} style={{ width:32, height:32, borderRadius:'50%', border:'1px solid #E2E8F0', background:'white', cursor:'pointer', color:'#64748B', fontSize:16, display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
             </div>
-            <div className="border-t pt-4 space-y-3" style={{ borderColor: '#E2E8F0' }}>
-              <p className="text-sm font-medium text-gray-700">Add New Assignment</p>
-              <div className="grid grid-cols-2 gap-3">
-                <select value={selectedSection} onChange={e => setSelectedSection(e.target.value)} className={inputCls} style={{ borderColor: '#E2E8F0' }}>
-                  <option value="">Select section...</option>{sections.map(s => <option key={s.id} value={s.id}>{s.class_name} - {s.name}</option>)}
+            <div style={{ padding:'16px 28px', maxHeight:300, overflowY:'auto' }}>
+              {assignments.length===0 ? (
+                <p style={{ textAlign:'center', fontSize:13, color:'#94A3B8', padding:'20px 0', fontStyle:'italic' }}>No assignments yet</p>
+              ) : assignments.map(a=>{
+                const sec=sections.find(s=>s.id===a.section_id);
+                const sub=subjects.find(s=>s.id===a.subject_id);
+                return (
+                  <div key={a.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 14px', borderRadius:9, background:'#F8FAFC', border:'1px solid #F1F5F9', marginBottom:6 }}>
+                    <span style={{ fontSize:13, color:'#334155' }}><strong>{sec?.class_name} – {sec?.name}</strong> → {sub?.name}</span>
+                    <button onClick={()=>removeAssignment(a.id)} style={{ fontSize:12, fontWeight:600, padding:'4px 10px', borderRadius:7, border:'1px solid #FEE2E2', background:'#FEF2F2', color:'#DC2626', cursor:'pointer' }}>Remove</button>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ padding:'16px 28px', borderTop:'1px solid #F1F5F9' }}>
+              <p style={{ fontSize:12, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:10 }}>Add New Assignment</p>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
+                <select value={selectedSection} onChange={e=>setSelectedSection(e.target.value)} style={IS}>
+                  <option value="">Select section...</option>
+                  {sections.map(s=><option key={s.id} value={s.id}>{s.class_name} – {s.name}</option>)}
                 </select>
-                <select value={selectedSubject} onChange={e => setSelectedSubject(e.target.value)} className={inputCls} style={{ borderColor: '#E2E8F0' }}>
-                  <option value="">Select subject...</option>{subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                <select value={selectedSubject} onChange={e=>setSelectedSubject(e.target.value)} style={IS}>
+                  <option value="">Select subject...</option>
+                  {subjects.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
-              <button onClick={addAssignment} disabled={!selectedSection || !selectedSubject} className={`w-full ${btnPrimary} disabled:opacity-50`} style={{ background: '#1E40AF' }}>Add Assignment</button>
+              <button onClick={addAssignment} disabled={!selectedSection||!selectedSubject} style={{ width:'100%', padding:11, borderRadius:10, border:'none', background:(!selectedSection||!selectedSubject)?'#93C5FD':'linear-gradient(135deg,#1E3A8A,#3B82F6)', color:'white', fontSize:13, fontWeight:700, cursor:(!selectedSection||!selectedSubject)?'not-allowed':'pointer' }}>
+                Add Assignment
+              </button>
             </div>
           </div>
         </div>
