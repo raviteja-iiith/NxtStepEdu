@@ -12,11 +12,16 @@ export default function TeacherParentsPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [students, setStudents] = useState<{ id: string; full_name: string; section_name: string }[]>([]);
-  const [form, setForm] = useState({ full_name: '', phone: '' });
+  const [form, setForm] = useState({ full_name: '', phone: '', relationship: 'guardian' });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
   const [showCreds, setShowCreds] = useState<{ phone: string; pin: string; name: string } | null>(null);
   const [search, setSearch] = useState('');
+  const [showLinkModal, setShowLinkModal] = useState<{ parentId: string; parentName: string } | null>(null);
+  const [linkStudentId, setLinkStudentId] = useState('');
+  const [linkRelationship, setLinkRelationship] = useState('guardian');
+  const [linking, setLinking] = useState(false);
+  const [linkError, setLinkError] = useState('');
 
   const fetchParentsAndStudents = useCallback(async () => {
     setLoading(true);
@@ -126,9 +131,11 @@ export default function TeacherParentsPage() {
     setSaving(true); setFormError('');
 
     const pin = String(Math.floor(100000 + Math.random() * 900000));
-    const { data: userData } = await supabase.from('users').select('school_id').eq('id', (await supabase.auth.getUser()).data.user?.id || '').single();
+    const userId = (await supabase.auth.getUser()).data.user?.id || '';
+    const { data: userData } = await supabase.from('users').select('school_id').eq('id', userId).single();
 
     try {
+      // Step 1: Create the auth user + users row
       const res = await fetch('/api/auth/create-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -143,23 +150,54 @@ export default function TeacherParentsPage() {
         }),
       });
       const result = await res.json();
-      if (!res.ok) { setFormError(result.error || 'Failed to create parent'); setSaving(false); return; }
+      if (!res.ok) { setFormError(result.error || 'Failed to create parent account'); setSaving(false); return; }
 
-      // Link parent to student
-      await supabase.from('student_parent_links').insert({
-        parent_id: result.userId,
+      const newParentId: string = result.userId;
+      if (!newParentId) { setFormError('Parent created but no userId returned — contact admin.'); setSaving(false); return; }
+
+      // Step 2: Link parent to student
+      // Note: student_parent_links has NO school_id column.
+      // relationship must be one of: 'father','mother','guardian','other'
+      const { error: linkError } = await supabase.from('student_parent_links').insert({
+        parent_id: newParentId,
         student_id: selectedStudentId,
-        school_id: userData?.school_id,
-        relationship: 'parent',
+        relationship: form.relationship || 'guardian',
+        is_primary_contact: true,
+        created_by: userId,
       });
+
+      if (linkError) {
+        // Parent account was created, but linking failed — show a clear error
+        setFormError(`Parent account created but linking failed: ${linkError.message}. Please link manually from the student profile.`);
+        setSaving(false);
+        fetchParentsAndStudents();
+        return;
+      }
 
       setShowAddModal(false);
       setShowCreds({ phone: form.phone, pin, name: form.full_name });
-      setForm({ full_name: '', phone: '' });
+      setForm({ full_name: '', phone: '', relationship: 'guardian' });
       setSelectedStudentId('');
       fetchParentsAndStudents();
-    } catch { setFormError('Network error. Please try again.'); }
+    } catch (err: any) { setFormError(`Network error: ${err?.message || 'Please try again.'}`); }
     setSaving(false);
+  };
+
+  const handleLinkExisting = async () => {
+    if (!showLinkModal || !linkStudentId) { setLinkError('Please select a student'); return; }
+    setLinking(true); setLinkError('');
+    const userId = (await supabase.auth.getUser()).data.user?.id || '';
+    const { error } = await supabase.from('student_parent_links').insert({
+      parent_id: showLinkModal.parentId,
+      student_id: linkStudentId,
+      relationship: linkRelationship || 'guardian',
+      is_primary_contact: true,
+      created_by: userId,
+    });
+    if (error) { setLinkError(error.message); setLinking(false); return; }
+    setShowLinkModal(null); setLinkStudentId(''); setLinkRelationship('guardian');
+    fetchParentsAndStudents();
+    setLinking(false);
   };
 
   const filtered = parents.filter(p =>
@@ -198,6 +236,7 @@ export default function TeacherParentsPage() {
               <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Phone (Login)</th>
               <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Child</th>
               <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
+              <th className="text-right px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Actions</th>
             </tr></thead>
             <tbody className="divide-y" style={{ borderColor: '#F1F5F9' }}>
               {filtered.length === 0 ? (
@@ -214,8 +253,22 @@ export default function TeacherParentsPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4 font-mono text-sm text-gray-600">{p.phone || '—'}</td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{p.student_name} {p.section_name && <span className="text-xs text-gray-400">(Sec {p.section_name})</span>}</td>
+                  <td className="px-6 py-4 text-sm">
+                    {p.student_name ? (
+                      <span className="text-gray-700 font-medium">{p.student_name} {p.section_name && <span className="text-xs text-gray-400">(Sec {p.section_name})</span>}</span>
+                    ) : (
+                      <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ background: '#FFFBEB', color: '#D97706' }}>⚠️ Not linked</span>
+                    )}
+                  </td>
                   <td className="px-6 py-4"><span className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ background: p.is_active ? '#F0FDF4' : '#FEF2F2', color: p.is_active ? '#16A34A' : '#DC2626' }}>{p.is_active ? 'Active' : 'Inactive'}</span></td>
+                  <td className="px-6 py-4 text-right">
+                    {!p.student_name && (
+                      <button onClick={() => { setShowLinkModal({ parentId: p.id, parentName: p.full_name }); setLinkError(''); setLinkStudentId(''); setLinkRelationship('guardian'); }}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-lg" style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #DBEAFE' }}>
+                        🔗 Link to Child
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -242,7 +295,15 @@ export default function TeacherParentsPage() {
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Phone Number * <span className="text-gray-400">(10 digits — used as login)</span></label>
                 <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))} maxLength={10} className="w-full px-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono" style={{ borderColor: '#E2E8F0' }} placeholder="9876543210" />
               </div>
-              <div className="p-3 rounded-lg text-xs text-teal-700" style={{ background: '#F0FDF4' }}>A 6-digit PIN will be auto-generated for this parent to log in with.</div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Relationship to Child *</label>
+                <select value={form.relationship} onChange={e => setForm(f => ({ ...f, relationship: e.target.value }))} className="w-full px-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" style={{ borderColor: '#E2E8F0' }}>
+                  <option value="father">Father</option>
+                  <option value="mother">Mother</option>
+                  <option value="guardian">Guardian</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div className="p-3 rounded-lg text-xs text-teal-700" style={{ background: '#F0FDF4' }}>✅ A 6-digit PIN will be auto-generated. The parent will be automatically linked to the selected student.</div>
             </div>
             <div className="flex gap-3 pt-6">
               <button onClick={() => setShowAddModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-medium border text-gray-700 hover:bg-gray-50" style={{ borderColor: '#E2E8F0' }}>Cancel</button>
@@ -258,16 +319,58 @@ export default function TeacherParentsPage() {
           <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-8 animate-scale-in text-center">
             <div className="text-4xl mb-4">🎉</div>
             <h3 className="text-xl font-bold text-gray-900 mb-1">Parent Account Created!</h3>
-            <p className="text-gray-500 text-sm mb-6">{showCreds.name}</p>
+            <p className="text-gray-500 text-sm mb-2">{showCreds.name} has been created and <strong>linked to the student</strong>.</p>
             <div className="p-4 rounded-xl space-y-3 mb-4" style={{ background: '#F1F5F9' }}>
               <div><p className="text-xs text-gray-500">Phone (Login)</p><p className="font-mono font-bold text-gray-900">{showCreds.phone}</p></div>
               <div><p className="text-xs text-gray-500">6-digit PIN</p><p className="font-mono font-bold text-gray-900 text-xl tracking-widest">{showCreds.pin}</p></div>
             </div>
-            <p className="text-xs text-gray-400 mb-4">Parent will be asked to change PIN on first login</p>
+            <p className="text-xs text-gray-400 mb-4">Share these credentials with the parent. They will be asked to change PIN on first login.</p>
             <button onClick={() => setShowCreds(null)} className="w-full py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: '#0F766E' }}>Done</button>
+          </div>
+        </div>
+      )}
+
+      {/* Link to Child Modal */}
+      {showLinkModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 animate-scale-in">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">Link Parent to Child</h3>
+                <p className="text-sm text-gray-500 mt-1">{showLinkModal.parentName}</p>
+              </div>
+              <button onClick={() => setShowLinkModal(null)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+            </div>
+            {linkError && <div className="mb-4 p-3 rounded-lg text-sm" style={{ background: '#FEF2F2', color: '#DC2626' }}>{linkError}</div>}
+            <div className="space-y-4">
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Select Student *</label>
+                <select value={linkStudentId} onChange={e => setLinkStudentId(e.target.value)}
+                  className="w-full px-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" style={{ borderColor: '#E2E8F0' }}>
+                  <option value="">Choose student...</option>
+                  {students.map(s => <option key={s.id} value={s.id}>{s.full_name} (Sec {s.section_name})</option>)}
+                </select>
+              </div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Relationship *</label>
+                <select value={linkRelationship} onChange={e => setLinkRelationship(e.target.value)}
+                  className="w-full px-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" style={{ borderColor: '#E2E8F0' }}>
+                  <option value="father">Father</option>
+                  <option value="mother">Mother</option>
+                  <option value="guardian">Guardian</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-3 pt-6">
+              <button onClick={() => setShowLinkModal(null)} className="flex-1 py-2.5 rounded-xl text-sm font-medium border text-gray-700 hover:bg-gray-50" style={{ borderColor: '#E2E8F0' }}>Cancel</button>
+              <button onClick={handleLinkExisting} disabled={linking}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 hover:shadow-lg" style={{ background: '#1E40AF' }}>
+                {linking ? 'Linking...' : '🔗 Link Now'}
+              </button>
+            </div>
           </div>
         </div>
       )}
     </div>
   );
 }
+

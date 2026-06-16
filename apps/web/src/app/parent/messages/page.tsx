@@ -115,99 +115,95 @@ export default function ParentMessagesPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div><h2 className="text-2xl font-bold text-gray-900">Messages</h2><p className="text-gray-500 text-sm mt-1">Chat with your child&apos;s teachers</p></div>
-      
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[600px]">
+    <div style={{ fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column', gap: 28 }}>
+
+      {/* Page Header */}
+      <div style={{ paddingBottom: 24, borderBottom: '1px solid #F1F5F9' }}>
+        <h2 style={{ fontSize: 28, fontWeight: 900, color: '#0F172A', letterSpacing: '-0.02em', margin: 0 }}>Messages</h2>
+        <p style={{ fontSize: 14, color: '#64748B', marginTop: 6 }}>Chat with your child's teachers directly</p>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 20, height: 620 }}>
         {/* Contacts Sidebar */}
-        <div className="bg-white rounded-2xl border flex flex-col overflow-hidden" style={{ borderColor: '#E2E8F0' }}>
-          <div className="px-5 py-4 border-b" style={{ background: '#F8FAFC', borderColor: '#E2E8F0' }}>
-            <p className="font-bold text-sm text-gray-700">Teachers</p>
+        <div style={{ background: 'white', borderRadius: 20, border: '1px solid #E8ECF0', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
+          <div style={{ padding: '18px 20px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
+            <p style={{ fontSize: 13, fontWeight: 800, color: '#475569', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Teachers</p>
           </div>
-          
-          <div className="flex-1 overflow-y-auto">
-            {loading ? <div className="p-4 space-y-3">{[1,2,3].map(i => <div key={i} className="skeleton h-12 w-full rounded-lg" />)}</div> : 
-             contacts.length === 0 ? <div className="p-8 text-center text-gray-400 text-sm">No teachers found</div> :
-             contacts.map(c => (
-               <button 
-                 key={c.id} 
-                 onClick={() => setSelectedContact(c)}
-                 className={`w-full px-5 py-4 flex items-center gap-3 border-b text-left transition-colors ${selectedContact?.id === c.id ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
-                 style={{ borderColor: '#F1F5F9' }}
-               >
-                 <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
-                   {c.full_name.charAt(0)}
-                 </div>
-                 <div>
-                   <p className={`text-sm font-semibold ${selectedContact?.id === c.id ? 'text-blue-900' : 'text-gray-900'}`}>{c.full_name}</p>
-                   <p className="text-xs text-gray-500 capitalize">{c.role}</p>
-                 </div>
-               </button>
-             ))
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {loading
+              ? <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>{[1,2,3].map(i => <div key={i} style={{ height: 56, background: '#F1F5F9', borderRadius: 10 }} />)}</div>
+              : contacts.length === 0
+              ? <div style={{ padding: 32, textAlign: 'center', color: '#94A3B8', fontSize: 13 }}>No teachers found</div>
+              : contacts.map(c => (
+                <button key={c.id} onClick={() => setSelectedContact(c)}
+                  style={{ width: '100%', padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid #F8FAFC', background: selectedContact?.id === c.id ? '#EFF6FF' : 'white', border: 'none', cursor: 'pointer', textAlign: 'left', borderLeft: selectedContact?.id === c.id ? '3px solid #2563EB' : '3px solid transparent', transition: 'all 0.15s' }}>
+                  <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg,#1D4ED8,#3B82F6)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 15, flexShrink: 0 }}>{c.full_name.charAt(0)}</div>
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: selectedContact?.id === c.id ? '#1E40AF' : '#0F172A', margin: 0 }}>{c.full_name}</p>
+                    <p style={{ fontSize: 11, color: '#94A3B8', margin: '2px 0 0', textTransform: 'capitalize', fontWeight: 500 }}>{c.role}</p>
+                  </div>
+                </button>
+              ))
             }
           </div>
         </div>
-        
+
         {/* Chat Area */}
-        <div className="lg:col-span-2 bg-white rounded-2xl border flex flex-col overflow-hidden relative" style={{ borderColor: '#E2E8F0' }}>
+        <div style={{ background: 'white', borderRadius: 20, border: '1px solid #E8ECF0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
           {!selectedContact ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-center text-gray-400">
-              <p className="text-5xl mb-3">💬</p>
-              <p className="text-sm font-medium">Select a teacher to start chatting</p>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', color: '#94A3B8', gap: 10 }}>
+              <p style={{ fontSize: 48, margin: 0 }}>💬</p>
+              <p style={{ fontSize: 14, fontWeight: 600, color: '#475569', margin: 0 }}>Select a teacher to start chatting</p>
+              <p style={{ fontSize: 13, color: '#94A3B8', margin: 0 }}>Messages are private and secure</p>
             </div>
           ) : (
             <>
               {/* Chat Header */}
-              <div className="px-6 py-4 border-b flex items-center gap-3 bg-white z-10" style={{ borderColor: '#E2E8F0' }}>
-                <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
-                  {selectedContact.full_name.charAt(0)}
-                </div>
+              <div style={{ padding: '16px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: 14, background: 'white' }}>
+                <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(135deg,#1D4ED8,#3B82F6)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 17, flexShrink: 0 }}>{selectedContact.full_name.charAt(0)}</div>
                 <div>
-                  <p className="font-bold text-gray-900">{selectedContact.full_name}</p>
-                  <p className="text-xs text-green-600 font-medium flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-green-500"></span> Online</p>
+                  <p style={{ fontSize: 15, fontWeight: 800, color: '#0F172A', margin: 0 }}>{selectedContact.full_name}</p>
+                  <p style={{ fontSize: 12, color: '#22C55E', fontWeight: 600, margin: '2px 0 0', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22C55E', display: 'inline-block' }} />Online
+                  </p>
                 </div>
               </div>
-              
-              {/* Messages List */}
-              <div className="flex-1 overflow-y-auto p-6 bg-gray-50 flex flex-col gap-4">
-                {loadingMsgs ? <div className="text-center text-sm text-gray-400 my-auto">Loading messages...</div> : 
-                 messages.length === 0 ? <div className="text-center text-sm text-gray-400 my-auto">No messages yet. Send a message to start the conversation!</div> :
-                 messages.map(m => {
-                   const isMe = m.sender_id === userId;
-                   return (
-                     <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                       <div className={`max-w-[75%] rounded-2xl px-5 py-3 ${isMe ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-white border text-gray-800 rounded-tl-sm'}`}
-                            style={!isMe ? { borderColor: '#E2E8F0' } : {}}>
-                         <p className="text-sm">{m.content}</p>
-                         <p className={`text-[10px] mt-1 text-right ${isMe ? 'text-blue-200' : 'text-gray-400'}`}>
-                           {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                         </p>
-                       </div>
-                     </div>
-                   );
-                 })
+
+              {/* Messages */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', background: '#F8FAFC', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {loadingMsgs
+                  ? <p style={{ textAlign: 'center', color: '#94A3B8', fontSize: 13, margin: 'auto 0' }}>Loading messages...</p>
+                  : messages.length === 0
+                  ? <p style={{ textAlign: 'center', color: '#94A3B8', fontSize: 13, margin: 'auto 0' }}>No messages yet. Send one to start the conversation!</p>
+                  : messages.map(m => {
+                    const isMe = m.sender_id === userId;
+                    return (
+                      <div key={m.id} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
+                        <div style={{ maxWidth: '72%', padding: '12px 16px', borderRadius: isMe ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+                          background: isMe ? 'linear-gradient(135deg,#1D4ED8,#2563EB)' : 'white',
+                          color: isMe ? 'white' : '#0F172A',
+                          border: isMe ? 'none' : '1px solid #E2E8F0',
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                          <p style={{ fontSize: 14, margin: 0, lineHeight: 1.5 }}>{m.content}</p>
+                          <p style={{ fontSize: 10, margin: '5px 0 0', color: isMe ? 'rgba(255,255,255,0.6)' : '#94A3B8', textAlign: 'right' }}>
+                            {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })
                 }
                 <div ref={messagesEndRef} />
               </div>
-              
-              {/* Message Input */}
-              <div className="p-4 bg-white border-t" style={{ borderColor: '#E2E8F0' }}>
-                <form onSubmit={handleSend} className="flex gap-2">
-                  <input 
-                    type="text" 
-                    value={newMessage}
-                    onChange={e => setNewMessage(e.target.value)}
-                    placeholder="Type a message..." 
-                    className="flex-1 px-4 py-3 rounded-xl border bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm transition-all"
-                    style={{ borderColor: '#E2E8F0' }}
-                  />
-                  <button 
-                    type="submit"
-                    disabled={!newMessage.trim()}
-                    className="px-6 py-3 rounded-xl text-white font-medium disabled:opacity-50 transition-all hover:shadow-md"
-                    style={{ background: '#2563EB' }}
-                  >
-                    Send
+
+              {/* Input */}
+              <div style={{ padding: '16px 20px', background: 'white', borderTop: '1px solid #F1F5F9' }}>
+                <form onSubmit={handleSend} style={{ display: 'flex', gap: 10 }}>
+                  <input type="text" value={newMessage} onChange={e => setNewMessage(e.target.value)} placeholder="Type a message..."
+                    style={{ flex: 1, padding: '12px 16px', borderRadius: 12, border: '1px solid #E2E8F0', fontSize: 14, color: '#0F172A', background: '#F8FAFC', outline: 'none' }} />
+                  <button type="submit" disabled={!newMessage.trim()}
+                    style={{ padding: '12px 24px', borderRadius: 12, border: 'none', background: newMessage.trim() ? 'linear-gradient(135deg,#1D4ED8,#3B82F6)' : '#F1F5F9', color: newMessage.trim() ? 'white' : '#94A3B8', fontSize: 14, fontWeight: 700, cursor: newMessage.trim() ? 'pointer' : 'not-allowed', transition: 'all 0.15s' }}>
+                    Send →
                   </button>
                 </form>
               </div>

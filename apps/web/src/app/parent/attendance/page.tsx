@@ -3,7 +3,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
-const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const P = { fontFamily: "'Inter', sans-serif" };
 
 export default function ParentAttendancePage() {
   const supabase = createClient();
@@ -20,35 +22,19 @@ export default function ParentAttendancePage() {
     const { data: link } = await supabase
       .from('student_parent_links')
       .select('student_id, students(full_name)')
-      .eq('parent_id', userId)
-      .limit(1)
-      .maybeSingle();
-    if (link) {
-      setStudentId(link.student_id);
-      setStudentName((link.students as any)?.full_name || '');
-    }
+      .eq('parent_id', userId).limit(1).maybeSingle();
+    if (link) { setStudentId(link.student_id); setStudentName((link.students as any)?.full_name || ''); }
   }, [supabase]);
 
   const fetchAttendance = useCallback(async () => {
     if (!studentId) return;
     setLoading(true);
     const startDate = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-01`;
-    const endDate = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${new Date(selectedYear, selectedMonth + 1, 0).getDate()}`;
-    
-    const { data } = await supabase
-      .from('attendance')
-      .select('date, status')
-      .eq('student_id', studentId)
-      .gte('date', startDate)
-      .lte('date', endDate);
-
+    const endDate   = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${new Date(selectedYear, selectedMonth + 1, 0).getDate()}`;
+    const { data } = await supabase.from('attendance').select('date, status')
+      .eq('student_id', studentId).gte('date', startDate).lte('date', endDate);
     const map: Record<number, string> = {};
-    if (data) {
-      data.forEach((a: { date: string; status: string }) => {
-        const day = new Date(a.date).getDate();
-        map[day] = a.status;
-      });
-    }
+    (data ?? []).forEach((a: any) => { map[new Date(a.date).getDate()] = a.status; });
     setAttendanceMap(map);
     setLoading(false);
   }, [supabase, studentId, selectedMonth, selectedYear]);
@@ -57,99 +43,114 @@ export default function ParentAttendancePage() {
   useEffect(() => { if (studentId) fetchAttendance(); }, [fetchAttendance, studentId]);
 
   const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
-  const firstDay = new Date(selectedYear, selectedMonth, 1).getDay();
-  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  const firstDay    = new Date(selectedYear, selectedMonth, 1).getDay();
+  const days        = Array.from({ length: daysInMonth }, (_, i) => i + 1);
 
-  const colorMap: Record<string, string> = {
-    present: '#16A34A', absent: '#DC2626', late: '#D97706',
-    excused: '#1E40AF', holiday: '#94A3B8',
-  };
-  const bgMap: Record<string, string> = {
-    present: '#F0FDF4', absent: '#FEF2F2', late: '#FFFBEB',
-    excused: '#EFF6FF', holiday: '#F1F5F9',
-  };
+  const colorMap: Record<string, string> = { present: '#16A34A', absent: '#DC2626', late: '#D97706', excused: '#1E40AF', holiday: '#94A3B8' };
+  const bgMap:    Record<string, string> = { present: '#F0FDF4', absent: '#FEF2F2', late: '#FFFBEB', excused: '#EFF6FF',  holiday: '#F1F5F9' };
 
   const presentCount = Object.values(attendanceMap).filter(s => s === 'present').length;
-  const absentCount = Object.values(attendanceMap).filter(s => s === 'absent').length;
-  const lateCount = Object.values(attendanceMap).filter(s => s === 'late').length;
-  const totalMarked = Object.keys(attendanceMap).length;
-  const attendancePct = totalMarked > 0 ? Math.round((presentCount / totalMarked) * 100) : 0;
+  const absentCount  = Object.values(attendanceMap).filter(s => s === 'absent').length;
+  const lateCount    = Object.values(attendanceMap).filter(s => s === 'late').length;
+  const totalMarked  = Object.keys(attendanceMap).length;
+  const pct          = totalMarked > 0 ? Math.round((presentCount / totalMarked) * 100) : 0;
+
+  const stats = [
+    { label: 'Attendance Rate', value: `${pct}%`, color: '#16A34A', bg: '#F0FDF4', border: '#BBF7D0', icon: '📈' },
+    { label: 'Present Days',    value: presentCount, color: '#0F766E', bg: '#F0FDF4', border: '#A7F3D0', icon: '✅' },
+    { label: 'Absent Days',     value: absentCount,  color: '#DC2626', bg: '#FEF2F2', border: '#FECACA', icon: '❌' },
+    { label: 'Late Days',       value: lateCount,    color: '#D97706', bg: '#FFFBEB', border: '#FDE68A', icon: '⏰' },
+  ];
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900">Attendance</h2>
-        <p className="text-gray-500 text-sm mt-1">
-          {studentName ? `Attendance calendar for ${studentName}` : "View your child's attendance calendar"}
+    <div style={{ ...P, display: 'flex', flexDirection: 'column', gap: 32 }}>
+
+      {/* Page Header */}
+      <div style={{ paddingBottom: 24, borderBottom: '1px solid #F1F5F9' }}>
+        <h2 style={{ fontSize: 28, fontWeight: 900, color: '#0F172A', letterSpacing: '-0.02em', margin: 0 }}>Attendance</h2>
+        <p style={{ fontSize: 14, color: '#64748B', marginTop: 6 }}>
+          {studentName ? `Monthly attendance calendar for ${studentName}` : "View your child's attendance calendar"}
         </p>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: 'This Month', value: `${attendancePct}%`, color: '#16A34A' },
-          { label: 'Present Days', value: presentCount, color: '#0F766E' },
-          { label: 'Absent Days', value: absentCount, color: '#DC2626' },
-          { label: 'Late Days', value: lateCount, color: '#D97706' },
-        ].map((s, i) => (
-          <div key={i} className="bg-white rounded-2xl border p-4" style={{ borderColor: '#E2E8F0' }}>
-            <p className="text-xs text-gray-500">{s.label}</p>
-            <p className="text-2xl font-bold mt-1" style={{ color: s.color }}>
-              {loading ? <span className="inline-block w-12 h-7 bg-slate-100 rounded animate-pulse" /> : s.value}
+      {/* Stat Cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 20 }}>
+        {stats.map((s, i) => (
+          <div key={i} style={{ background: 'white', borderRadius: 18, padding: '22px 24px', border: `1px solid ${s.border}`, boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.07em', margin: 0 }}>{s.label}</p>
+              <span style={{ fontSize: 18 }}>{s.icon}</span>
+            </div>
+            <p style={{ fontSize: 32, fontWeight: 900, color: s.color, letterSpacing: '-0.02em', margin: 0 }}>
+              {loading ? <span style={{ display: 'inline-block', width: 60, height: 28, background: '#F1F5F9', borderRadius: 6 }} /> : s.value}
             </p>
           </div>
         ))}
       </div>
 
-      <div className="bg-white rounded-2xl border p-6" style={{ borderColor: '#E2E8F0' }}>
-        <div className="flex items-center justify-between mb-4">
-          <button onClick={() => setSelectedMonth(m => (m - 1 + 12) % 12)} className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 hover:text-gray-900 transition-colors">←</button>
-          <h3 className="font-bold text-gray-900">{MONTHS[selectedMonth]} {selectedYear}</h3>
-          <button onClick={() => setSelectedMonth(m => (m + 1) % 12)} className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 hover:text-gray-900 transition-colors">→</button>
+      {/* Calendar */}
+      <div style={{ background: 'white', borderRadius: 20, padding: '28px 32px', boxShadow: '0 2px 12px rgba(0,0,0,0.05)', border: '1px solid #E8ECF0' }}>
+        {/* Month Nav */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
+          <button onClick={() => setSelectedMonth(m => (m - 1 + 12) % 12)}
+            style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #E2E8F0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: '#475569', transition: 'all 0.15s' }}>
+            ‹
+          </button>
+          <div style={{ textAlign: 'center' }}>
+            <h3 style={{ fontSize: 20, fontWeight: 800, color: '#0F172A', margin: 0 }}>{MONTHS[selectedMonth]}</h3>
+            <p style={{ fontSize: 13, color: '#94A3B8', fontWeight: 500, margin: '2px 0 0' }}>{selectedYear}</p>
+          </div>
+          <button onClick={() => setSelectedMonth(m => (m + 1) % 12)}
+            style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #E2E8F0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: '#475569', transition: 'all 0.15s' }}>
+            ›
+          </button>
         </div>
-        <div className="grid grid-cols-7 gap-1.5 text-center">
+
+        {/* Day headers */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6, marginBottom: 8 }}>
           {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
-            <div key={d} className="text-xs font-semibold text-gray-400 py-2">{d}</div>
+            <div key={d} style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#94A3B8', padding: '6px 0', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{d}</div>
           ))}
-          {Array.from({ length: firstDay }, (_, i) => <div key={`empty-${i}`} />)}
+        </div>
+
+        {/* Day cells */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
+          {Array.from({ length: firstDay }, (_, i) => <div key={`e-${i}`} />)}
           {days.map(d => {
             const dow = new Date(selectedYear, selectedMonth, d).getDay();
             const isWeekend = dow === 0 || dow === 6;
-            const isFuture = new Date(selectedYear, selectedMonth, d) > new Date();
-            const status = attendanceMap[d];
+            const isFuture  = new Date(selectedYear, selectedMonth, d) > new Date();
+            const status    = attendanceMap[d];
             return (
-              <div
-                key={d}
-                className="w-full aspect-square rounded-lg flex items-center justify-center text-xs font-medium transition-all"
-                style={{
-                  background: status ? bgMap[status] : (isWeekend ? '#F8FAFC' : isFuture ? 'white' : '#FAFAFA'),
-                  color: status ? colorMap[status] : (isWeekend ? '#94A3B8' : '#CBD5E1'),
-                  border: !status && !isWeekend && !isFuture ? '1px dashed #E2E8F0' : 'none',
-                  opacity: isFuture ? 0.4 : 1,
-                }}
-              >
+              <div key={d} style={{
+                aspectRatio: '1', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 13, fontWeight: status ? 700 : 500,
+                background: status ? bgMap[status] : (isWeekend ? '#F8FAFC' : isFuture ? 'white' : '#FAFAFA'),
+                color: status ? colorMap[status] : (isWeekend ? '#CBD5E1' : '#94A3B8'),
+                border: status ? `1.5px solid ${colorMap[status]}33` : `1px solid ${isWeekend ? 'transparent' : '#F1F5F9'}`,
+                opacity: isFuture ? 0.4 : 1,
+                transition: 'all 0.15s',
+              }}>
                 {d}
               </div>
             );
           })}
         </div>
-        <div className="flex justify-center gap-4 mt-4 pt-4 border-t" style={{ borderColor: '#F1F5F9' }}>
-          {[
-            { status: 'present', label: 'Present' },
-            { status: 'absent', label: 'Absent' },
-            { status: 'late', label: 'Late' },
-            { status: 'excused', label: 'Excused' },
-          ].map(s => (
-            <div key={s.status} className="flex items-center gap-1.5 text-xs text-gray-500">
-              <div className="w-3 h-3 rounded" style={{ background: colorMap[s.status] }} />
-              {s.label}
+
+        {/* Legend */}
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginTop: 24, paddingTop: 20, borderTop: '1px solid #F1F5F9', flexWrap: 'wrap' }}>
+          {['present','absent','late','excused'].map(s => (
+            <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <div style={{ width: 12, height: 12, borderRadius: 4, background: colorMap[s] }} />
+              <span style={{ fontSize: 12, color: '#64748B', fontWeight: 500, textTransform: 'capitalize' }}>{s}</span>
             </div>
           ))}
         </div>
-        {!loading && totalMarked === 0 && !studentId && (
-          <p className="text-center text-sm text-gray-400 mt-4">No student linked to your account yet.</p>
-        )}
-        {!loading && totalMarked === 0 && studentId && (
-          <p className="text-center text-sm text-gray-400 mt-4">No attendance records for {MONTHS[selectedMonth]}.</p>
+
+        {!loading && totalMarked === 0 && (
+          <p style={{ textAlign: 'center', color: '#94A3B8', fontSize: 13, marginTop: 20 }}>
+            {studentId ? `No attendance records for ${MONTHS_SHORT[selectedMonth]}.` : 'No student linked to your account yet.'}
+          </p>
         )}
       </div>
     </div>

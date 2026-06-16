@@ -130,7 +130,7 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
             </div>
           </div>
         </header>
-        <div style={{ padding: '32px', flex: 1 }}>{children}</div>
+        <div style={{ padding: '40px 48px', flex: 1, maxWidth: 1280 }}>{children}</div>
       </main>
     </div>
   );

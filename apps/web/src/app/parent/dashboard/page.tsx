@@ -5,6 +5,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { getParentDashboardStats } from '@school-erp/supabase/queries';
 
+const P = { fontFamily: "'Inter', sans-serif" };
+
 export default function ParentDashboard() {
   const supabase = createClient();
   const [stats, setStats] = useState({
@@ -24,107 +26,94 @@ export default function ParentDashboard() {
       setStats(data);
     }
     setLoading(false);
-  }, []); // supabase client is stable
+  }, []);
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
   const cards = [
-    { label: "Today's Status", value: stats.attendanceToday, icon: '✅', color: 'green', desc: 'Real-time attendance' },
-    { label: 'Monthly Avg', value: stats.monthlyAttendance, icon: '📊', color: 'blue', desc: 'This month so far' },
-    { label: 'Fee Pending', value: stats.pendingFees, icon: '💰', color: 'amber', desc: 'Total dues' },
-    { label: 'Upcoming Exams', value: stats.examsCount.toString(), icon: '📝', color: 'purple', desc: 'Published schedules' },
+    { label: "Today's Status", value: stats.attendanceToday, icon: '✅', grad: 'linear-gradient(135deg,#16A34A,#22C55E)', light: '#F0FDF4', border: '#BBF7D0', desc: 'Real-time attendance' },
+    { label: 'Monthly Avg', value: stats.monthlyAttendance, icon: '📊', grad: 'linear-gradient(135deg,#1D4ED8,#3B82F6)', light: '#EFF6FF', border: '#BFDBFE', desc: 'This month so far' },
+    { label: 'Fee Pending', value: stats.pendingFees, icon: '💰', grad: 'linear-gradient(135deg,#D97706,#F59E0B)', light: '#FFFBEB', border: '#FDE68A', desc: 'Total dues' },
+    { label: 'Upcoming Exams', value: stats.examsCount.toString(), icon: '📝', grad: 'linear-gradient(135deg,#7C3AED,#A855F7)', light: '#F5F3FF', border: '#DDD6FE', desc: 'Published schedules' },
   ];
 
-  const colorStyles: Record<string, string> = {
-    green: 'bg-green-50 text-green-600 border-green-100',
-    blue: 'bg-blue-50 text-blue-600 border-blue-100',
-    amber: 'bg-amber-50 text-amber-600 border-amber-100',
-    purple: 'bg-purple-50 text-purple-600 border-purple-100',
-  };
-
   const quickLinks = [
-    { href: '/parent/attendance', icon: '📅', label: 'View Attendance', desc: 'Calendar view', color: 'green' },
-    { href: '/parent/fees', icon: '💳', label: 'Pay Fees', desc: 'Online payment', color: 'amber' },
-    { href: '/parent/academics', icon: '📊', label: 'View Results', desc: 'Exam marks', color: 'purple' },
-    { href: '/parent/messages', icon: '💬', label: 'Message Teacher', desc: 'Chat now', color: 'blue' },
+    { href: '/parent/attendance', icon: '📅', label: 'View Attendance', desc: 'Monthly calendar view', grad: 'linear-gradient(135deg,#16A34A,#22C55E)' },
+    { href: '/parent/fees', icon: '💳', label: 'Fee Details', desc: 'View dues & history', grad: 'linear-gradient(135deg,#D97706,#F59E0B)' },
+    { href: '/parent/academics', icon: '📊', label: 'View Results', desc: 'Exam marks & grades', grad: 'linear-gradient(135deg,#7C3AED,#A855F7)' },
+    { href: '/parent/messages', icon: '💬', label: 'Message Teacher', desc: 'Send a message', grad: 'linear-gradient(135deg,#1D4ED8,#3B82F6)' },
   ];
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto">
+    <div style={{ ...P, display: 'flex', flexDirection: 'column', gap: 32 }}>
+
       {/* Welcome Banner */}
-      <div className="relative overflow-hidden rounded-3xl p-8 lg:p-10" style={{ background: 'linear-gradient(135deg, #2E1065 0%, #7C3AED 100%)' }}>
-        <div className="absolute top-0 right-0 w-64 h-64 rounded-full opacity-10" style={{ background: 'radial-gradient(circle, white 0%, transparent 70%)', transform: 'translate(30%, -30%)' }} />
-        <div className="absolute bottom-0 right-1/4 w-40 h-40 rounded-full opacity-10" style={{ background: 'radial-gradient(circle, white 0%, transparent 70%)', transform: 'translate(50%, 50%)' }} />
-        
-        <div className="relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 border border-white/20 mb-4 backdrop-blur-sm">
-              <span className="text-xs font-semibold text-purple-100 tracking-wide">Viewing Data For</span>
-            </div>
-            <h2 className="text-3xl lg:text-4xl font-extrabold text-white tracking-tight">
-              {loading ? <span className="inline-block w-48 h-10 bg-white/20 rounded animate-pulse" /> : stats.studentName} 🎓
-            </h2>
-            <p className="text-purple-100/90 text-sm font-medium mt-2 max-w-md">
-              Here is your child&apos;s progress and updates for today, {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.
-            </p>
-          </div>
-          
-          <div className="flex gap-3">
-            <button className="px-5 py-2.5 rounded-xl bg-white text-purple-700 text-sm font-bold shadow-lg hover:shadow-xl hover:scale-105 transition-all">Download Report Card</button>
-          </div>
+      <div style={{ position: 'relative', overflow: 'hidden', borderRadius: 24, padding: '40px 48px', background: 'linear-gradient(135deg, #2E1065 0%, #6D28D9 60%, #A855F7 100%)', boxShadow: '0 20px 60px rgba(109,40,217,0.3)' }}>
+        <div style={{ position: 'absolute', top: '-20%', right: '-5%', width: 320, height: 320, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', bottom: '-30%', left: '30%', width: 200, height: 200, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,255,255,0.07) 0%, transparent 70%)', pointerEvents: 'none' }} />
+        <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 999, padding: '4px 14px', width: 'fit-content', fontSize: 11, fontWeight: 700, color: '#E9D5FF', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
+            Viewing Data For
+          </span>
+          <h2 style={{ fontSize: 36, fontWeight: 900, color: 'white', letterSpacing: '-0.02em', margin: 0, lineHeight: 1.1 }}>
+            {loading ? <span style={{ display: 'inline-block', width: 200, height: 38, background: 'rgba(255,255,255,0.15)', borderRadius: 8 }} /> : <>{stats.studentName} 🎓</>}
+          </h2>
+          <p style={{ color: 'rgba(233,213,255,0.85)', fontSize: 14, fontWeight: 500, marginTop: 6 }}>
+            Here is your child's progress and updates for {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.
+          </p>
         </div>
       </div>
 
       {/* Metric Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 20 }}>
         {cards.map((card, i) => (
-          <div key={i} className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 hover:shadow-md hover:border-slate-300 transition-all relative overflow-hidden group">
-            <div className={`absolute -right-4 -top-4 w-24 h-24 rounded-full opacity-[0.03] transition-transform group-hover:scale-110 ${colorStyles[card.color].split(' ')[0]}`} />
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{card.label}</p>
-                <div className="mt-3 flex items-baseline gap-2">
-                  <h3 className="text-3xl font-black tracking-tight text-slate-800">
-                    {loading ? <span className="inline-block w-16 h-8 bg-slate-100 rounded animate-pulse" /> : card.value}
-                  </h3>
-                </div>
-                <p className="text-xs font-medium text-slate-500 mt-2">{card.desc}</p>
-              </div>
-              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-sm border ${colorStyles[card.color]}`}>
-                {card.icon}
-              </div>
+          <div key={i} style={{ background: 'white', borderRadius: 20, padding: '24px', boxShadow: '0 2px 16px rgba(0,0,0,0.06)', border: `1px solid ${card.border}`, transition: 'transform 0.2s, box-shadow 0.2s', cursor: 'default' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-3px)'; (e.currentTarget as HTMLDivElement).style.boxShadow = '0 8px 32px rgba(0,0,0,0.1)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLDivElement).style.boxShadow = '0 2px 16px rgba(0,0,0,0.06)'; }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>{card.label}</p>
+              <div style={{ width: 42, height: 42, borderRadius: 12, background: card.grad, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, boxShadow: '0 4px 12px rgba(0,0,0,0.12)' }}>{card.icon}</div>
             </div>
+            <p style={{ fontSize: 30, fontWeight: 900, color: '#0F172A', letterSpacing: '-0.02em', margin: '0 0 4px' }}>
+              {loading ? <span style={{ display: 'inline-block', width: 80, height: 30, background: '#F1F5F9', borderRadius: 6 }} /> : card.value}
+            </p>
+            <p style={{ fontSize: 12, color: '#94A3B8', fontWeight: 500, margin: 0 }}>{card.desc}</p>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      {/* Content Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 24 }}>
+
         {/* Recent Activity */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 lg:col-span-2">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-bold text-slate-800 tracking-tight">Recent Activity</h3>
-            <Link href="/parent/academics" className="text-sm font-semibold text-purple-600 hover:text-purple-700">View All →</Link>
+        <div style={{ background: 'white', borderRadius: 20, padding: '28px 32px', boxShadow: '0 2px 12px rgba(0,0,0,0.05)', border: '1px solid #E8ECF0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+            <div>
+              <h3 style={{ fontSize: 17, fontWeight: 800, color: '#0F172A', margin: 0, letterSpacing: '-0.01em' }}>Recent Activity</h3>
+              <p style={{ fontSize: 12, color: '#94A3B8', marginTop: 3 }}>Latest updates from school</p>
+            </div>
+            <Link href="/parent/academics" style={{ fontSize: 13, fontWeight: 700, color: '#7C3AED', textDecoration: 'none', padding: '6px 14px', background: '#F5F3FF', borderRadius: 8 }}>View All →</Link>
           </div>
-          
-          <div className="py-12 flex flex-col items-center justify-center text-center bg-slate-50 rounded-xl border border-slate-100 border-dashed">
-            <div className="w-16 h-16 rounded-full bg-white shadow-sm flex items-center justify-center text-2xl mb-4 border border-slate-100">📋</div>
-            <p className="text-slate-800 font-bold mb-1">No recent activity</p>
-            <p className="text-sm text-slate-500 max-w-sm">Announcements, assignments, attendance, and grade updates will appear here.</p>
+          <div style={{ padding: '48px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', background: '#FAFAFA', borderRadius: 14, border: '1.5px dashed #E2E8F0' }}>
+            <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'white', border: '1px solid #E2E8F0', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, marginBottom: 16 }}>📋</div>
+            <p style={{ fontWeight: 700, color: '#475569', fontSize: 15, margin: '0 0 6px' }}>No recent activity</p>
+            <p style={{ fontSize: 13, color: '#94A3B8', maxWidth: 300, lineHeight: 1.6, margin: 0 }}>Announcements, assignments, attendance, and grade updates will appear here.</p>
           </div>
         </div>
 
         {/* Quick Links */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-          <h3 className="text-lg font-bold text-slate-800 tracking-tight mb-6">Quick Links</h3>
-          <div className="space-y-3">
+        <div style={{ background: 'white', borderRadius: 20, padding: '28px', boxShadow: '0 2px 12px rgba(0,0,0,0.05)', border: '1px solid #E8ECF0' }}>
+          <h3 style={{ fontSize: 17, fontWeight: 800, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.01em' }}>Quick Links</h3>
+          <p style={{ fontSize: 12, color: '#94A3B8', margin: '0 0 20px' }}>Jump to any section</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {quickLinks.map((link, i) => (
-              <Link key={i} href={link.href} className="flex items-center gap-4 p-4 rounded-xl border border-slate-100 hover:border-slate-200 hover:shadow-sm transition-all group bg-slate-50/50 hover:bg-white">
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl shadow-sm border group-hover:scale-110 transition-transform ${colorStyles[link.color]}`}>
-                  {link.icon}
-                </div>
+              <Link key={i} href={link.href} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', borderRadius: 14, border: '1px solid #F1F5F9', background: '#FAFAFA', textDecoration: 'none', transition: 'all 0.15s' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLAnchorElement).style.background = 'white'; (e.currentTarget as HTMLAnchorElement).style.boxShadow = '0 4px 16px rgba(0,0,0,0.08)'; (e.currentTarget as HTMLAnchorElement).style.borderColor = '#E2E8F0'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.background = '#FAFAFA'; (e.currentTarget as HTMLAnchorElement).style.boxShadow = 'none'; (e.currentTarget as HTMLAnchorElement).style.borderColor = '#F1F5F9'; }}>
+                <div style={{ width: 44, height: 44, borderRadius: 12, background: link.grad, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0, boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }}>{link.icon}</div>
                 <div>
-                  <p className="font-bold text-slate-800 text-sm group-hover:text-purple-600 transition-colors">{link.label}</p>
-                  <p className="text-xs text-slate-500 font-medium mt-0.5">{link.desc}</p>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: '#1E293B', margin: 0 }}>{link.label}</p>
+                  <p style={{ fontSize: 11, color: '#94A3B8', fontWeight: 500, margin: '2px 0 0' }}>{link.desc}</p>
                 </div>
               </Link>
             ))}

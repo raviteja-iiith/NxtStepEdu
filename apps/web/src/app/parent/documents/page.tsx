@@ -87,72 +87,89 @@ export default function DocumentsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div><h2 className="text-2xl font-bold text-gray-900">Documents</h2><p className="text-gray-500 text-sm mt-1">Request and track school certificates</p></div>
+    <div style={{ fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column', gap: 32 }}>
+
+      {/* Page Header */}
+      <div style={{ paddingBottom: 24, borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+        <div>
+          <h2 style={{ fontSize: 28, fontWeight: 900, color: '#0F172A', letterSpacing: '-0.02em', margin: 0 }}>Documents</h2>
+          <p style={{ fontSize: 14, color: '#64748B', marginTop: 6 }}>Request and track official school certificates</p>
+        </div>
         <button onClick={() => { setShowRequest(true); setFormError(''); }}
-          className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white hover:shadow-lg" style={{ background: '#7C3AED' }}>
+          style={{ padding: '11px 22px', borderRadius: 12, border: 'none', background: 'linear-gradient(135deg,#7C3AED,#A855F7)', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 14px rgba(124,58,237,0.3)' }}>
           + Request Document
         </button>
       </div>
 
       {successMsg && (
-        <div className="p-4 rounded-xl text-sm" style={{ background: '#F0FDF4', color: '#16A34A' }}>{successMsg}
-          <button className="ml-2 underline" onClick={() => setSuccessMsg('')}>Dismiss</button>
+        <div style={{ padding: '14px 18px', borderRadius: 12, background: '#F0FDF4', color: '#16A34A', fontSize: 13, fontWeight: 600, border: '1px solid #BBF7D0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          ✓ {successMsg}
+          <button onClick={() => setSuccessMsg('')} style={{ background: 'none', border: 'none', color: '#16A34A', cursor: 'pointer', fontSize: 13, fontWeight: 700, textDecoration: 'underline' }}>Dismiss</button>
         </div>
       )}
 
-      {/* Available document types */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {DOC_TYPES.map(d => (
-          <div key={d.value} onClick={() => { setForm(f => ({ ...f, document_type: d.value })); setShowRequest(true); setFormError(''); }}
-            className="bg-white rounded-2xl border p-6 hover:shadow-lg transition-all cursor-pointer group" style={{ borderColor: '#E2E8F0' }}>
-            <p className="text-3xl mb-3">{d.icon}</p>
-            <h3 className="font-bold text-gray-900 group-hover:text-purple-700 transition-colors">{d.label}</h3>
-            <p className="text-sm text-gray-500 mt-1">{d.desc}</p>
-            <span className="mt-4 inline-block px-4 py-1.5 rounded-xl text-xs font-semibold text-white" style={{ background: '#7C3AED' }}>Request</span>
-          </div>
-        ))}
+      {/* Document Type Cards */}
+      <div>
+        <h3 style={{ fontSize: 15, fontWeight: 800, color: '#475569', margin: '0 0 16px', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: 12 }}>Available Documents</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+          {DOC_TYPES.map(d => (
+            <div key={d.value}
+              onClick={() => { setForm(f => ({ ...f, document_type: d.value })); setShowRequest(true); setFormError(''); }}
+              style={{ background: 'white', borderRadius: 18, padding: '24px', border: '1px solid #E8ECF0', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-3px)'; (e.currentTarget as HTMLDivElement).style.boxShadow = '0 10px 30px rgba(124,58,237,0.12)'; (e.currentTarget as HTMLDivElement).style.borderColor = '#DDD6FE'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLDivElement).style.boxShadow = '0 2px 8px rgba(0,0,0,0.04)'; (e.currentTarget as HTMLDivElement).style.borderColor = '#E8ECF0'; }}>
+              <p style={{ fontSize: 36, margin: '0 0 14px' }}>{d.icon}</p>
+              <h3 style={{ fontSize: 15, fontWeight: 800, color: '#0F172A', margin: '0 0 6px' }}>{d.label}</h3>
+              <p style={{ fontSize: 13, color: '#64748B', margin: '0 0 16px', lineHeight: 1.5 }}>{d.desc}</p>
+              <span style={{ display: 'inline-block', padding: '6px 14px', borderRadius: 8, background: 'linear-gradient(135deg,#7C3AED,#A855F7)', color: 'white', fontSize: 12, fontWeight: 700 }}>Request →</span>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Request History */}
-      <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E2E8F0' }}>
-        <div className="px-6 py-4 border-b" style={{ borderColor: '#F1F5F9' }}>
-          <h3 className="font-bold text-gray-800">My Requests</h3>
+      <div style={{ background: 'white', borderRadius: 20, border: '1px solid #E8ECF0', overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
+        <div style={{ padding: '18px 24px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
+          <h3 style={{ fontSize: 14, fontWeight: 800, color: '#475569', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>My Requests</h3>
         </div>
         {loading ? (
-          <div className="p-6 space-y-3">{[1,2].map(i => <div key={i} className="h-14 bg-gray-100 rounded-xl animate-pulse" />)}</div>
+          <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {[1,2].map(i => <div key={i} style={{ height: 52, background: '#F8FAFC', borderRadius: 10 }} />)}
+          </div>
         ) : requests.length === 0 ? (
-          <div className="p-12 text-center text-gray-400">
-            <p className="text-3xl mb-2">📂</p>
-            <p className="text-sm">No document requests yet. Submit your first request above.</p>
+          <div style={{ padding: '48px 24px', textAlign: 'center' }}>
+            <p style={{ fontSize: 32, margin: '0 0 10px' }}>📂</p>
+            <p style={{ fontSize: 14, fontWeight: 600, color: '#475569', margin: '0 0 4px' }}>No requests yet</p>
+            <p style={{ fontSize: 13, color: '#94A3B8', margin: 0 }}>Submit your first document request above.</p>
           </div>
         ) : (
-          <table className="w-full">
-            <thead><tr style={{ background: '#F8FAFC' }}>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Document</th>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Date</th>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Action</th>
-            </tr></thead>
-            <tbody className="divide-y" style={{ borderColor: '#F1F5F9' }}>
-              {requests.map(r => (
-                <tr key={r.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 text-sm font-semibold text-gray-900 capitalize">{r.document_type.replace(/_/g, ' ')}</td>
-                  <td className="px-6 py-4 text-sm text-gray-500">{new Date(r.created_at).toLocaleDateString('en-IN')}</td>
-                  <td className="px-6 py-4">
-                    <span className="text-xs font-medium px-2.5 py-1 rounded-full capitalize"
-                      style={STATUS_STYLE[r.status] || STATUS_STYLE.pending}>{r.status}</span>
-                    {r.rejection_reason && <p className="text-xs text-red-500 mt-1">{r.rejection_reason}</p>}
-                  </td>
-                  <td className="px-6 py-4">
-                    {r.download_url ? (
-                      <a href={r.download_url} target="_blank" rel="noreferrer"
-                        className="text-xs font-semibold text-purple-600 hover:underline">Download</a>
-                    ) : <span className="text-xs text-gray-400">—</span>}
-                  </td>
-                </tr>
-              ))}
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: '#F8FAFC' }}>
+                {['Document','Requested On','Status','Action'].map(h => (
+                  <th key={h} style={{ padding: '12px 20px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {requests.map((r, i) => {
+                const sty = STATUS_STYLE[r.status] || STATUS_STYLE.pending;
+                return (
+                  <tr key={r.id} style={{ borderTop: '1px solid #F8FAFC' }}>
+                    <td style={{ padding: '14px 20px', fontSize: 14, fontWeight: 700, color: '#0F172A', textTransform: 'capitalize' }}>{r.document_type.replace(/_/g, ' ')}</td>
+                    <td style={{ padding: '14px 20px', fontSize: 13, color: '#64748B' }}>{new Date(r.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                    <td style={{ padding: '14px 20px' }}>
+                      <span style={{ display: 'inline-block', padding: '4px 12px', borderRadius: 999, fontSize: 12, fontWeight: 700, textTransform: 'capitalize', ...sty }}>{r.status}</span>
+                      {r.rejection_reason && <p style={{ fontSize: 11, color: '#DC2626', margin: '4px 0 0' }}>{r.rejection_reason}</p>}
+                    </td>
+                    <td style={{ padding: '14px 20px' }}>
+                      {r.download_url
+                        ? <a href={r.download_url} target="_blank" rel="noreferrer" style={{ fontSize: 13, fontWeight: 700, color: '#7C3AED', textDecoration: 'none' }}>⬇ Download</a>
+                        : <span style={{ fontSize: 12, color: '#CBD5E1' }}>—</span>}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -160,33 +177,39 @@ export default function DocumentsPage() {
 
       {/* Request Modal */}
       {showRequest && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 animate-scale-in">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-bold text-gray-900">Request Document</h3>
-              <button onClick={() => setShowRequest(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(4px)' }}>
+          <div style={{ width: '100%', maxWidth: 460, background: 'white', borderRadius: 20, boxShadow: '0 24px 64px rgba(0,0,0,0.25)', overflow: 'hidden' }}>
+            <div style={{ padding: '22px 28px 18px', borderBottom: '1px solid #F1F5F9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg,#F5F3FF,#EDE9FE)' }}>
+              <div>
+                <p style={{ fontSize: 17, fontWeight: 800, color: '#0F172A', margin: 0 }}>📋 Request Document</p>
+                <p style={{ fontSize: 13, color: '#6D28D9', margin: '3px 0 0' }}>Fill in the details below</p>
+              </div>
+              <button onClick={() => setShowRequest(false)} style={{ width: 30, height: 30, borderRadius: '50%', border: '1px solid #DDD6FE', background: 'white', cursor: 'pointer', color: '#475569', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>✕</button>
             </div>
-            {formError && <div className="mb-4 p-3 rounded-lg text-sm" style={{ background: '#FEF2F2', color: '#DC2626' }}>{formError}</div>}
-            <div className="space-y-4">
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Document Type *</label>
+            <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {formError && <div style={{ padding: '10px 14px', borderRadius: 10, background: '#FEF2F2', color: '#DC2626', fontSize: 13, border: '1px solid #FECACA' }}>{formError}</div>}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: '#64748B', display: 'block', marginBottom: 7, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Document Type *</label>
                 <select value={form.document_type} onChange={e => setForm(f => ({ ...f, document_type: e.target.value }))}
-                  className="w-full px-4 py-2.5 border rounded-xl text-sm" style={{ borderColor: '#E2E8F0' }}>
+                  style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid #E2E8F0', fontSize: 14, color: '#0F172A', background: 'white', outline: 'none' }}>
                   {DOC_TYPES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
-                </select></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Reason / Purpose</label>
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: '#64748B', display: 'block', marginBottom: 7, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Reason / Purpose</label>
                 <textarea value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
-                  className="w-full px-4 py-2.5 border rounded-xl text-sm resize-none" rows={3}
-                  style={{ borderColor: '#E2E8F0' }} placeholder="Why do you need this document?" /></div>
-              <div className="p-3 rounded-lg text-xs text-blue-700" style={{ background: '#EFF6FF' }}>
+                  rows={3} placeholder="Why do you need this document?"
+                  style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid #E2E8F0', fontSize: 14, color: '#0F172A', resize: 'none', outline: 'none', boxSizing: 'border-box' }} />
+              </div>
+              <div style={{ padding: '12px 14px', borderRadius: 10, background: '#EFF6FF', color: '#1D4ED8', fontSize: 13, fontWeight: 600, border: '1px solid #BFDBFE' }}>
                 📋 Processing time: 3–5 working days. You'll see the status update here.
               </div>
             </div>
-            <div className="flex gap-3 pt-6">
-              <button onClick={() => setShowRequest(false)}
-                className="flex-1 py-2.5 rounded-xl text-sm font-medium border text-gray-700" style={{ borderColor: '#E2E8F0' }}>Cancel</button>
+            <div style={{ padding: '0 28px 24px', display: 'flex', gap: 10 }}>
+              <button onClick={() => setShowRequest(false)} style={{ flex: 1, padding: 12, borderRadius: 10, border: '1px solid #E2E8F0', background: 'white', fontSize: 13, fontWeight: 600, color: '#475569', cursor: 'pointer' }}>Cancel</button>
               <button onClick={handleSubmit} disabled={saving}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: '#7C3AED' }}>
-                {saving ? 'Submitting...' : 'Submit Request'}
+                style={{ flex: 1, padding: 12, borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#7C3AED,#A855F7)', color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                {saving ? '⏳ Submitting...' : '✓ Submit Request'}
               </button>
             </div>
           </div>
@@ -194,4 +217,3 @@ export default function DocumentsPage() {
       )}
     </div>
   );
-}

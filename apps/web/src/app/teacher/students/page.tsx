@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { getTeacherSections, getSectionStudents } from '@school-erp/supabase/queries';
 
@@ -9,6 +10,7 @@ interface Section { id: string; name: string; class_name: string; }
 
 export default function TeacherStudentsPage() {
   const supabase = createClient();
+  const router = useRouter();
   const [sections, setSections] = useState<Section[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [selectedSection, setSelectedSection] = useState('');
@@ -86,6 +88,7 @@ export default function TeacherStudentsPage() {
               <tr style={{ background: '#F8FAFC' }}>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Roll No.</th>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Student Name</th>
+                <th className="text-right px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y" style={{ borderColor: '#F1F5F9' }}>
@@ -99,6 +102,14 @@ export default function TeacherStudentsPage() {
                       </div>
                       <p className="text-sm font-semibold text-gray-900">{s.full_name}</p>
                     </div>
+                  </td>
+                  <td className="px-6 py-3 text-right">
+                    <button
+                      onClick={() => router.push(`/teacher/students/${s.id}/analysis`)}
+                      style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #DDD6FE', background: 'linear-gradient(135deg,#F5F3FF,#EDE9FE)', color: '#7C3AED', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      📊 Analysis
+                    </button>
                   </td>
                 </tr>
               ))}

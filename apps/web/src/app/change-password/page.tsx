@@ -12,6 +12,8 @@ export default function ChangePasswordPage() {
   const [role, setRole] = useState('');
   const [name, setName] = useState('');
 
+  const isParent = role === 'parent';
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }: { data: { user: { id: string } | null } }) => {
       if (!user) { window.location.href = '/login'; return; }
@@ -42,8 +44,15 @@ export default function ChangePasswordPage() {
     e.preventDefault();
     setError('');
 
-    if (newPassword !== confirmPassword) { setError("Passwords don't match."); return; }
-    if (newPassword.length < 8) { setError('Password must be at least 8 characters.'); return; }
+    if (isParent) {
+      // Parent PIN validation: exactly 6 digits
+      if (!/^\d{6}$/.test(newPassword)) { setError('PIN must be exactly 6 digits.'); return; }
+      if (newPassword !== confirmPassword) { setError("PINs don't match."); return; }
+    } else {
+      // Staff password validation: strong password
+      if (newPassword !== confirmPassword) { setError("Passwords don't match."); return; }
+      if (newPassword.length < 8) { setError('Password must be at least 8 characters.'); return; }
+    }
 
     setLoading(true);
     try {
@@ -52,9 +61,7 @@ export default function ChangePasswordPage() {
 
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        // Mark first login complete — wait for DB write before navigating
         await supabase.from('users').update({ is_first_login: false }).eq('id', user.id);
-        // Hard navigation so middleware sees updated is_first_login flag
         window.location.href = `/${role || 'teacher'}/dashboard`;
       }
     } catch {
@@ -62,6 +69,7 @@ export default function ChangePasswordPage() {
       setLoading(false);
     }
   };
+
 
   const roleColors: Record<string, string> = {
     principal: '#1E40AF',
@@ -97,10 +105,12 @@ export default function ChangePasswordPage() {
             fontSize: 32, background: `${accent}22`, border: `1px solid ${accent}44`,
           }}>🔐</div>
           <h1 style={{ color: '#F1F5F9', fontSize: 26, fontWeight: 700, margin: '0 0 8px' }}>
-            {name ? `Welcome, ${name.split(' ')[0]}!` : 'Set Your Password'}
+            {name ? `Welcome, ${name.split(' ')[0]}!` : (isParent ? 'Set Your PIN' : 'Set Your Password')}
           </h1>
           <p style={{ color: '#94A3B8', fontSize: 14, margin: 0 }}>
-            First login detected. Please set a secure password to continue.
+            {isParent
+              ? 'First login detected. Create a 6-digit PIN to secure your account.'
+              : 'First login detected. Please set a secure password to continue.'}
           </p>
         </div>
 
@@ -118,86 +128,104 @@ export default function ChangePasswordPage() {
           )}
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            {/* New Password */}
-            <div>
-              <label style={{ display: 'block', color: '#CBD5E1', fontSize: 13, fontWeight: 500, marginBottom: 8 }}>
-                New Password
-              </label>
-              <input
-                type="password"
-                value={newPassword}
-                onChange={e => setNewPassword(e.target.value)}
-                placeholder="Minimum 8 characters"
-                required
-                minLength={8}
-                style={{
-                  width: '100%', padding: '12px 16px', borderRadius: 12, fontSize: 14,
-                  background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(255,255,255,0.1)',
-                  color: '#F1F5F9', outline: 'none', boxSizing: 'border-box',
-                }}
-              />
-              {newPassword && (
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
-                    {[0,1,2,3].map(i => (
-                      <div key={i} style={{
-                        flex: 1, height: 4, borderRadius: 4,
-                        background: i < strength.score ? strength.color : 'rgba(255,255,255,0.1)',
-                        transition: 'background 0.3s',
-                      }} />
-                    ))}
-                  </div>
-                  <p style={{ color: strength.color, fontSize: 12, fontWeight: 600, margin: 0 }}>
-                    {strength.label}
-                  </p>
+
+            {isParent ? (
+              /* ── Parent PIN flow ─────────────────────────────── */
+              <>
+                <div style={{ padding: '12px 16px', borderRadius: 12, fontSize: 13, color: '#94A3B8',
+                  background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.2)' }}>
+                  📌 You will use this 6-digit PIN every time you log in as a parent.
                 </div>
-              )}
-            </div>
-
-            {/* Confirm Password */}
-            <div>
-              <label style={{ display: 'block', color: '#CBD5E1', fontSize: 13, fontWeight: 500, marginBottom: 8 }}>
-                Confirm Password
-              </label>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={e => setConfirmPassword(e.target.value)}
-                placeholder="Re-enter your password"
-                required
-                style={{
-                  width: '100%', padding: '12px 16px', borderRadius: 12, fontSize: 14,
-                  background: 'rgba(15,23,42,0.6)',
-                  border: `1px solid ${confirmPassword && newPassword !== confirmPassword ? '#DC2626' : 'rgba(255,255,255,0.1)'}`,
-                  color: '#F1F5F9', outline: 'none', boxSizing: 'border-box',
-                }}
-              />
-              {confirmPassword && newPassword !== confirmPassword && (
-                <p style={{ color: '#F87171', fontSize: 12, margin: '6px 0 0', fontWeight: 500 }}>
-                  Passwords don&apos;t match
-                </p>
-              )}
-            </div>
-
-            <div style={{
-              padding: '12px 16px', borderRadius: 12, fontSize: 12, color: '#64748B',
-              background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)',
-            }}>
-              <p style={{ margin: '0 0 4px', color: '#94A3B8', fontWeight: 600 }}>Password requirements:</p>
-              {[
-                { ok: newPassword.length >= 8, text: 'At least 8 characters' },
-                { ok: /[A-Z]/.test(newPassword), text: 'One uppercase letter' },
-                { ok: /[0-9]/.test(newPassword), text: 'One number' },
-              ].map((r, i) => (
-                <p key={i} style={{ margin: '2px 0', color: r.ok ? '#4ADE80' : '#64748B' }}>
-                  {r.ok ? '✓' : '○'} {r.text}
-                </p>
-              ))}
-            </div>
+                <div>
+                  <label style={{ display: 'block', color: '#CBD5E1', fontSize: 13, fontWeight: 500, marginBottom: 8 }}>New PIN</label>
+                  <input
+                    type="password" inputMode="numeric" pattern="\d{6}" maxLength={6}
+                    value={newPassword}
+                    onChange={e => setNewPassword(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="6-digit PIN"
+                    required
+                    style={{ width: '100%', padding: '12px 16px', borderRadius: 12, fontSize: 20, letterSpacing: 8,
+                      background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(255,255,255,0.1)',
+                      color: '#F1F5F9', outline: 'none', boxSizing: 'border-box', textAlign: 'center' }}
+                  />
+                  <p style={{ color: '#64748B', fontSize: 11, margin: '6px 0 0' }}>{newPassword.length}/6 digits entered</p>
+                </div>
+                <div>
+                  <label style={{ display: 'block', color: '#CBD5E1', fontSize: 13, fontWeight: 500, marginBottom: 8 }}>Confirm PIN</label>
+                  <input
+                    type="password" inputMode="numeric" pattern="\d{6}" maxLength={6}
+                    value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="Re-enter 6-digit PIN"
+                    required
+                    style={{ width: '100%', padding: '12px 16px', borderRadius: 12, fontSize: 20, letterSpacing: 8,
+                      background: 'rgba(15,23,42,0.6)',
+                      border: `1px solid ${confirmPassword && newPassword !== confirmPassword ? '#DC2626' : 'rgba(255,255,255,0.1)'}`,
+                      color: '#F1F5F9', outline: 'none', boxSizing: 'border-box', textAlign: 'center' }}
+                  />
+                  {confirmPassword && newPassword !== confirmPassword && (
+                    <p style={{ color: '#F87171', fontSize: 12, margin: '6px 0 0', fontWeight: 500 }}>PINs don&apos;t match</p>
+                  )}
+                </div>
+              </>
+            ) : (
+              /* ── Staff strong-password flow ──────────────────── */
+              <>
+                <div>
+                  <label style={{ display: 'block', color: '#CBD5E1', fontSize: 13, fontWeight: 500, marginBottom: 8 }}>New Password</label>
+                  <input
+                    type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)}
+                    placeholder="Minimum 8 characters" required minLength={8}
+                    style={{ width: '100%', padding: '12px 16px', borderRadius: 12, fontSize: 14,
+                      background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(255,255,255,0.1)',
+                      color: '#F1F5F9', outline: 'none', boxSizing: 'border-box' }}
+                  />
+                  {newPassword && (
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
+                        {[0,1,2,3].map(i => (
+                          <div key={i} style={{ flex: 1, height: 4, borderRadius: 4,
+                            background: i < strength.score ? strength.color : 'rgba(255,255,255,0.1)',
+                            transition: 'background 0.3s' }} />
+                        ))}
+                      </div>
+                      <p style={{ color: strength.color, fontSize: 12, fontWeight: 600, margin: 0 }}>{strength.label}</p>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label style={{ display: 'block', color: '#CBD5E1', fontSize: 13, fontWeight: 500, marginBottom: 8 }}>Confirm Password</label>
+                  <input
+                    type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
+                    placeholder="Re-enter your password" required
+                    style={{ width: '100%', padding: '12px 16px', borderRadius: 12, fontSize: 14,
+                      background: 'rgba(15,23,42,0.6)',
+                      border: `1px solid ${confirmPassword && newPassword !== confirmPassword ? '#DC2626' : 'rgba(255,255,255,0.1)'}`,
+                      color: '#F1F5F9', outline: 'none', boxSizing: 'border-box' }}
+                  />
+                  {confirmPassword && newPassword !== confirmPassword && (
+                    <p style={{ color: '#F87171', fontSize: 12, margin: '6px 0 0', fontWeight: 500 }}>Passwords don&apos;t match</p>
+                  )}
+                </div>
+                <div style={{ padding: '12px 16px', borderRadius: 12, fontSize: 12, color: '#64748B',
+                  background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <p style={{ margin: '0 0 4px', color: '#94A3B8', fontWeight: 600 }}>Password requirements:</p>
+                  {[
+                    { ok: newPassword.length >= 8, text: 'At least 8 characters' },
+                    { ok: /[A-Z]/.test(newPassword), text: 'One uppercase letter' },
+                    { ok: /[0-9]/.test(newPassword), text: 'One number' },
+                  ].map((r, i) => (
+                    <p key={i} style={{ margin: '2px 0', color: r.ok ? '#4ADE80' : '#64748B' }}>
+                      {r.ok ? '✓' : '○'} {r.text}
+                    </p>
+                  ))}
+                </div>
+              </>
+            )}
 
             <button
               type="submit"
-              disabled={loading || !newPassword || newPassword !== confirmPassword}
+              disabled={loading || !newPassword || newPassword !== confirmPassword || (isParent && newPassword.length !== 6)}
               style={{
                 padding: '14px', borderRadius: 12, border: 'none',
                 background: loading || !newPassword || newPassword !== confirmPassword
@@ -208,7 +236,7 @@ export default function ChangePasswordPage() {
                 transition: 'all 0.2s', letterSpacing: 0.3,
               }}
             >
-              {loading ? '⏳ Setting password...' : '🔐 Set New Password →'}
+              {loading ? '⏳ Setting...' : isParent ? '🔐 Set PIN →' : '🔐 Set New Password →'}
             </button>
           </form>
         </div>

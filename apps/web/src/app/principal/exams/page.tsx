@@ -41,15 +41,37 @@ export default function ExamsPage() {
   }, [supabase, filterType]);
 
   const fetchStructure = useCallback(async () => {
-    const { data: yr } = await supabase.from('academic_years').select('id').eq('is_current', true).maybeSingle();
-    if (!yr) return; // No current academic year configured yet
-    const { data: c } = await supabase.from('classes').select('id, name').eq('academic_year_id', yr.id).order('numeric_order');
-    if (c) setClasses(c);
-    const { data: sub } = await supabase.from('subjects').select('id, name, class_id').eq('academic_year_id', yr.id);
-    if (sub) setSubjects(sub);
-    const { data: sec } = await supabase.from('sections').select('id, name, class_id').eq('academic_year_id', yr.id);
-    if (sec) setSections(sec);
+    const userId = (await supabase.auth.getUser()).data.user?.id;
+    if (!userId) return;
+    const { data: u } = await supabase.from('users').select('school_id').eq('id', userId).single();
+    if (!u?.school_id) return;
+    const sid = u.school_id;
+
+    const { data: yr } = await supabase.from('academic_years').select('id').eq('is_current', true).eq('school_id', sid).maybeSingle();
+
+    if (yr?.id) {
+      // Prefer academic-year scoped data
+      const [{ data: c }, { data: sub }, { data: sec }] = await Promise.all([
+        supabase.from('classes').select('id, name').eq('academic_year_id', yr.id).order('numeric_order'),
+        supabase.from('subjects').select('id, name, class_id').eq('academic_year_id', yr.id),
+        supabase.from('sections').select('id, name, class_id').eq('academic_year_id', yr.id),
+      ]);
+      if (c) setClasses(c);
+      if (sub) setSubjects(sub);
+      if (sec) setSections(sec);
+    } else {
+      // Fallback: no academic year set — load by school_id directly
+      const [{ data: c }, { data: sub }, { data: sec }] = await Promise.all([
+        supabase.from('classes').select('id, name').eq('school_id', sid).order('numeric_order'),
+        supabase.from('subjects').select('id, name, class_id').eq('school_id', sid),
+        supabase.from('sections').select('id, name, class_id').eq('school_id', sid),
+      ]);
+      if (c) setClasses(c);
+      if (sub) setSubjects(sub);
+      if (sec) setSections(sec);
+    }
   }, [supabase]);
+
 
   useEffect(() => { fetchStructure(); }, [fetchStructure]);
   useEffect(() => { fetchExams(); }, [fetchExams]);

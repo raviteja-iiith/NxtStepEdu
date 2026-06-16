@@ -78,68 +78,88 @@ export default function CalendarPage() {
   const nextMonth = () => { if (month === 11) { setMonth(0); setYear(y => y + 1); } else setMonth(m => m + 1); };
 
   return (
-    <div className="space-y-6">
-      <div><h2 className="text-2xl font-bold text-gray-900">School Calendar</h2><p className="text-gray-500 text-sm mt-1">Exams, holidays, and school events</p></div>
-      <div className="bg-white rounded-2xl border p-6" style={{ borderColor: '#E2E8F0' }}>
-        <div className="flex items-center justify-between mb-4">
-          <button onClick={prevMonth} className="p-2 rounded-lg hover:bg-gray-100 text-lg">←</button>
-          <h3 className="font-bold text-gray-900">{MONTHS[month]} {year}</h3>
-          <button onClick={nextMonth} className="p-2 rounded-lg hover:bg-gray-100 text-lg">→</button>
-        </div>
-        {loading ? <div className="h-64 bg-gray-50 rounded-xl animate-pulse" /> : (
-          <div className="grid grid-cols-7 gap-1">
-            {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d =>
-              <div key={d} className="text-xs font-semibold text-gray-400 text-center py-2">{d}</div>)}
-            {Array.from({ length: firstDay }, (_, i) => <div key={`e-${i}`} />)}
-            {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(d => {
-              const evs = dayEvents[d] || [];
-              const isToday = d === today.getDate() && month === today.getMonth() && year === today.getFullYear();
-              const firstEv = evs[0];
-              return (
-                <div key={d} className="aspect-square rounded-lg p-1 flex flex-col items-center justify-center text-sm transition-all hover:shadow-md cursor-default"
-                  style={{ background: firstEv ? typeColors[firstEv.type]?.bg || '#F8FAFC' : isToday ? '#EFF6FF' : 'white', border: isToday ? '2px solid #1E40AF' : '1px solid #F1F5F9' }}
-                  title={evs.map(e => e.name).join(', ')}>
-                  <span className="font-medium" style={{ color: firstEv ? typeColors[firstEv.type]?.color || '#334155' : isToday ? '#1E40AF' : '#334155' }}>{d}</span>
-                  {firstEv && <span className="text-[7px] leading-tight text-center mt-0.5 line-clamp-1" style={{ color: typeColors[firstEv.type]?.color }}>{firstEv.name}</span>}
-                  {evs.length > 1 && <span className="text-[7px] text-gray-400">+{evs.length - 1}</span>}
-                </div>
-              );
-            })}
+    <div style={{ fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column', gap: 32 }}>
+
+      {/* Page Header */}
+      <div style={{ paddingBottom: 24, borderBottom: '1px solid #F1F5F9' }}>
+        <h2 style={{ fontSize: 28, fontWeight: 900, color: '#0F172A', letterSpacing: '-0.02em', margin: 0 }}>School Calendar</h2>
+        <p style={{ fontSize: 14, color: '#64748B', marginTop: 6 }}>Upcoming exams, holidays, and school events</p>
+      </div>
+
+      {/* Calendar Card */}
+      <div style={{ background: 'white', borderRadius: 20, padding: '28px 32px', border: '1px solid #E8ECF0', boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+          <button onClick={prevMonth} style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #E2E8F0', background: 'white', cursor: 'pointer', fontSize: 18, color: '#475569' }}>‹</button>
+          <div style={{ textAlign: 'center' }}>
+            <h3 style={{ fontSize: 20, fontWeight: 800, color: '#0F172A', margin: 0 }}>{MONTHS[month]}</h3>
+            <p style={{ fontSize: 13, color: '#94A3B8', fontWeight: 500, margin: '2px 0 0' }}>{year}</p>
           </div>
-        )}
-        <div className="flex justify-center gap-4 mt-4 pt-4 border-t" style={{ borderColor: '#F1F5F9' }}>
+          <button onClick={nextMonth} style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #E2E8F0', background: 'white', cursor: 'pointer', fontSize: 18, color: '#475569' }}>›</button>
+        </div>
+
+        {loading
+          ? <div style={{ height: 280, background: '#F8FAFC', borderRadius: 12 }} />
+          : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
+              {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
+                <div key={d} style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#94A3B8', padding: '6px 0', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{d}</div>
+              ))}
+              {Array.from({ length: firstDay }, (_, i) => <div key={`e-${i}`} />)}
+              {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(d => {
+                const evs = dayEvents[d] || [];
+                const isToday = d === today.getDate() && month === today.getMonth() && year === today.getFullYear();
+                const firstEv = evs[0];
+                return (
+                  <div key={d} title={evs.map(e => e.name).join(', ')}
+                    style={{ aspectRatio: '1', borderRadius: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'default',
+                      background: firstEv ? typeColors[firstEv.type]?.bg || '#F8FAFC' : isToday ? '#EFF6FF' : 'white',
+                      border: isToday ? '2px solid #1E40AF' : `1px solid ${firstEv ? typeColors[firstEv.type]?.color + '33' : '#F1F5F9'}`,
+                      boxShadow: firstEv ? '0 2px 6px rgba(0,0,0,0.06)' : 'none', transition: 'all 0.15s' }}>
+                    <span style={{ fontSize: 13, fontWeight: firstEv || isToday ? 800 : 500, color: firstEv ? typeColors[firstEv.type]?.color || '#334155' : isToday ? '#1E40AF' : '#64748B' }}>{d}</span>
+                    {firstEv && <span style={{ fontSize: 7, lineHeight: 1.2, textAlign: 'center', marginTop: 2, color: typeColors[firstEv.type]?.color, maxWidth: '90%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{firstEv.name}</span>}
+                    {evs.length > 1 && <span style={{ fontSize: 7, color: '#94A3B8' }}>+{evs.length - 1}</span>}
+                  </div>
+                );
+              })}
+            </div>
+          )
+        }
+
+        {/* Legend */}
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginTop: 24, paddingTop: 18, borderTop: '1px solid #F1F5F9' }}>
           {[{ type: 'exam', label: 'Exam' }, { type: 'holiday', label: 'Holiday' }, { type: 'event', label: 'Event' }].map(t => (
-            <div key={t.type} className="flex items-center gap-1.5 text-xs text-gray-500">
-              <div className="w-3 h-3 rounded" style={{ background: typeColors[t.type]?.color }} />{t.label}
+            <div key={t.type} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <div style={{ width: 10, height: 10, borderRadius: 4, background: typeColors[t.type]?.color }} />
+              <span style={{ fontSize: 12, color: '#64748B', fontWeight: 500 }}>{t.label}</span>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Event list for the month */}
+      {/* Event List */}
       {events.length > 0 && (
-        <div className="bg-white rounded-2xl border p-6 space-y-3" style={{ borderColor: '#E2E8F0' }}>
-          <h3 className="font-bold text-gray-800 mb-4">Events in {SHORT_MONTHS[month]} {year}</h3>
+        <div style={{ background: 'white', borderRadius: 20, padding: '24px 28px', border: '1px solid #E8ECF0', boxShadow: '0 2px 12px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <h3 style={{ fontSize: 15, fontWeight: 800, color: '#0F172A', margin: 0 }}>Events in {SHORT_MONTHS[month]} {year}</h3>
           {events.sort((a, b) => a.date.localeCompare(b.date)).map((ev, i) => (
-            <div key={i} className="flex items-center gap-4 p-3 rounded-xl" style={{ background: typeColors[ev.type]?.bg || '#F8FAFC' }}>
-              <div className="text-center w-10">
-                <p className="text-xs font-bold" style={{ color: typeColors[ev.type]?.color }}>{SHORT_MONTHS[month]}</p>
-                <p className="text-lg font-black" style={{ color: typeColors[ev.type]?.color }}>{parseInt(ev.date.split('-')[2])}</p>
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '14px 16px', borderRadius: 12, background: typeColors[ev.type]?.bg || '#F8FAFC', border: `1px solid ${typeColors[ev.type]?.color}22` }}>
+              <div style={{ textAlign: 'center', minWidth: 48, padding: '6px', background: 'white', borderRadius: 10, border: `1px solid ${typeColors[ev.type]?.color}33` }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: typeColors[ev.type]?.color, margin: 0 }}>{SHORT_MONTHS[month]}</p>
+                <p style={{ fontSize: 20, fontWeight: 900, color: typeColors[ev.type]?.color, margin: 0, lineHeight: 1 }}>{parseInt(ev.date.split('-')[2])}</p>
               </div>
               <div>
-                <p className="font-semibold text-gray-800 text-sm">{ev.name}</p>
-                <p className="text-xs capitalize" style={{ color: typeColors[ev.type]?.color }}>{ev.type}</p>
+                <p style={{ fontSize: 14, fontWeight: 700, color: '#0F172A', margin: 0 }}>{ev.name}</p>
+                <span style={{ display: 'inline-block', marginTop: 4, padding: '2px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: typeColors[ev.type]?.color, background: 'white', border: `1px solid ${typeColors[ev.type]?.color}44`, textTransform: 'capitalize' }}>{ev.type}</span>
               </div>
             </div>
           ))}
         </div>
       )}
       {!loading && events.length === 0 && (
-        <div className="bg-white rounded-2xl border p-8 text-center" style={{ borderColor: '#E2E8F0' }}>
-          <p className="text-3xl mb-2">📅</p>
-          <p className="text-gray-400 text-sm">No events scheduled for {MONTHS[month]}</p>
+        <div style={{ background: 'white', borderRadius: 20, padding: '56px 24px', textAlign: 'center', border: '1px solid #E8ECF0' }}>
+          <p style={{ fontSize: 36, margin: '0 0 12px' }}>📅</p>
+          <p style={{ fontSize: 15, fontWeight: 700, color: '#475569', margin: '0 0 4px' }}>No events scheduled</p>
+          <p style={{ fontSize: 13, color: '#94A3B8', margin: 0 }}>No events for {MONTHS[month]} {year}</p>
         </div>
       )}
     </div>
   );
-}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 
 interface Student { id:string; full_name:string; admission_number:string|null; date_of_birth:string|null; gender:string|null; blood_group:string|null; roll_number:number|null; is_active:boolean; admission_date:string|null; class_name?:string; section_name?:string; }
@@ -14,6 +15,7 @@ const modal: React.CSSProperties = { width:'100%', maxWidth:500, background:'whi
 
 export default function StudentsPage() {
   const supabase = createClient();
+  const router = useRouter();
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [sections, setSections] = useState<SectionItem[]>([]);
@@ -132,7 +134,7 @@ export default function StudentsPage() {
 
       {/* List */}
       <div style={{ background:'white', borderRadius:14, border:'1px solid #E8ECF0', overflow:'hidden', boxShadow:'0 1px 3px rgba(0,0,0,0.04)' }}>
-        <div style={{ display:'grid', gridTemplateColumns:'2fr 140px 1fr 80px 90px 120px', padding:'12px 20px', background:'#F8FAFC', borderBottom:'1px solid #F1F5F9' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'2fr 140px 1fr 80px 90px 180px', padding:'12px 20px', background:'#F8FAFC', borderBottom:'1px solid #F1F5F9' }}>
           {['Student','Admission No.','Class','Roll No.','Gender','Actions'].map((h,i)=>(
             <p key={h} style={{ fontSize:11, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', letterSpacing:'0.06em', margin:0, textAlign:i===5?'right':'left' }}>{h}</p>
           ))}
@@ -148,7 +150,7 @@ export default function StudentsPage() {
             <p style={{ fontSize:13, color:'#94A3B8', marginTop:6 }}>Click <strong>+ Admit Student</strong> to enroll the first student</p>
           </div>
         ) : searched.map((s,idx)=>(
-          <div key={s.id} onClick={()=>setShowProfile(s)} style={{ display:'grid', gridTemplateColumns:'2fr 140px 1fr 80px 90px 120px', padding:'14px 20px', borderBottom:idx<searched.length-1?'1px solid #F8FAFC':'none', alignItems:'center', cursor:'pointer' }}>
+          <div key={s.id} style={{ display:'grid', gridTemplateColumns:'2fr 140px 1fr 80px 90px 180px', padding:'14px 20px', borderBottom:idx<searched.length-1?'1px solid #F8FAFC':'none', alignItems:'center' }}>
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
               <div style={{ width:34, height:34, borderRadius:'50%', background:'linear-gradient(135deg, #1E3A8A, #60A5FA)', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:800, flexShrink:0 }}>
                 {s.full_name.charAt(0).toUpperCase()}
@@ -159,7 +161,8 @@ export default function StudentsPage() {
             <p style={{ fontSize:13, color:'#475569', margin:0 }}>{s.class_name} – {s.section_name}</p>
             <p style={{ fontSize:13, color:'#475569', margin:0 }}>{s.roll_number??'—'}</p>
             <span style={{ fontSize:11, fontWeight:600, padding:'3px 8px', borderRadius:6, background:s.gender?genderColors[s.gender]:'#F1F5F9', color:'#334155', textTransform:'capitalize' }}>{s.gender||'—'}</span>
-            <div style={{ display:'flex', gap:6, justifyContent:'flex-end' }} onClick={e=>e.stopPropagation()}>
+            <div style={{ display:'flex', gap:6, justifyContent:'flex-end' }}>
+              <button onClick={()=>router.push(`/principal/students/${s.id}/analysis`)} style={{ fontSize:12, fontWeight:700, padding:'6px 12px', borderRadius:8, border:'1px solid #DDD6FE', background:'linear-gradient(135deg,#F5F3FF,#EDE9FE)', color:'#7C3AED', cursor:'pointer' }}>📊 Analysis</button>
               <button onClick={()=>setShowProfile(s)} style={{ fontSize:12, fontWeight:600, padding:'6px 12px', borderRadius:8, border:'1px solid #DBEAFE', background:'#EFF6FF', color:'#1D4ED8', cursor:'pointer' }}>View</button>
               <button onClick={()=>toggleActive(s.id,s.is_active)} style={{ fontSize:12, fontWeight:600, padding:'6px 12px', borderRadius:8, border:'1px solid #FEE2E2', background:'#FEF2F2', color:'#DC2626', cursor:'pointer' }}>Remove</button>
             </div>
