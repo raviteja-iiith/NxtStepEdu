@@ -371,7 +371,7 @@ function ParentLayoutInner({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </header>
-        <div className="parent-main-content content-page" style={{ padding: isMobile ? '16px' : '40px 48px', flex: 1, maxWidth: 1280 }}>{children}</div>
+        <div className="parent-main-content content-page" style={{ padding: isMobile ? '16px' : '40px 48px', paddingBottom: isMobile ? 'calc(80px + env(safe-area-inset-bottom))' : '40px', flex: 1, maxWidth: 1280 }}>{children}</div>
       </main>
 
       {/* Bottom Tab Bar — mobile parent portal */}

@@ -226,53 +226,54 @@ export default function TeacherParentsPage() {
           style={{ borderColor: '#E2E8F0' }} />
       </div>
 
-      <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E2E8F0' }}>
+      <div className="bg-white rounded-2xl border" style={{ borderColor: '#E2E8F0' }}>
         {loading ? (
           <div className="p-8 space-y-3">{[1,2,3].map(i => <div key={i} className="skeleton h-14 rounded-lg" />)}</div>
         ) : (
-          <table className="w-full">
-            <thead><tr style={{ background: '#F8FAFC' }}>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Parent</th>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Phone (Login)</th>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Child</th>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
-              <th className="text-right px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Actions</th>
-            </tr></thead>
-            <tbody className="divide-y" style={{ borderColor: '#F1F5F9' }}>
+          <div className="flex flex-col">
+            {/* Header */}
+            <div className="hidden md:grid grid-cols-[2fr_110px_1.5fr_80px_120px] px-6 py-3 text-xs font-semibold text-gray-500 uppercase border-b" style={{ background: '#F8FAFC', borderColor: '#F1F5F9' }}>
+              <div>Parent</div>
+              <div>Phone (Login)</div>
+              <div>Child</div>
+              <div>Status</div>
+              <div className="text-right">Actions</div>
+            </div>
+
+            {/* Body */}
+            <div className="flex flex-col divide-y" style={{ borderColor: '#F1F5F9' }}>
               {filtered.length === 0 ? (
-                <tr><td colSpan={4} className="px-6 py-12 text-center text-gray-400">
+                <div className="px-6 py-12 text-center text-gray-400">
                   <p className="text-3xl mb-2">👨‍👩‍👧</p>
                   <p className="text-sm">No parents found for your sections.</p>
-                </td></tr>
+                </div>
               ) : filtered.map(p => (
-                <tr key={p.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold" style={{ background: '#F5F3FF', color: '#7C3AED' }}>{p.full_name.charAt(0)}</div>
-                      <p className="text-sm font-semibold text-gray-900">{p.full_name}</p>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 font-mono text-sm text-gray-600">{p.phone || '—'}</td>
-                  <td className="px-6 py-4 text-sm">
+                <div key={p.id} className="grid grid-cols-1 md:grid-cols-[2fr_110px_1.5fr_80px_120px] gap-3 md:gap-0 px-6 py-4 items-center hover:bg-gray-50">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: '#F5F3FF', color: '#7C3AED' }}>{p.full_name.charAt(0)}</div>
+                    <p className="text-sm font-semibold text-gray-900">{p.full_name}</p>
+                  </div>
+                  <div className="font-mono text-sm text-gray-600">{p.phone || '—'}</div>
+                  <div className="text-sm">
                     {p.student_name ? (
                       <span className="text-gray-700 font-medium">{p.student_name} {p.section_name && <span className="text-xs text-gray-400">(Sec {p.section_name})</span>}</span>
                     ) : (
                       <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ background: '#FFFBEB', color: '#D97706' }}>⚠️ Not linked</span>
                     )}
-                  </td>
-                  <td className="px-6 py-4"><span className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ background: p.is_active ? '#F0FDF4' : '#FEF2F2', color: p.is_active ? '#16A34A' : '#DC2626' }}>{p.is_active ? 'Active' : 'Inactive'}</span></td>
-                  <td className="px-6 py-4 text-right">
+                  </div>
+                  <div><span className="text-xs font-medium px-2.5 py-1 rounded-full w-fit" style={{ background: p.is_active ? '#F0FDF4' : '#FEF2F2', color: p.is_active ? '#16A34A' : '#DC2626' }}>{p.is_active ? 'Active' : 'Inactive'}</span></div>
+                  <div className="flex justify-start md:justify-end">
                     {!p.student_name && (
                       <button onClick={() => { setShowLinkModal({ parentId: p.id, parentName: p.full_name }); setLinkError(''); setLinkStudentId(''); setLinkRelationship('guardian'); }}
-                        className="text-xs font-semibold px-3 py-1.5 rounded-lg" style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #DBEAFE' }}>
+                        className="text-xs font-semibold px-3 py-1.5 rounded-lg w-fit" style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #DBEAFE' }}>
                         🔗 Link to Child
                       </button>
                     )}
-                  </td>
-                </tr>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          </div>
         )}
       </div>
 

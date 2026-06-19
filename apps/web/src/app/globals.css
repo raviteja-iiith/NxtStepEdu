@@ -1106,6 +1106,11 @@ body {
   grid-template-columns: 2fr 110px 1.2fr 100px 140px;
 }
 
+.parent-list-grid {
+  display: grid;
+  grid-template-columns: 2fr 140px 1.5fr 100px;
+}
+
 @media (max-width: 768px) {
   .dashboard-container {
     padding: 16px;
@@ -1163,6 +1168,16 @@ body {
   }
   
   .teacher-list-grid.header-row {
+    display: none;
+  }
+  
+  .parent-list-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  
+  .parent-list-grid.header-row {
     display: none;
   }
 }

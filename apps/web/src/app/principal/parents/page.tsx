@@ -68,8 +68,8 @@ export default function PrincipalParentsPage() {
       </div>
 
       {/* List */}
-      <div style={{ background:'white', borderRadius:14, border:'1px solid #E8ECF0', overflow:'hidden', boxShadow:'0 1px 3px rgba(0,0,0,0.04)' }}>
-        <div style={{ display:'grid', gridTemplateColumns:'2fr 140px 1.5fr 100px', padding:'12px 20px', background:'#F8FAFC', borderBottom:'1px solid #F1F5F9' }}>
+      <div className="list-table-container">
+        <div className="parent-list-grid header-row" style={{ padding:'12px 20px', background:'#F8FAFC', borderBottom:'1px solid #F1F5F9' }}>
           {['Parent','Phone','Child','Status'].map(h => (
             <p key={h} style={{ fontSize:11, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', letterSpacing:'0.06em', margin:0 }}>{h}</p>
           ))}
@@ -85,7 +85,7 @@ export default function PrincipalParentsPage() {
             <p style={{ fontSize:13, color:'#94A3B8', marginTop:6 }}>Parents are added when teacher accounts are created</p>
           </div>
         ) : filtered.map((p, idx) => (
-          <div key={p.id} style={{ display:'grid', gridTemplateColumns:'2fr 140px 1.5fr 100px', padding:'14px 20px', borderBottom:idx<filtered.length-1?'1px solid #F8FAFC':'none', alignItems:'center' }}>
+          <div key={p.id} className="parent-list-grid" style={{ padding:'14px 20px', borderBottom:idx<filtered.length-1?'1px solid #F8FAFC':'none', alignItems:'center' }}>
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
               <div style={{ width:36, height:36, borderRadius:'50%', background:'linear-gradient(135deg, #7C3AED, #A78BFA)', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:800, flexShrink:0 }}>
                 {p.full_name.charAt(0).toUpperCase()}
