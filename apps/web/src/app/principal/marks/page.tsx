@@ -127,9 +127,15 @@ export default function PrincipalMarksPage() {
 
   return (
     <div style={{ maxWidth:1100, margin:'0 auto', display:'flex', flexDirection:'column', gap:24 }}>
-      <div>
-        <h2 style={{ fontSize:22, fontWeight:800, color:'#0F172A', letterSpacing:'-0.02em', margin:0 }}>Marks &amp; Results</h2>
-        <p style={{ fontSize:13, color:'#94A3B8', marginTop:4 }}>View exam results for any class, section, and exam</p>
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
+        <div>
+          <h2 style={{ fontSize:22, fontWeight:800, color:'#0F172A', letterSpacing:'-0.02em', margin:0 }}>Marks &amp; Results</h2>
+          <p style={{ fontSize:13, color:'#94A3B8', marginTop:4 }}>View results · or enter marks for multi-subject exams</p>
+        </div>
+        <button onClick={() => router.push('/principal/marks/entry')}
+          style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 18px', background:'linear-gradient(135deg,#065F46,#059669)', color:'white', border:'none', borderRadius:10, fontSize:13, fontWeight:700, cursor:'pointer', boxShadow:'0 4px 12px rgba(5,150,105,0.3)', whiteSpace:'nowrap' }}>
+          📝 Enter Multi-Subject Marks
+        </button>
       </div>
 
       {/* Filters */}

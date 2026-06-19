@@ -1,182 +1,330 @@
 'use client';
-
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
-interface Exam { id: string; name: string; exam_type: string; exam_date: string; start_time: string | null; duration_minutes: number | null; total_marks: number; passing_marks: number | null; is_published: boolean; class_name?: string; subject_name?: string; }
-interface ClassItem { id: string; name: string; }
-interface Subject { id: string; name: string; class_id: string; }
-interface Section { id: string; name: string; class_id: string; }
+interface Exam { id:string; name:string; exam_type:string; exam_date:string; start_time:string|null; duration_minutes:number|null; total_marks:number; passing_marks:number|null; is_published:boolean; class_id:string; class_name?:string; subject_name?:string; subject_id:string; }
+interface ClassItem { id:string; name:string; }
+interface Subject { id:string; name:string; class_id:string; }
+interface Section { id:string; name:string; class_id:string; }
+interface MultiRow { subject_id:string; total_marks:string; passing_marks:string; }
 
 const EXAM_TYPES = [
-  { value: 'unit_test', label: 'Unit Test' }, { value: 'mid_term', label: 'Mid Term' },
-  { value: 'final', label: 'Final Exam' }, { value: 'practical', label: 'Practical' }, { value: 'internal', label: 'Internal' },
+  { value:'unit_test', label:'Unit Test' },{ value:'mid_term', label:'Mid Term' },
+  { value:'final', label:'Final Exam' },{ value:'practical', label:'Practical' },{ value:'internal', label:'Internal' },
 ];
+const IS:React.CSSProperties = { width:'100%', padding:'9px 13px', border:'1px solid #E2E8F0', borderRadius:9, fontSize:13, outline:'none', background:'white', boxSizing:'border-box', fontFamily:'inherit' };
+const LS:React.CSSProperties = { display:'block', fontSize:11, fontWeight:700, color:'#64748B', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 };
+const TYPE_MAP:Record<string,string> = { unit_test:'Unit Test', mid_term:'Mid Term', final:'Final Exam', practical:'Practical', internal:'Internal' };
+
+function groupExams(exams:Exam[]) {
+  const map = new Map<string,Exam[]>();
+  for (const e of exams) {
+    const key = `${e.name}§${e.exam_date}§${e.class_id}`;
+    if (!map.has(key)) map.set(key,[]);
+    map.get(key)!.push(e);
+  }
+  return Array.from(map.values());
+}
+
+const BLANK_FORM = { name:'', exam_type:'mid_term', class_id:'', section_id:'', exam_date:'', start_time:'', duration_minutes:'120', subject_id:'', total_marks:'100', passing_marks:'35' };
 
 export default function ExamsPage() {
   const supabase = createClient();
-  const [exams, setExams] = useState<Exam[]>([]);
-  const [classes, setClasses] = useState<ClassItem[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [sections, setSections] = useState<Section[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showAdd, setShowAdd] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState('');
-  const [filterType, setFilterType] = useState('');
-
-  const [form, setForm] = useState({ name: '', exam_type: 'unit_test', class_id: '', section_id: '', subject_id: '', exam_date: '', start_time: '', duration_minutes: '60', total_marks: '100', passing_marks: '35' });
+  const [exams,setExams]       = useState<Exam[]>([]);
+  const [classes,setClasses]   = useState<ClassItem[]>([]);
+  const [subjects,setSubjects] = useState<Subject[]>([]);
+  const [sections,setSections] = useState<Section[]>([]);
+  const [loading,setLoading]   = useState(true);
+  const [showAdd,setShowAdd]   = useState(false);
+  const [saving,setSaving]     = useState(false);
+  const [formError,setFormError] = useState('');
+  const [filterType,setFilterType] = useState('');
+  const [schoolId,setSchoolId] = useState('');
+  const [ayId,setAyId]         = useState('');
+  const [form,setForm]         = useState(BLANK_FORM);
+  const [isMulti,setIsMulti]   = useState(false);
+  const [multiRows,setMultiRows] = useState<MultiRow[]>([{ subject_id:'', total_marks:'100', passing_marks:'35' }]);
 
   const fetchExams = useCallback(async () => {
     setLoading(true);
-    const userId = (await supabase.auth.getUser()).data.user?.id;
-    if (!userId) { setLoading(false); return; }
-    const { data: userData } = await supabase.from('users').select('school_id').eq('id', userId).single();
-    if (!userData?.school_id) { setLoading(false); return; }
-    let q = supabase.from('exams').select('*, classes(name), subjects(name)').eq('school_id', userData.school_id).order('exam_date', { ascending: false });
-    if (filterType) q = q.eq('exam_type', filterType);
+    const uid = (await supabase.auth.getUser()).data.user?.id;
+    if (!uid) { setLoading(false); return; }
+    const { data:u } = await supabase.from('users').select('school_id').eq('id',uid).single();
+    if (!u?.school_id) { setLoading(false); return; }
+    setSchoolId(u.school_id);
+    let q = supabase.from('exams').select('*,classes(name),subjects(name)').eq('school_id',u.school_id).order('exam_date',{ascending:false});
+    if (filterType) q = q.eq('exam_type',filterType);
     const { data } = await q;
-    if (data) setExams(data.map((e: Record<string, unknown>) => ({ ...e, class_name: (e.classes as Record<string, string>)?.name, subject_name: (e.subjects as Record<string, string>)?.name })) as Exam[]);
+    if (data) setExams(data.map((e:any) => ({ ...e, class_name:e.classes?.name, subject_name:e.subjects?.name })));
     setLoading(false);
-  }, [supabase, filterType]);
+  }, [supabase,filterType]);
 
   const fetchStructure = useCallback(async () => {
-    const userId = (await supabase.auth.getUser()).data.user?.id;
-    if (!userId) return;
-    const { data: u } = await supabase.from('users').select('school_id').eq('id', userId).single();
+    const uid = (await supabase.auth.getUser()).data.user?.id;
+    if (!uid) return;
+    const { data:u } = await supabase.from('users').select('school_id').eq('id',uid).single();
     if (!u?.school_id) return;
-    const sid = u.school_id;
-
-    const { data: yr } = await supabase.from('academic_years').select('id').eq('is_current', true).eq('school_id', sid).maybeSingle();
-
-    if (yr?.id) {
-      // Prefer academic-year scoped data
-      const [{ data: c }, { data: sub }, { data: sec }] = await Promise.all([
-        supabase.from('classes').select('id, name').eq('academic_year_id', yr.id).order('numeric_order'),
-        supabase.from('subjects').select('id, name, class_id').eq('academic_year_id', yr.id),
-        supabase.from('sections').select('id, name, class_id').eq('academic_year_id', yr.id),
-      ]);
-      if (c) setClasses(c);
-      if (sub) setSubjects(sub);
-      if (sec) setSections(sec);
-    } else {
-      // Fallback: no academic year set — load by school_id directly
-      const [{ data: c }, { data: sub }, { data: sec }] = await Promise.all([
-        supabase.from('classes').select('id, name').eq('school_id', sid).order('numeric_order'),
-        supabase.from('subjects').select('id, name, class_id').eq('school_id', sid),
-        supabase.from('sections').select('id, name, class_id').eq('school_id', sid),
-      ]);
-      if (c) setClasses(c);
-      if (sub) setSubjects(sub);
-      if (sec) setSections(sec);
-    }
+    const { data:yr } = await supabase.from('academic_years').select('id').eq('is_current',true).eq('school_id',u.school_id).maybeSingle();
+    if (yr?.id) setAyId(yr.id);
+    const yid = yr?.id;
+    const [{ data:c },{ data:s },{ data:sec }] = await Promise.all([
+      yid ? supabase.from('classes').select('id,name').eq('academic_year_id',yid).order('numeric_order') : supabase.from('classes').select('id,name').eq('school_id',u.school_id).order('numeric_order'),
+      yid ? supabase.from('subjects').select('id,name,class_id').eq('academic_year_id',yid) : supabase.from('subjects').select('id,name,class_id').eq('school_id',u.school_id),
+      yid ? supabase.from('sections').select('id,name,class_id').eq('academic_year_id',yid) : supabase.from('sections').select('id,name,class_id').eq('school_id',u.school_id),
+    ]);
+    if (c) setClasses(c);
+    if (s) setSubjects(s);
+    if (sec) setSections(sec);
   }, [supabase]);
-
 
   useEffect(() => { fetchStructure(); }, [fetchStructure]);
   useEffect(() => { fetchExams(); }, [fetchExams]);
 
-  const filteredSubjects = subjects.filter(s => !form.class_id || s.class_id === form.class_id);
-  const filteredSections = sections.filter(s => !form.class_id || s.class_id === form.class_id);
+  const filtSubs = subjects.filter(s => !form.class_id || s.class_id === form.class_id);
+  const filtSecs = sections.filter(s => !form.class_id || s.class_id === form.class_id);
 
   const handleCreate = async () => {
-    if (!form.name || !form.class_id || !form.subject_id || !form.exam_date) { setFormError('Name, class, subject, and date are required'); return; }
+    if (!form.name || !form.class_id || !form.exam_date) { setFormError('Exam name, class, and date are required.'); return; }
+    const uid = (await supabase.auth.getUser()).data.user?.id;
+    const base = { name:form.name.trim(), exam_type:form.exam_type, class_id:form.class_id, section_id:form.section_id||null, exam_date:form.exam_date, start_time:form.start_time||null, duration_minutes:form.duration_minutes?parseInt(form.duration_minutes):null, academic_year_id:ayId||null, school_id:schoolId, created_by:uid, is_published:false };
     setSaving(true); setFormError('');
-    const { data: yr } = await supabase.from('academic_years').select('id').eq('is_current', true).maybeSingle();
-    const { data: userData } = await supabase.from('users').select('school_id').eq('id', (await supabase.auth.getUser()).data.user?.id || '').single();
-    const { error } = await supabase.from('exams').insert({
-      name: form.name, exam_type: form.exam_type, class_id: form.class_id, section_id: form.section_id || null,
-      subject_id: form.subject_id, exam_date: form.exam_date, start_time: form.start_time || null,
-      duration_minutes: form.duration_minutes ? parseInt(form.duration_minutes) : null,
-      total_marks: parseInt(form.total_marks), passing_marks: form.passing_marks ? parseInt(form.passing_marks) : null,
-      academic_year_id: yr?.id, school_id: userData?.school_id, created_by: (await supabase.auth.getUser()).data.user?.id,
-    });
-    if (error) { setFormError(error.message); setSaving(false); return; }
-    setShowAdd(false);
-    setForm({ name: '', exam_type: 'unit_test', class_id: '', section_id: '', subject_id: '', exam_date: '', start_time: '', duration_minutes: '60', total_marks: '100', passing_marks: '35' });
+    if (!isMulti) {
+      if (!form.subject_id) { setFormError('Select a subject.'); setSaving(false); return; }
+      const { error } = await supabase.from('exams').insert({ ...base, subject_id:form.subject_id, total_marks:parseInt(form.total_marks), passing_marks:form.passing_marks?parseInt(form.passing_marks):null });
+      if (error) { setFormError(error.message); setSaving(false); return; }
+    } else {
+      const valid = multiRows.filter(r => r.subject_id && parseInt(r.total_marks) > 0);
+      if (valid.length < 2) { setFormError('Add at least 2 subjects for a multi-subject exam.'); setSaving(false); return; }
+      const { error } = await supabase.from('exams').insert(valid.map(r => ({ ...base, subject_id:r.subject_id, total_marks:parseInt(r.total_marks), passing_marks:r.passing_marks?parseInt(r.passing_marks):null })));
+      if (error) { setFormError(error.message); setSaving(false); return; }
+    }
+    setShowAdd(false); setForm(BLANK_FORM); setIsMulti(false); setMultiRows([{ subject_id:'', total_marks:'100', passing_marks:'35' }]);
     fetchExams(); setSaving(false);
   };
 
-  const togglePublish = async (id: string, current: boolean) => {
-    await supabase.from('exams').update({ is_published: !current }).eq('id', id);
+  const togglePublishGroup = async (group:Exam[]) => {
+    const nv = !group[0].is_published;
+    await Promise.all(group.map(e => supabase.from('exams').update({ is_published:nv }).eq('id',e.id)));
     fetchExams();
   };
 
-  const inputCls = "w-full px-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
+  const groups = groupExams(exams);
 
+  const updateMultiRow = (i:number, field:keyof MultiRow, val:string) =>
+    setMultiRows(rows => rows.map((r,idx) => idx===i ? { ...r, [field]:val } : r));
+
+  // ─── JSX ────────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div><h2 className="text-2xl font-bold text-gray-900">Exam Management</h2><p className="text-gray-500 text-sm mt-1">Schedule exams, manage marks, and publish results</p></div>
-        <button onClick={() => { setShowAdd(true); setFormError(''); }} className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white hover:shadow-lg" style={{ background: '#1E40AF' }}>+ Create Exam</button>
+    <div style={{ maxWidth:1100, margin:'0 auto', display:'flex', flexDirection:'column', gap:24 }}>
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:16 }}>
+        <div>
+          <h2 style={{ fontSize:22, fontWeight:800, color:'#0F172A', letterSpacing:'-0.02em', margin:0 }}>Exam Management</h2>
+          <p style={{ fontSize:13, color:'#94A3B8', marginTop:4 }}>Schedule single or multi-subject exams</p>
+        </div>
+        <button onClick={() => { setShowAdd(true); setForm(BLANK_FORM); setIsMulti(false); setMultiRows([{ subject_id:'', total_marks:'100', passing_marks:'35' }]); setFormError(''); }}
+          style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 20px', background:'linear-gradient(135deg,#1E3A8A,#3B82F6)', color:'white', border:'none', borderRadius:10, fontSize:13, fontWeight:700, cursor:'pointer', boxShadow:'0 4px 12px rgba(59,130,246,0.3)', whiteSpace:'nowrap' }}>
+          <span style={{ fontSize:16 }}>+</span> Create Exam
+        </button>
       </div>
 
-      <div className="flex items-center gap-3">
-        <select value={filterType} onChange={e => setFilterType(e.target.value)} className="px-4 py-2.5 border rounded-xl text-sm" style={{ borderColor: '#E2E8F0' }}>
-          <option value="">All Types</option>{EXAM_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+      {/* Filter bar */}
+      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+        <select value={filterType} onChange={e => setFilterType(e.target.value)} style={{ ...IS, width:'auto', minWidth:140 }}>
+          <option value="">All Types</option>
+          {EXAM_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
         </select>
-        <span className="text-sm text-gray-500">{exams.length} exam{exams.length !== 1 ? 's' : ''}</span>
+        <span style={{ fontSize:13, color:'#94A3B8' }}>{groups.length} exam{groups.length!==1?'s':''}</span>
       </div>
 
-      <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E2E8F0' }}>
-        {loading ? <div className="p-8 space-y-3">{[1,2,3].map(i => <div key={i} className="skeleton h-14 rounded-lg" />)}</div> : (
-          <table className="w-full">
-            <thead><tr style={{ background: '#F8FAFC' }}>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Exam</th>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Type</th>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Class/Subject</th>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Date</th>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Marks</th>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
-              <th className="text-right px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Actions</th>
-            </tr></thead>
-            <tbody className="divide-y" style={{ borderColor: '#F1F5F9' }}>
-              {exams.length === 0 ? (
-                <tr><td colSpan={7} className="px-6 py-12 text-center text-gray-400"><p className="text-3xl mb-2">📝</p><p className="text-sm">No exams scheduled yet.</p></td></tr>
-              ) : exams.map(e => (
-                <tr key={e.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 text-sm font-semibold text-gray-900">{e.name}</td>
-                  <td className="px-6 py-4"><span className="text-xs font-medium px-2.5 py-1 rounded-full capitalize" style={{ background: '#F1F5F9' }}>{e.exam_type?.replace('_', ' ')}</span></td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{e.class_name} — {e.subject_name}</td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{new Date(e.exam_date).toLocaleDateString('en-IN')}</td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{e.total_marks} (Pass: {e.passing_marks || '—'})</td>
-                  <td className="px-6 py-4"><span className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ background: e.is_published ? '#F0FDF4' : '#FFFBEB', color: e.is_published ? '#16A34A' : '#D97706' }}>{e.is_published ? 'Published' : 'Draft'}</span></td>
-                  <td className="px-6 py-4 text-right">
-                    <button onClick={() => togglePublish(e.id, e.is_published)} className="text-xs hover:underline" style={{ color: e.is_published ? '#D97706' : '#16A34A' }}>{e.is_published ? 'Unpublish' : 'Publish'}</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {showAdd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
-          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl p-8 animate-scale-in max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6"><h3 className="text-xl font-bold text-gray-900">Schedule Exam</h3><button onClick={() => setShowAdd(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button></div>
-            {formError && <div className="mb-4 p-3 rounded-lg text-sm" style={{ background: '#FEF2F2', color: '#DC2626' }}>{formError}</div>}
-            <div className="space-y-4">
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Exam Name *</label><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder='e.g. "Unit Test 1 — Mathematics"' className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Exam Type *</label><select value={form.exam_type} onChange={e => setForm(f => ({ ...f, exam_type: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }}>{EXAM_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Class *</label><select value={form.class_id} onChange={e => setForm(f => ({ ...f, class_id: e.target.value, section_id: '', subject_id: '' }))} className={inputCls} style={{ borderColor: '#E2E8F0' }}><option value="">Select...</option>{classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Section</label><select value={form.section_id} onChange={e => setForm(f => ({ ...f, section_id: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }}><option value="">All sections</option>{filteredSections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-              </div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Subject *</label><select value={form.subject_id} onChange={e => setForm(f => ({ ...f, subject_id: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }}><option value="">Select...</option>{filteredSubjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Exam Date *</label><input type="date" value={form.exam_date} onChange={e => setForm(f => ({ ...f, exam_date: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label><input type="time" value={form.start_time} onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
-              </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Duration (min)</label><input type="number" value={form.duration_minutes} onChange={e => setForm(f => ({ ...f, duration_minutes: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Total Marks *</label><input type="number" value={form.total_marks} onChange={e => setForm(f => ({ ...f, total_marks: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Pass Marks</label><input type="number" value={form.passing_marks} onChange={e => setForm(f => ({ ...f, passing_marks: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
+      {/* List */}
+      <div style={{ background:'white', borderRadius:14, border:'1px solid #E8ECF0', overflow:'hidden', boxShadow:'0 1px 3px rgba(0,0,0,0.04)' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'2fr 100px 120px 110px 1fr 130px', padding:'11px 20px', background:'#F8FAFC', borderBottom:'1px solid #F1F5F9', gap:12 }}>
+          {['Exam','Type','Class','Date','Subjects & Marks','Actions'].map((h,i) => (
+            <p key={h} style={{ fontSize:11, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', letterSpacing:'0.06em', margin:0, textAlign:i===5?'right':'left' }}>{h}</p>
+          ))}
+        </div>
+        {loading ? (
+          <div style={{ padding:20, display:'flex', flexDirection:'column', gap:10 }}>{[1,2,3].map(i => <div key={i} style={{ height:52, background:'#F8FAFC', borderRadius:8 }}/>)}</div>
+        ) : groups.length === 0 ? (
+          <div style={{ padding:'60px 24px', textAlign:'center' }}>
+            <div style={{ fontSize:36, marginBottom:12 }}>📝</div>
+            <p style={{ fontWeight:700, color:'#1E293B', fontSize:15, margin:0 }}>No exams scheduled</p>
+            <p style={{ fontSize:13, color:'#94A3B8', marginTop:6 }}>Click <strong>+ Create Exam</strong> to get started</p>
+          </div>
+        ) : groups.map((group, idx) => {
+          const first = group[0];
+          const isGroup = group.length > 1;
+          const totalMarks = group.reduce((s,e) => s + e.total_marks, 0);
+          return (
+            <div key={idx} style={{ borderBottom:idx<groups.length-1?'1px solid #F1F5F9':'none' }}>
+              <div style={{ display:'grid', gridTemplateColumns:'2fr 100px 120px 110px 1fr 130px', padding:'14px 20px', alignItems:'flex-start', gap:12 }}>
+                {/* Name */}
+                <div>
+                  <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                    <p style={{ fontSize:13, fontWeight:700, color:'#0F172A', margin:0 }}>{first.name}</p>
+                    {isGroup && <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:99, background:'#EDE9FE', color:'#7C3AED' }}>{group.length} subjects</span>}
+                  </div>
+                  {first.start_time && <p style={{ fontSize:11, color:'#94A3B8', margin:'3px 0 0' }}>{first.start_time} · {first.duration_minutes}min</p>}
+                </div>
+                {/* Type */}
+                <span style={{ fontSize:11, fontWeight:600, padding:'3px 8px', borderRadius:6, background:'#F1F5F9', color:'#475569' }}>{TYPE_MAP[first.exam_type]??first.exam_type}</span>
+                {/* Class */}
+                <p style={{ fontSize:13, color:'#475569', margin:0 }}>{first.class_name}</p>
+                {/* Date */}
+                <p style={{ fontSize:13, color:'#475569', margin:0 }}>{new Date(first.exam_date).toLocaleDateString('en-IN',{ day:'numeric', month:'short', year:'numeric' })}</p>
+                {/* Subjects */}
+                <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+                  {group.map(e => (
+                    <div key={e.id} style={{ display:'flex', alignItems:'center', gap:8 }}>
+                      <span style={{ fontSize:12, color:'#0F172A', fontWeight:600 }}>{e.subject_name}</span>
+                      <span style={{ fontSize:11, color:'#94A3B8' }}>{e.total_marks}m · pass {e.passing_marks??Math.round(e.total_marks*0.35)}m</span>
+                    </div>
+                  ))}
+                  {isGroup && <p style={{ fontSize:11, fontWeight:700, color:'#64748B', margin:'2px 0 0' }}>Grand Total: {totalMarks} marks</p>}
+                </div>
+                {/* Actions */}
+                <div style={{ display:'flex', justifyContent:'flex-end', alignItems:'center', gap:6 }}>
+                  <span style={{ fontSize:11, fontWeight:600, padding:'3px 9px', borderRadius:99, background:first.is_published?'#DCFCE7':'#FFFBEB', color:first.is_published?'#15803D':'#D97706' }}>
+                    {first.is_published?'Published':'Draft'}
+                  </span>
+                  <button onClick={() => togglePublishGroup(group)}
+                    style={{ fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:7, border:'none', cursor:'pointer', background:first.is_published?'#FEE2E2':'#DCFCE7', color:first.is_published?'#DC2626':'#15803D' }}>
+                    {first.is_published?'Unpublish':'Publish'}
+                  </button>
+                </div>
               </div>
             </div>
-            <div className="flex gap-3 pt-6">
-              <button onClick={() => setShowAdd(false)} className="flex-1 py-2.5 rounded-xl text-sm font-medium border text-gray-700 hover:bg-gray-50" style={{ borderColor: '#E2E8F0' }}>Cancel</button>
-              <button onClick={handleCreate} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 hover:shadow-lg" style={{ background: '#1E40AF' }}>{saving ? 'Creating...' : 'Create Exam'}</button>
+          );
+        })}
+      </div>
+
+      {/* ── Create Modal ───────────────────────────────────────────────────────── */}
+      {showAdd && (
+        <div style={{ position:'fixed', inset:0, zIndex:50, display:'flex', alignItems:'center', justifyContent:'center', padding:16, background:'rgba(15,23,42,0.55)', backdropFilter:'blur(4px)' }}>
+          <div style={{ width:'100%', maxWidth:580, background:'white', borderRadius:18, boxShadow:'0 24px 64px rgba(0,0,0,0.2)', display:'flex', flexDirection:'column', maxHeight:'92vh' }}>
+            {/* Modal header */}
+            <div style={{ padding:'22px 26px 16px', borderBottom:'1px solid #F1F5F9', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
+              <div>
+                <h3 style={{ fontSize:17, fontWeight:800, color:'#0F172A', margin:0 }}>Schedule Exam</h3>
+                <p style={{ fontSize:12, color:'#94A3B8', marginTop:3 }}>Single or multi-subject exam</p>
+              </div>
+              <button onClick={() => setShowAdd(false)} style={{ width:32, height:32, borderRadius:'50%', border:'1px solid #E2E8F0', background:'white', cursor:'pointer', color:'#64748B', fontSize:16, display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
+            </div>
+
+            <div style={{ padding:'20px 26px', overflowY:'auto', flex:1, display:'flex', flexDirection:'column', gap:14 }}>
+              {formError && <div style={{ padding:'10px 14px', background:'#FEF2F2', border:'1px solid #FEE2E2', borderRadius:9, fontSize:13, color:'#DC2626' }}>{formError}</div>}
+
+              {/* Mode toggle */}
+              <div style={{ display:'flex', padding:4, background:'#F1F5F9', borderRadius:10, gap:4 }}>
+                {[{ v:false, l:'📚 Single Subject' },{ v:true, l:'📋 Multi-Subject' }].map(({ v,l }) => (
+                  <button key={String(v)} onClick={() => { setIsMulti(v); setFormError(''); }}
+                    style={{ flex:1, padding:'8px 14px', borderRadius:8, border:'none', fontSize:12, fontWeight:700, cursor:'pointer', background:isMulti===v?'white':'transparent', color:isMulti===v?'#1D4ED8':'#64748B', boxShadow:isMulti===v?'0 1px 4px rgba(0,0,0,0.1)':'none', transition:'all 0.15s' }}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+
+              {/* Exam name + type */}
+              <div>
+                <label style={LS}>Exam Name *</label>
+                <input value={form.name} onChange={e => setForm(f => ({ ...f, name:e.target.value }))} placeholder={isMulti?'"Mid Term 2026" or "Annual Exam"':'"Unit Test 1 — Mathematics"'} style={IS}/>
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                <div>
+                  <label style={LS}>Exam Type</label>
+                  <select value={form.exam_type} onChange={e => setForm(f => ({ ...f, exam_type:e.target.value }))} style={IS}>
+                    {EXAM_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={LS}>Exam Date *</label>
+                  <input type="date" value={form.exam_date} onChange={e => setForm(f => ({ ...f, exam_date:e.target.value }))} style={IS}/>
+                </div>
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12 }}>
+                <div>
+                  <label style={LS}>Class *</label>
+                  <select value={form.class_id} onChange={e => setForm(f => ({ ...f, class_id:e.target.value, section_id:'', subject_id:'' }))} style={IS}>
+                    <option value="">Select...</option>
+                    {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={LS}>Section</label>
+                  <select value={form.section_id} onChange={e => setForm(f => ({ ...f, section_id:e.target.value }))} style={IS}>
+                    <option value="">All sections</option>
+                    {filtSecs.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={LS}>Start Time</label>
+                  <input type="time" value={form.start_time} onChange={e => setForm(f => ({ ...f, start_time:e.target.value }))} style={IS}/>
+                </div>
+              </div>
+
+              {/* ── Single subject ── */}
+              {!isMulti && (
+                <div style={{ background:'#F8FAFC', border:'1px solid #E2E8F0', borderRadius:12, padding:'14px 16px', display:'flex', flexDirection:'column', gap:12 }}>
+                  <p style={{ fontSize:11, fontWeight:700, color:'#64748B', textTransform:'uppercase', letterSpacing:'0.06em', margin:0 }}>📚 Subject & Marks</p>
+                  <div>
+                    <label style={LS}>Subject *</label>
+                    <select value={form.subject_id} onChange={e => setForm(f => ({ ...f, subject_id:e.target.value }))} style={IS}>
+                      <option value="">Select subject...</option>
+                      {filtSubs.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12 }}>
+                    <div><label style={LS}>Duration (min)</label><input type="number" value={form.duration_minutes} onChange={e => setForm(f => ({ ...f, duration_minutes:e.target.value }))} style={IS}/></div>
+                    <div><label style={LS}>Total Marks *</label><input type="number" value={form.total_marks} onChange={e => setForm(f => ({ ...f, total_marks:e.target.value }))} style={IS}/></div>
+                    <div><label style={LS}>Pass Marks</label><input type="number" value={form.passing_marks} onChange={e => setForm(f => ({ ...f, passing_marks:e.target.value }))} style={IS}/></div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Multi subject ── */}
+              {isMulti && (
+                <div style={{ background:'#F8FAFC', border:'1px solid #E2E8F0', borderRadius:12, padding:'14px 16px', display:'flex', flexDirection:'column', gap:10 }}>
+                  <p style={{ fontSize:11, fontWeight:700, color:'#64748B', textTransform:'uppercase', letterSpacing:'0.06em', margin:'0 0 4px' }}>📋 Subjects & Marks (one row per subject)</p>
+                  {/* Column headers */}
+                  <div style={{ display:'grid', gridTemplateColumns:'2fr 100px 100px 36px', gap:8, paddingBottom:4, borderBottom:'1px solid #E2E8F0' }}>
+                    {['Subject','Total Marks','Pass Marks',''].map(h => (
+                      <p key={h} style={{ fontSize:10, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', letterSpacing:'0.05em', margin:0 }}>{h}</p>
+                    ))}
+                  </div>
+                  {multiRows.map((row,i) => (
+                    <div key={i} style={{ display:'grid', gridTemplateColumns:'2fr 100px 100px 36px', gap:8, alignItems:'center' }}>
+                      <select value={row.subject_id} onChange={e => updateMultiRow(i,'subject_id',e.target.value)} style={IS}>
+                        <option value="">Select subject...</option>
+                        {filtSubs.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                      <input type="number" value={row.total_marks} onChange={e => updateMultiRow(i,'total_marks',e.target.value)} style={IS} placeholder="100"/>
+                      <input type="number" value={row.passing_marks} onChange={e => updateMultiRow(i,'passing_marks',e.target.value)} style={IS} placeholder="35"/>
+                      <button onClick={() => setMultiRows(rows => rows.filter((_,idx) => idx!==i))} disabled={multiRows.length<=1}
+                        style={{ width:32, height:32, borderRadius:8, border:'1px solid #FEE2E2', background:'#FEF2F2', color:'#DC2626', cursor:multiRows.length<=1?'not-allowed':'pointer', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', opacity:multiRows.length<=1?0.4:1 }}>✕</button>
+                    </div>
+                  ))}
+                  <button onClick={() => setMultiRows(rows => [...rows, { subject_id:'', total_marks:'100', passing_marks:'35' }])}
+                    style={{ alignSelf:'flex-start', padding:'7px 14px', borderRadius:9, border:'1px dashed #BFDBFE', background:'#EFF6FF', color:'#1D4ED8', fontSize:12, fontWeight:700, cursor:'pointer' }}>
+                    + Add Subject
+                  </button>
+                  {multiRows.filter(r => parseInt(r.total_marks)>0).length > 0 && (
+                    <div style={{ padding:'8px 12px', background:'white', border:'1px solid #E2E8F0', borderRadius:8, display:'flex', justifyContent:'space-between' }}>
+                      <span style={{ fontSize:12, color:'#64748B' }}>Grand Total Marks</span>
+                      <span style={{ fontSize:13, fontWeight:800, color:'#0F172A' }}>{multiRows.reduce((s,r) => s+(parseInt(r.total_marks)||0),0)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding:'14px 26px', borderTop:'1px solid #F1F5F9', display:'flex', gap:10, flexShrink:0 }}>
+              <button onClick={() => setShowAdd(false)} style={{ flex:1, padding:11, borderRadius:10, border:'1px solid #E2E8F0', background:'white', fontSize:13, fontWeight:600, color:'#475569', cursor:'pointer' }}>Cancel</button>
+              <button onClick={handleCreate} disabled={saving}
+                style={{ flex:1, padding:11, borderRadius:10, border:'none', background:saving?'#93C5FD':'linear-gradient(135deg,#1E3A8A,#3B82F6)', color:'white', fontSize:13, fontWeight:700, cursor:saving?'not-allowed':'pointer' }}>
+                {saving?'Creating...':'Create Exam'}
+              </button>
             </div>
           </div>
         </div>

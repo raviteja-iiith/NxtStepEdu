@@ -70,6 +70,13 @@ export function ParentProvider({ children: reactChildren }: { children: ReactNod
 
   useEffect(() => { fetchChildren(); }, [fetchChildren]);
 
+  // Re-fetch when parent returns to the tab (e.g. after promotion updates student's class)
+  useEffect(() => {
+    const handler = () => { if (document.visibilityState === 'visible') fetchChildren(); };
+    document.addEventListener('visibilitychange', handler);
+    return () => document.removeEventListener('visibilitychange', handler);
+  }, [fetchChildren]);
+
   return (
     <ParentContext.Provider value={{ children, selectedChild, setSelectedChild, loading, parentName }}>
       {reactChildren}
