@@ -15,9 +15,22 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "School ERP - Modern School Management System",
-  description: "A comprehensive multi-tenant School ERP Management System for Indian K-12 schools. Manage students, teachers, attendance, fees, and more.",
+  title: "NxtStepEdu — School Management",
+  description: "A comprehensive multi-tenant School ERP for Indian K-12 schools.",
   keywords: ["school erp", "school management", "education", "attendance", "fee management"],
+  viewport: {
+    width: 'device-width',
+    initialScale: 1,
+    maximumScale: 1,
+    userScalable: false,
+  },
+  themeColor: '#1E3A8A',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'NxtStepEdu',
+  },
+  formatDetection: { telephone: false },
 };
 
 export default function RootLayout({

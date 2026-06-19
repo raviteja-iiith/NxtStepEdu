@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import ChangePasswordModal from '@/components/ChangePasswordModal';
 import NotificationBell from '@/components/NotificationBell';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 const navGroups = [
   { title: 'Overview', items: [
@@ -36,8 +37,10 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
   const router = useRouter();
   const supabase = createClient();
   const [collapsed, setCollapsed] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userName, setUserName] = useState('');
   const [showChangePwd, setShowChangePwd] = useState(false);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     async function load() {
@@ -53,11 +56,13 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
   const handleSignOut = async () => { await supabase.auth.signOut(); router.push('/login'); };
   const initials = userName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'T';
   const currentNav = allNavItems.find(n => pathname === n.href || pathname.startsWith(n.href + '/'));
+  useEffect(() => { setSidebarOpen(false); }, [pathname]);
 
   return (
     <div className="min-h-screen flex" style={{ background: '#F0F2F5' }}>
-      <aside className="fixed left-0 top-0 h-full z-40 flex flex-col transition-all duration-300"
-        style={{ width: collapsed ? '68px' : '256px', background: 'linear-gradient(180deg, #042F2E 0%, #0F4C47 100%)', boxShadow: '4px 0 24px rgba(0,0,0,0.15)' }}>
+      {isMobile && sidebarOpen && <div className="sidebar-overlay open" onClick={() => setSidebarOpen(false)} />}
+      <aside className={`portal-sidebar fixed left-0 top-0 h-full z-40 flex flex-col transition-all duration-300${isMobile ? (sidebarOpen ? ' open' : '') : ''}`}
+        style={{ width: isMobile ? '280px' : (collapsed ? '68px' : '256px'), background: 'linear-gradient(180deg, #042F2E 0%, #0F4C47 100%)', boxShadow: '4px 0 24px rgba(0,0,0,0.15)' }}>
         <div style={{ padding: collapsed ? '20px 14px' : '20px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)', minHeight: 72 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, overflow: 'hidden' }}>
             <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #0D9488, #14B8A6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(20,184,166,0.3)' }}>
@@ -106,26 +111,35 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col transition-all duration-300" style={{ marginLeft: collapsed ? '68px' : '256px', minHeight: '100vh' }}>
-        <header style={{ position: 'sticky', top: 0, zIndex: 30, background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(12px)', borderBottom: '1px solid #E2E8F0', boxShadow: '0 1px 0 rgba(0,0,0,0.05)' }}>
-          <div style={{ padding: '0 32px', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <h1 style={{ fontSize: 17, fontWeight: 700, color: '#0F172A', letterSpacing: '-0.01em' }}>{currentNav?.label || 'Dashboard'}</h1>
-              <p style={{ fontSize: 12, color: '#94A3B8', marginTop: 1, fontWeight: 500 }}>Teacher Portal</p>
+      <main className="portal-main flex-1 flex flex-col transition-all duration-300" style={{ marginLeft: isMobile ? 0 : (collapsed ? '68px' : '256px'), minHeight: '100vh' }}>
+        <header className="portal-topbar" style={{ position: 'sticky', top: 0, zIndex: 30, background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(12px)', borderBottom: '1px solid #E2E8F0', boxShadow: '0 1px 0 rgba(0,0,0,0.05)' }}>
+          <div style={{ padding: isMobile ? '0 12px' : '0 32px', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {isMobile && (
+                <button onClick={() => setSidebarOpen(o => !o)} style={{ width: 38, height: 38, borderRadius: 10, border: '1px solid #E2E8F0', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#374151', flexShrink: 0 }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
+              )}
+              <div>
+                <h1 style={{ fontSize: isMobile ? 15 : 17, fontWeight: 700, color: '#0F172A', letterSpacing: '-0.01em' }}>{currentNav?.label || 'Dashboard'}</h1>
+                {!isMobile && <p style={{ fontSize: 12, color: '#94A3B8', marginTop: 1, fontWeight: 500 }}>Teacher Portal</p>}
+              </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <NotificationBell accentColor="#0F766E" />
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, padding: '6px 14px 6px 8px' }}>
                 <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #042F2E, #0F766E)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'white', flexShrink: 0 }}>{initials}</div>
-                <div>
-                  <p style={{ fontSize: 13, fontWeight: 700, color: '#1E293B', lineHeight: 1.2 }}>{userName || 'Teacher'}</p>
-                  <p style={{ fontSize: 10, color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Teacher</p>
-                </div>
+                {!isMobile && (
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: '#1E293B', lineHeight: 1.2 }}>{userName || 'Teacher'}</p>
+                    <p style={{ fontSize: 10, color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Teacher</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </header>
-        <div style={{ padding: '32px', flex: 1 }}>{children}</div>
+        <div className="portal-main-content content-page" style={{ padding: isMobile ? '16px' : '32px', flex: 1 }}>{children}</div>
       </main>
       {showChangePwd && <ChangePasswordModal accentColor="#0F766E" onClose={() => setShowChangePwd(false)} />}
     </div>

@@ -826,3 +826,197 @@ body {
 .login-error { padding: 12px 16px; border-radius: 12px; font-size: 13px; font-weight: 500; background: rgba(239,68,68,0.1); color: #FCA5A5; border: 1px solid rgba(239,68,68,0.2); margin-bottom: 8px; }
 .login-forgot { text-align: center; font-size: 11px; color: rgba(255,255,255,0.25); margin-top: 8px; }
 
+/* ============================================================
+   MOBILE RESPONSIVE SYSTEM
+   All portals — Principal / Teacher / Parent / Admin
+   ============================================================ */
+
+/* Touch-friendly global tap targets */
+@media (max-width: 768px) {
+  button, a, [role="button"] { min-height: 44px; }
+  input, select, textarea { font-size: 16px !important; } /* prevent iOS zoom */
+}
+
+/* ── Sidebar overlay (mobile hamburger drawer) ── */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 39;
+  backdrop-filter: blur(2px);
+}
+@media (max-width: 768px) {
+  .sidebar-overlay.open { display: block; }
+}
+
+/* ── Mobile sidebar slide-in ── */
+@media (max-width: 768px) {
+  .portal-sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+    z-index: 40 !important;
+    width: 280px !important;
+  }
+  .portal-sidebar.open {
+    transform: translateX(0);
+  }
+  .portal-main {
+    margin-left: 0 !important;
+  }
+  .portal-main-content {
+    padding: 16px !important;
+  }
+}
+
+/* ── Responsive grid utilities ── */
+/* Use className="rg-2", "rg-3", "rg-4" on grid containers */
+.rg-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.rg-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.rg-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+
+@media (max-width: 768px) {
+  .rg-2 { grid-template-columns: 1fr !important; }
+  .rg-3 { grid-template-columns: 1fr 1fr !important; }
+  .rg-4 { grid-template-columns: 1fr 1fr !important; }
+}
+@media (max-width: 480px) {
+  .rg-2, .rg-3, .rg-4 { grid-template-columns: 1fr !important; }
+}
+
+/* ── Horizontal scroll table wrapper ── */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── Hide on mobile / desktop ── */
+.hide-mobile { display: block; }
+.show-mobile { display: none; }
+@media (max-width: 768px) {
+  .hide-mobile { display: none !important; }
+  .show-mobile { display: block !important; }
+  .show-mobile-flex { display: flex !important; }
+}
+
+/* ── Parent portal: Bottom Tab Bar ── */
+.bottom-tab-bar {
+  display: none;
+}
+@media (max-width: 768px) {
+  .bottom-tab-bar {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    background: white;
+    border-top: 1px solid #E2E8F0;
+    box-shadow: 0 -4px 16px rgba(0,0,0,0.08);
+    padding: 8px 0;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+  .bottom-tab-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 4px 0;
+    font-size: 10px;
+    font-weight: 600;
+    color: #94A3B8;
+    text-decoration: none;
+    transition: color 0.15s;
+    min-height: 52px;
+  }
+  .bottom-tab-item.active {
+    color: #7C3AED;
+  }
+  .bottom-tab-item svg {
+    width: 22px;
+    height: 22px;
+  }
+  /* push main content above tab bar */
+  .parent-main-content {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom)) !important;
+  }
+}
+
+/* ── Mobile topbar ── */
+@media (max-width: 768px) {
+  .portal-topbar {
+    padding: 0 16px !important;
+  }
+  .portal-topbar h1 {
+    font-size: 15px !important;
+  }
+  .portal-topbar p {
+    display: none;
+  }
+  .topbar-user-name { display: none; }
+}
+
+/* ── Responsive content padding ── */
+@media (max-width: 768px) {
+  .content-page {
+    padding: 16px !important;
+    max-width: 100% !important;
+  }
+}
+
+/* ── Mobile form stacking ── */
+@media (max-width: 768px) {
+  .form-row-2 {
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+  .form-row-2 > * {
+    width: 100% !important;
+  }
+}
+
+/* ── Capacitor / PWA safe areas ── */
+body {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* ── Mobile stat cards (2-col instead of 4-col) ── */
+@media (max-width: 768px) {
+  .stat-cards-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+}
+@media (max-width: 400px) {
+  .stat-cards-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ── Mobile summary cards wrap ── */
+@media (max-width: 640px) {
+  .summary-cards {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ── Mobile modal full-screen ── */
+@media (max-width: 640px) {
+  .modal-content {
+    border-radius: 16px 16px 0 0 !important;
+    max-height: 85vh !important;
+    margin-top: auto !important;
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+  }
+  .modal-overlay {
+    align-items: flex-end !important;
+    padding: 0 !important;
+  }
+}

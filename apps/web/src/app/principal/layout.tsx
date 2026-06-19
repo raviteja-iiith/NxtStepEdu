@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import ChangePasswordModal from '@/components/ChangePasswordModal';
 import NotificationBell from '@/components/NotificationBell';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 interface AcademicYear { id:string; name:string; is_current:boolean; }
 
@@ -59,12 +60,14 @@ export default function PrincipalLayout({ children }: { children: React.ReactNod
   const router = useRouter();
   const supabase = createClient();
   const [collapsed, setCollapsed] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [schoolName, setSchoolName] = useState('');
   const [userName, setUserName]   = useState('');
   const [years, setYears]         = useState<AcademicYear[]>([]);
   const [viewingYearId, setViewingYearId] = useState('');
   const [schoolId, setSchoolId]   = useState('');
   const [showChangePwd, setShowChangePwd] = useState(false);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     async function load() {
@@ -98,13 +101,21 @@ export default function PrincipalLayout({ children }: { children: React.ReactNod
   const viewingYear = years.find(y => y.id === viewingYearId);
   const isViewingPast = !!viewingYear && !!currentYear && viewingYear.id !== currentYear.id;
 
+  // Close sidebar on navigation (mobile)
+  useEffect(() => { setSidebarOpen(false); }, [pathname]);
+
   return (
     <div className="min-h-screen flex" style={{ background: '#F0F2F5' }}>
+      {/* Mobile overlay */}
+      {isMobile && sidebarOpen && (
+        <div className="sidebar-overlay open" onClick={() => setSidebarOpen(false)} />
+      )}
+
       {/* Sidebar */}
       <aside
-        className="fixed left-0 top-0 h-full z-40 flex flex-col transition-all duration-300"
+        className={`portal-sidebar fixed left-0 top-0 h-full z-40 flex flex-col transition-all duration-300${isMobile ? (sidebarOpen ? ' open' : '') : ''}`}
         style={{
-          width: collapsed ? '68px' : '256px',
+          width: isMobile ? '280px' : (collapsed ? '68px' : '256px'),
           background: 'linear-gradient(180deg, #0F172A 0%, #1E293B 100%)',
           boxShadow: '4px 0 24px rgba(0,0,0,0.15)',
         }}
@@ -181,17 +192,25 @@ export default function PrincipalLayout({ children }: { children: React.ReactNod
       </aside>
 
       {/* Main */}
-      <main className="flex-1 flex flex-col transition-all duration-300" style={{ marginLeft: collapsed ? '68px' : '256px', minHeight: '100vh' }}>
+      <main className="portal-main flex-1 flex flex-col transition-all duration-300" style={{ marginLeft: isMobile ? 0 : (collapsed ? '68px' : '256px'), minHeight: '100vh' }}>
         {/* Topbar */}
-        <header style={{ position: 'sticky', top: 0, zIndex: 30, background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(12px)', borderBottom: '1px solid #E2E8F0', boxShadow: '0 1px 0 rgba(0,0,0,0.05)' }}>
-          <div style={{ padding: '0 32px', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <h1 style={{ fontSize: 17, fontWeight: 700, color: '#0F172A', letterSpacing: '-0.01em' }}>{currentNav?.label || 'Dashboard'}</h1>
-              <p style={{ fontSize: 12, color: '#94A3B8', marginTop: 1, fontWeight: 500 }}>Principal Portal · {schoolName}</p>
+        <header className="portal-topbar" style={{ position: 'sticky', top: 0, zIndex: 30, background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(12px)', borderBottom: '1px solid #E2E8F0', boxShadow: '0 1px 0 rgba(0,0,0,0.05)' }}>
+          <div style={{ padding: isMobile ? '0 12px' : '0 32px', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {/* Hamburger — mobile only */}
+              {isMobile && (
+                <button onClick={() => setSidebarOpen(o => !o)} style={{ width: 38, height: 38, borderRadius: 10, border: '1px solid #E2E8F0', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#374151', flexShrink: 0 }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
+              )}
+              <div>
+                <h1 style={{ fontSize: isMobile ? 15 : 17, fontWeight: 700, color: '#0F172A', letterSpacing: '-0.01em' }}>{currentNav?.label || 'Dashboard'}</h1>
+                {!isMobile && <p style={{ fontSize: 12, color: '#94A3B8', marginTop: 1, fontWeight: 500 }}>Principal Portal · {schoolName}</p>}
+              </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              {/* Year Switcher */}
-              {years.length > 0 && (
+              {/* Year Switcher — hide on small mobile */}
+              {years.length > 0 && !isMobile && (
                 <div style={{ display:'flex', alignItems:'center', gap:6, background:isViewingPast?'#FFFBEB':'#F0FDF4', border:`1px solid ${isViewingPast?'#FDE68A':'#BBF7D0'}`, borderRadius:10, padding:'5px 10px 5px 8px' }}>
                   <span style={{ fontSize:13 }}>{isViewingPast ? '📂' : '📅'}</span>
                   <select value={viewingYearId} onChange={e => setViewingYearId(e.target.value)}
@@ -205,10 +224,12 @@ export default function PrincipalLayout({ children }: { children: React.ReactNod
               <NotificationBell accentColor="#1E3A8A" />
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, padding: '6px 14px 6px 8px' }}>
                 <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #1E3A8A, #3B82F6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'white', flexShrink: 0 }}>{initials}</div>
-                <div>
-                  <p style={{ fontSize: 13, fontWeight: 700, color: '#1E293B', lineHeight: 1.2 }}>{userName || 'Principal'}</p>
-                  <p style={{ fontSize: 10, color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Principal</p>
-                </div>
+                {!isMobile && (
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: '#1E293B', lineHeight: 1.2 }}>{userName || 'Principal'}</p>
+                    <p style={{ fontSize: 10, color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Principal</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -225,7 +246,7 @@ export default function PrincipalLayout({ children }: { children: React.ReactNod
           </div>
         )}
         {/* Content */}
-        <div style={{ padding: '32px', flex: 1 }}>{children}</div>
+        <div className="portal-main-content content-page" style={{ padding: isMobile ? '16px' : '32px', flex: 1 }}>{children}</div>
       </main>
       {showChangePwd && <ChangePasswordModal accentColor="#1E3A8A" onClose={() => setShowChangePwd(false)} />}
     </div>

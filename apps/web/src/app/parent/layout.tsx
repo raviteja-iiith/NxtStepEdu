@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client';
 import { ParentProvider, useParent } from '@/context/ParentContext';
 import ChangePasswordModal from '@/components/ChangePasswordModal';
 import NotificationBell from '@/components/NotificationBell';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 const navGroups = [
   { title: 'Overview', items: [
@@ -260,18 +261,35 @@ function ParentLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
-  const [collapsed, setCollapsed] = useState(false);
   const { selectedChild, parentName } = useParent();
   const [showChangePwd, setShowChangePwd] = useState(false);
+  const isMobile = useIsMobile();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => { setSidebarOpen(false); }, [pathname]);
 
   const handleSignOut = async () => { await supabase.auth.signOut(); router.push('/login'); };
   const initials = parentName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'P';
   const currentNav = allNavItems.find(n => pathname === n.href || pathname.startsWith(n.href + '/'));
 
+  const bottomTabs = [
+    { href: '/parent/dashboard', label: 'Home', icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg> },
+    { href: '/parent/fees', label: 'Fees', icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> },
+    { href: '/parent/attendance', label: 'Attend.', icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> },
+    { href: '/parent/academics', label: 'Marks', icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg> },
+    { href: '/parent/profile', label: 'Profile', icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> },
+  ];
+
   return (
     <div className="min-h-screen flex" style={{ background: '#F0F2F5' }}>
-      <aside className="fixed left-0 top-0 h-full z-40 flex flex-col transition-all duration-300"
-        style={{ width: collapsed ? '68px' : '256px', background: 'linear-gradient(180deg, #1E1035 0%, #2D1B69 100%)', boxShadow: '4px 0 24px rgba(0,0,0,0.15)' }}>
+      {/* Mobile sidebar overlay */}
+      {isMobile && sidebarOpen && <div className="sidebar-overlay open" onClick={() => setSidebarOpen(false)} />}
+
+      {/* Sidebar — hidden on mobile unless open */}
+      {(!isMobile || sidebarOpen) && (
+      <aside className={`portal-sidebar fixed left-0 top-0 h-full z-40 flex flex-col transition-all duration-300${isMobile ? ' open' : ''}`}
+        style={{ width: isMobile ? '280px' : (collapsed ? '68px' : '256px'), background: 'linear-gradient(180deg, #1E1035 0%, #2D1B69 100%)', boxShadow: '4px 0 24px rgba(0,0,0,0.15)' }}>
         <div style={{ padding: collapsed ? '20px 14px' : '20px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)', minHeight: 72 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, overflow: 'hidden' }}>
             <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #7C3AED, #A855F7)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(124,58,237,0.3)' }}>
@@ -322,30 +340,52 @@ function ParentLayoutInner({ children }: { children: React.ReactNode }) {
           </button>
         </div>
       </aside>
+      )}
 
-      <main className="flex-1 flex flex-col transition-all duration-300" style={{ marginLeft: collapsed ? '68px' : '256px', minHeight: '100vh' }}>
-        <header style={{ position: 'sticky', top: 0, zIndex: 30, background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(12px)', borderBottom: '1px solid #E2E8F0', boxShadow: '0 1px 0 rgba(0,0,0,0.05)' }}>
-          <div style={{ padding: '0 32px', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <h1 style={{ fontSize: 17, fontWeight: 700, color: '#0F172A', letterSpacing: '-0.01em' }}>{currentNav?.label || 'Home'}</h1>
-              <p style={{ fontSize: 12, color: '#94A3B8', marginTop: 1, fontWeight: 500 }}>
-                Parent Portal{selectedChild ? ` · ${selectedChild.student_name}` : ''}
-              </p>
+
+      <main className="portal-main flex-1 flex flex-col transition-all duration-300" style={{ marginLeft: isMobile ? 0 : (collapsed ? '68px' : '256px'), minHeight: '100vh' }}>
+        <header className="portal-topbar" style={{ position: 'sticky', top: 0, zIndex: 30, background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(12px)', borderBottom: '1px solid #E2E8F0', boxShadow: '0 1px 0 rgba(0,0,0,0.05)' }}>
+          <div style={{ padding: isMobile ? '0 12px' : '0 32px', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {isMobile && (
+                <button onClick={() => setSidebarOpen(o => !o)} style={{ width: 38, height: 38, borderRadius: 10, border: '1px solid #E2E8F0', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#374151', flexShrink: 0 }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
+              )}
+              <div>
+                <h1 style={{ fontSize: isMobile ? 15 : 17, fontWeight: 700, color: '#0F172A', letterSpacing: '-0.01em' }}>{currentNav?.label || 'Home'}</h1>
+                {!isMobile && <p style={{ fontSize: 12, color: '#94A3B8', marginTop: 1, fontWeight: 500 }}>Parent Portal{selectedChild ? ` · ${selectedChild.student_name}` : ''}</p>}
+              </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <NotificationBell accentColor="#7C3AED" />
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, padding: '6px 14px 6px 8px' }}>
                 <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #2E1065, #7C3AED)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'white', flexShrink: 0 }}>{initials}</div>
-                <div>
-                  <p style={{ fontSize: 13, fontWeight: 700, color: '#1E293B', lineHeight: 1.2 }}>{parentName || 'Parent'}</p>
-                  <p style={{ fontSize: 10, color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Parent</p>
-                </div>
+                {!isMobile && (
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: '#1E293B', lineHeight: 1.2 }}>{parentName || 'Parent'}</p>
+                    <p style={{ fontSize: 10, color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Parent</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </header>
-        <div style={{ padding: '40px 48px', flex: 1, maxWidth: 1280 }}>{children}</div>
+        <div className="parent-main-content content-page" style={{ padding: isMobile ? '16px' : '40px 48px', flex: 1, maxWidth: 1280 }}>{children}</div>
       </main>
+
+      {/* Bottom Tab Bar — mobile parent portal */}
+      <nav className="bottom-tab-bar">
+        {bottomTabs.map(tab => {
+          const isActive = pathname === tab.href || pathname.startsWith(tab.href + '/');
+          return (
+            <Link key={tab.href} href={tab.href} className={`bottom-tab-item${isActive ? ' active' : ''}`}>
+              {tab.icon}
+              <span>{tab.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
       {showChangePwd && <ChangePasswordModal accentColor="#7C3AED" onClose={() => setShowChangePwd(false)} />}
     </div>
   );
