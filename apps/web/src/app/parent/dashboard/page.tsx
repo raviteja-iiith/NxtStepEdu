@@ -3,46 +3,80 @@
 import Link from 'next/link';
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { getParentDashboardStats } from '@school-erp/supabase/queries';
+import { useParent } from '@/context/ParentContext';
 
 const P = { fontFamily: "'Inter', sans-serif" };
 
 export default function ParentDashboard() {
   const supabase = createClient();
+  const { selectedChild, loading: childLoading } = useParent();
+
   const [stats, setStats] = useState({
-    studentName: 'Student',
     attendanceToday: '—',
     monthlyAttendance: '—%',
     pendingFees: '₹0',
-    examsCount: 0
+    examsCount: 0,
   });
   const [loading, setLoading] = useState(true);
 
   const fetchStats = useCallback(async () => {
+    if (!selectedChild) return;
     setLoading(true);
-    const userId = (await supabase.auth.getUser()).data.user?.id;
-    if (userId) {
-      const data = await getParentDashboardStats(supabase, userId);
-      setStats(data);
-    }
-    setLoading(false);
-  }, []);
 
-  useEffect(() => { fetchStats(); }, [fetchStats]);
+    const today = new Date().toISOString().split('T')[0];
+    const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+    const { student_id, section_id } = selectedChild;
+
+    const [todayAtt, monthlyAtt, fees, examsRes] = await Promise.all([
+      supabase.from('attendance').select('status').eq('student_id', student_id).eq('date', today).maybeSingle(),
+      supabase.from('attendance').select('status').eq('student_id', student_id).gte('date', firstOfMonth).lte('date', today),
+      supabase.from('fees').select('amount, discount_amount').eq('student_id', student_id).in('status', ['pending', 'overdue']),
+      section_id
+        ? supabase.from('exams').select('*', { count: 'exact', head: true }).eq('section_id', section_id).eq('is_published', true).gte('exam_date', today)
+        : Promise.resolve({ count: 0 }),
+    ]);
+
+    let monthlyAttendance = '—%';
+    if (monthlyAtt.data && monthlyAtt.data.length > 0) {
+      const presentCount = monthlyAtt.data.filter((a: { status: string }) => a.status === 'present' || a.status === 'late').length;
+      monthlyAttendance = `${Math.round((presentCount / monthlyAtt.data.length) * 100)}%`;
+    }
+
+    const totalFees = fees.data ? fees.data.reduce((acc, f: any) => acc + Math.max(0, (f.amount || 0) - (f.discount_amount || 0)), 0) : 0;
+
+    setStats({
+      attendanceToday: todayAtt.data
+        ? (todayAtt.data.status === 'present' ? '✅ Present'
+          : todayAtt.data.status === 'absent' ? '❌ Absent'
+          : todayAtt.data.status === 'late' ? '🕐 Late' : '📋 Excused')
+        : '—',
+      monthlyAttendance,
+      pendingFees: `₹${totalFees.toLocaleString('en-IN')}`,
+      examsCount: (examsRes as any).count || 0,
+    });
+    setLoading(false);
+  }, [supabase, selectedChild]);
+
+  useEffect(() => {
+    if (!childLoading && selectedChild) fetchStats();
+    else if (!childLoading && !selectedChild) setLoading(false);
+  }, [fetchStats, selectedChild, childLoading]);
 
   const cards = [
-    { label: "Today's Status", value: stats.attendanceToday, icon: '✅', grad: 'linear-gradient(135deg,#16A34A,#22C55E)', light: '#F0FDF4', border: '#BBF7D0', desc: 'Real-time attendance' },
-    { label: 'Monthly Avg', value: stats.monthlyAttendance, icon: '📊', grad: 'linear-gradient(135deg,#1D4ED8,#3B82F6)', light: '#EFF6FF', border: '#BFDBFE', desc: 'This month so far' },
-    { label: 'Fee Pending', value: stats.pendingFees, icon: '💰', grad: 'linear-gradient(135deg,#D97706,#F59E0B)', light: '#FFFBEB', border: '#FDE68A', desc: 'Total dues' },
+    { label: "Today's Status",  value: stats.attendanceToday,    icon: '✅', grad: 'linear-gradient(135deg,#16A34A,#22C55E)', light: '#F0FDF4', border: '#BBF7D0', desc: 'Real-time attendance' },
+    { label: 'Monthly Avg',     value: stats.monthlyAttendance,  icon: '📊', grad: 'linear-gradient(135deg,#1D4ED8,#3B82F6)', light: '#EFF6FF', border: '#BFDBFE', desc: 'This month so far' },
+    { label: 'Fee Pending',     value: stats.pendingFees,        icon: '💰', grad: 'linear-gradient(135deg,#D97706,#F59E0B)', light: '#FFFBEB', border: '#FDE68A', desc: 'Total dues' },
     { label: 'Upcoming Exams', value: stats.examsCount.toString(), icon: '📝', grad: 'linear-gradient(135deg,#7C3AED,#A855F7)', light: '#F5F3FF', border: '#DDD6FE', desc: 'Published schedules' },
   ];
 
   const quickLinks = [
-    { href: '/parent/attendance', icon: '📅', label: 'View Attendance', desc: 'Monthly calendar view', grad: 'linear-gradient(135deg,#16A34A,#22C55E)' },
-    { href: '/parent/fees', icon: '💳', label: 'Fee Details', desc: 'View dues & history', grad: 'linear-gradient(135deg,#D97706,#F59E0B)' },
-    { href: '/parent/academics', icon: '📊', label: 'View Results', desc: 'Exam marks & grades', grad: 'linear-gradient(135deg,#7C3AED,#A855F7)' },
-    { href: '/parent/messages', icon: '💬', label: 'Message Teacher', desc: 'Send a message', grad: 'linear-gradient(135deg,#1D4ED8,#3B82F6)' },
+    { href: '/parent/attendance', icon: '📅', label: 'View Attendance', desc: 'Monthly calendar view',  grad: 'linear-gradient(135deg,#16A34A,#22C55E)' },
+    { href: '/parent/fees',       icon: '💳', label: 'Fee Details',     desc: 'View dues & history',   grad: 'linear-gradient(135deg,#D97706,#F59E0B)' },
+    { href: '/parent/academics',  icon: '📊', label: 'View Results',    desc: 'Exam marks & grades',   grad: 'linear-gradient(135deg,#7C3AED,#A855F7)' },
+    { href: '/parent/messages',   icon: '💬', label: 'Message Teacher', desc: 'Send a message',        grad: 'linear-gradient(135deg,#1D4ED8,#3B82F6)' },
   ];
+
+  const isLoading = loading || childLoading;
 
   return (
     <div style={{ ...P, display: 'flex', flexDirection: 'column', gap: 32 }}>
@@ -56,10 +90,18 @@ export default function ParentDashboard() {
             Viewing Data For
           </span>
           <h2 style={{ fontSize: 36, fontWeight: 900, color: 'white', letterSpacing: '-0.02em', margin: 0, lineHeight: 1.1 }}>
-            {loading ? <span style={{ display: 'inline-block', width: 200, height: 38, background: 'rgba(255,255,255,0.15)', borderRadius: 8 }} /> : <>{stats.studentName} 🎓</>}
+            {isLoading
+              ? <span style={{ display: 'inline-block', width: 200, height: 38, background: 'rgba(255,255,255,0.15)', borderRadius: 8 }} />
+              : <>{selectedChild?.student_name || 'No Child Linked'} 🎓</>
+            }
           </h2>
-          <p style={{ color: 'rgba(233,213,255,0.85)', fontSize: 14, fontWeight: 500, marginTop: 6 }}>
-            Here is your child's progress and updates for {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.
+          {selectedChild && (
+            <p style={{ color: 'rgba(233,213,255,0.7)', fontSize: 13, fontWeight: 500, marginTop: 2 }}>
+              Class {selectedChild.class_name} · Section {selectedChild.section_name}
+            </p>
+          )}
+          <p style={{ color: 'rgba(233,213,255,0.85)', fontSize: 14, fontWeight: 500, marginTop: 4 }}>
+            Here is your child&apos;s progress and updates for {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.
           </p>
         </div>
       </div>
@@ -75,7 +117,7 @@ export default function ParentDashboard() {
               <div style={{ width: 42, height: 42, borderRadius: 12, background: card.grad, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, boxShadow: '0 4px 12px rgba(0,0,0,0.12)' }}>{card.icon}</div>
             </div>
             <p style={{ fontSize: 30, fontWeight: 900, color: '#0F172A', letterSpacing: '-0.02em', margin: '0 0 4px' }}>
-              {loading ? <span style={{ display: 'inline-block', width: 80, height: 30, background: '#F1F5F9', borderRadius: 6 }} /> : card.value}
+              {isLoading ? <span style={{ display: 'inline-block', width: 80, height: 30, background: '#F1F5F9', borderRadius: 6 }} /> : card.value}
             </p>
             <p style={{ fontSize: 12, color: '#94A3B8', fontWeight: 500, margin: 0 }}>{card.desc}</p>
           </div>

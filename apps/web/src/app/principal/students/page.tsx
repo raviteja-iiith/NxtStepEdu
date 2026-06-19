@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 
-interface Student { id:string; full_name:string; admission_number:string|null; date_of_birth:string|null; gender:string|null; blood_group:string|null; roll_number:number|null; is_active:boolean; admission_date:string|null; class_name?:string; section_name?:string; }
+interface Student { id:string; full_name:string; admission_number:string|null; date_of_birth:string|null; gender:string|null; blood_group:string|null; roll_number:number|null; is_active:boolean; admission_date:string|null; class_name?:string; section_name?:string; class_id:string; section_id:string; }
 interface ClassItem { id:string; name:string; }
 interface SectionItem { id:string; name:string; class_id:string; }
 
@@ -25,6 +25,11 @@ export default function StudentsPage() {
   const [filterSection, setFilterSection] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [showProfile, setShowProfile] = useState<Student|null>(null);
+  const [showEdit, setShowEdit] = useState<Student|null>(null);
+  const [editForm, setEditForm] = useState({ full_name:'', class_id:'', section_id:'', reason:'' });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
+  const [editSuccess, setEditSuccess] = useState('');
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
   const [form, setForm] = useState({ full_name:'', date_of_birth:'', gender:'', blood_group:'', class_id:'', section_id:'', roll_number:'', address:'', admission_number:'', admission_date:new Date().toISOString().split('T')[0] });
@@ -88,6 +93,26 @@ export default function StudentsPage() {
   };
 
   const toggleActive=async(id:string,current:boolean)=>{ await supabase.from('students').update({is_active:!current}).eq('id',id); fetchStudents(); };
+
+  const openEdit=(s:Student)=>{ setShowEdit(s); setEditForm({ full_name:s.full_name, class_id:s.class_id, section_id:s.section_id, reason:'' }); setEditError(''); setEditSuccess(''); };
+
+  const handleEdit=async()=>{
+    if (!showEdit) return;
+    if (!editForm.full_name.trim()) { setEditError('Name cannot be empty.'); return; }
+    const classChanged=editForm.class_id!==showEdit.class_id||editForm.section_id!==showEdit.section_id;
+    if (classChanged && !editForm.reason.trim()) { setEditError('Please provide a reason for the class/section change.'); return; }
+    setEditSaving(true); setEditError('');
+    const updates: Record<string,any> = { full_name: editForm.full_name.trim() };
+    if (classChanged) { updates.class_id=editForm.class_id; updates.section_id=editForm.section_id; }
+    const { error } = await supabase.from('students').update(updates).eq('id', showEdit.id);
+    if (error) { setEditError(`Save failed: ${error.message}`); setEditSaving(false); return; }
+    setEditSuccess('Student record updated successfully!');
+    setEditSaving(false);
+    fetchStudents();
+    setTimeout(()=>{ setShowEdit(null); }, 1200);
+  };
+
+  const editFilteredSections=sections.filter(s=>!editForm.class_id||s.class_id===editForm.class_id);
   const searched=students.filter(s=>s.full_name.toLowerCase().includes(search.toLowerCase())||(s.admission_number||'').toLowerCase().includes(search.toLowerCase()));
   const genderColors: Record<string,string> = { male:'#EFF6FF', female:'#FDF2F8', other:'#F5F3FF' };
 
@@ -163,6 +188,7 @@ export default function StudentsPage() {
             <span style={{ fontSize:11, fontWeight:600, padding:'3px 8px', borderRadius:6, background:s.gender?genderColors[s.gender]:'#F1F5F9', color:'#334155', textTransform:'capitalize' }}>{s.gender||'—'}</span>
             <div style={{ display:'flex', gap:6, justifyContent:'flex-end' }}>
               <button onClick={()=>router.push(`/principal/students/${s.id}/analysis`)} style={{ fontSize:12, fontWeight:700, padding:'6px 12px', borderRadius:8, border:'1px solid #DDD6FE', background:'linear-gradient(135deg,#F5F3FF,#EDE9FE)', color:'#7C3AED', cursor:'pointer' }}>📊 Analysis</button>
+              <button onClick={()=>openEdit(s)} style={{ fontSize:12, fontWeight:700, padding:'6px 12px', borderRadius:8, border:'1px solid #D1FAE5', background:'linear-gradient(135deg,#ECFDF5,#D1FAE5)', color:'#065F46', cursor:'pointer' }}>✏️ Edit</button>
               <button onClick={()=>setShowProfile(s)} style={{ fontSize:12, fontWeight:600, padding:'6px 12px', borderRadius:8, border:'1px solid #DBEAFE', background:'#EFF6FF', color:'#1D4ED8', cursor:'pointer' }}>View</button>
               <button onClick={()=>toggleActive(s.id,s.is_active)} style={{ fontSize:12, fontWeight:600, padding:'6px 12px', borderRadius:8, border:'1px solid #FEE2E2', background:'#FEF2F2', color:'#DC2626', cursor:'pointer' }}>Remove</button>
             </div>
@@ -240,6 +266,79 @@ export default function StudentsPage() {
             </div>
             <div style={{ padding:'0 28px 24px' }}>
               <button onClick={()=>setShowProfile(null)} style={{ width:'100%', padding:12, borderRadius:10, border:'none', background:'linear-gradient(135deg,#1E3A8A,#3B82F6)', color:'white', fontSize:13, fontWeight:700, cursor:'pointer' }}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Student Modal */}
+      {showEdit && (
+        <div style={overlay}>
+          <div style={{ ...modal, maxWidth:480 }}>
+            <div style={{ padding:'22px 26px 16px', borderBottom:'1px solid #F1F5F9', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
+              <div>
+                <h3 style={{ fontSize:17, fontWeight:800, color:'#0F172A', margin:0 }}>✏️ Edit Student</h3>
+                <p style={{ fontSize:12, color:'#94A3B8', marginTop:3 }}>Correct name or transfer class/section</p>
+              </div>
+              <button onClick={()=>setShowEdit(null)} style={{ width:32, height:32, borderRadius:'50%', border:'1px solid #E2E8F0', background:'white', cursor:'pointer', color:'#64748B', fontSize:16, display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
+            </div>
+
+            <div style={{ padding:'20px 26px', overflowY:'auto', flex:1, display:'flex', flexDirection:'column', gap:16 }}>
+              {editError && <div style={{ padding:'10px 14px', background:'#FEF2F2', border:'1px solid #FEE2E2', borderRadius:9, fontSize:13, color:'#DC2626' }}>{editError}</div>}
+              {editSuccess && <div style={{ padding:'10px 14px', background:'#F0FDF4', border:'1px solid #BBF7D0', borderRadius:9, fontSize:13, color:'#065F46', fontWeight:600 }}>✅ {editSuccess}</div>}
+
+              {/* Name Correction */}
+              <div style={{ background:'#F8FAFC', border:'1px solid #E2E8F0', borderRadius:12, padding:'14px 16px' }}>
+                <p style={{ fontSize:11, fontWeight:700, color:'#64748B', textTransform:'uppercase', letterSpacing:'0.06em', margin:'0 0 10px' }}>📝 Name Correction</p>
+                <div>
+                  <label style={LS}>Full Name <span style={{color:'#EF4444'}}>*</span></label>
+                  <input value={editForm.full_name} onChange={e=>setEditForm(f=>({...f,full_name:e.target.value}))} style={IS} placeholder="Corrected full name"/>
+                </div>
+                {editForm.full_name.trim()!==showEdit.full_name && (
+                  <p style={{ fontSize:11, color:'#F59E0B', marginTop:6, fontWeight:600 }}>⚠ Was: "{showEdit.full_name}"</p>
+                )}
+              </div>
+
+              {/* Class / Section Transfer */}
+              <div style={{ background:'#F8FAFC', border:'1px solid #E2E8F0', borderRadius:12, padding:'14px 16px' }}>
+                <p style={{ fontSize:11, fontWeight:700, color:'#64748B', textTransform:'uppercase', letterSpacing:'0.06em', margin:'0 0 10px' }}>🔁 Class / Section Transfer</p>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
+                  <div>
+                    <label style={LS}>Class <span style={{color:'#EF4444'}}>*</span></label>
+                    <select value={editForm.class_id} onChange={e=>setEditForm(f=>({...f,class_id:e.target.value,section_id:''}))} style={IS}>
+                      <option value="">Select...</option>
+                      {classes.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={LS}>Section <span style={{color:'#EF4444'}}>*</span></label>
+                    <select value={editForm.section_id} onChange={e=>setEditForm(f=>({...f,section_id:e.target.value}))} style={IS}>
+                      <option value="">Select...</option>
+                      {editFilteredSections.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                {(editForm.class_id!==showEdit.class_id||editForm.section_id!==showEdit.section_id) ? (
+                  <div>
+                    <div style={{ padding:'8px 12px', background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:8, marginBottom:10 }}>
+                      <p style={{ fontSize:12, color:'#92400E', margin:0, fontWeight:600 }}>⚠ Transfer detected — was: {showEdit.class_name} – {showEdit.section_name}</p>
+                    </div>
+                    <div>
+                      <label style={LS}>Reason for Transfer <span style={{color:'#EF4444'}}>*</span></label>
+                      <textarea value={editForm.reason} onChange={e=>setEditForm(f=>({...f,reason:e.target.value}))} rows={2} placeholder="e.g. Parent requested section change, performance-based promotion..." style={{ ...IS, resize:'none' }}/>
+                    </div>
+                  </div>
+                ) : (
+                  <p style={{ fontSize:12, color:'#94A3B8', margin:0 }}>Currently in <strong style={{color:'#0F172A'}}>{showEdit.class_name} – {showEdit.section_name}</strong>. Change above to trigger transfer.</p>
+                )}
+              </div>
+            </div>
+
+            <div style={{ padding:'14px 26px', borderTop:'1px solid #F1F5F9', display:'flex', gap:10, flexShrink:0 }}>
+              <button onClick={()=>setShowEdit(null)} style={{ flex:1, padding:11, borderRadius:10, border:'1px solid #E2E8F0', background:'white', fontSize:13, fontWeight:600, color:'#475569', cursor:'pointer' }}>Cancel</button>
+              <button onClick={handleEdit} disabled={editSaving} style={{ flex:1, padding:11, borderRadius:10, border:'none', background:editSaving?'#6EE7B7':'linear-gradient(135deg,#065F46,#059669)', color:'white', fontSize:13, fontWeight:700, cursor:editSaving?'not-allowed':'pointer' }}>
+                {editSaving?'Saving...':'Save Changes'}
+              </button>
             </div>
           </div>
         </div>

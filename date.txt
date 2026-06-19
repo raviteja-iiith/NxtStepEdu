@@ -1,0 +1,38 @@
+Parent has 2 children in the same school.
+Teacher leaves school but account remains active.
+login corrections / trying for better security.
+Student changes section.
+Student changes class.
+Duplicate admission by mistake.
+Student's name spelling corrected later.
+Unique admission number----auntomatically given or genereated and shown 
+Immutable payment records.
+Marks entered incorrectly.
+exam for multiple subject and marks for each subject in single exam 
+Exam timetable overlaps.
+sms,whatsapp integration 
+Multiple subjects.
+Multiple classes.
+Must Have
+
+Never overwrite old-year data.
+
+Store:
+
+2025-26 records
+2026-27 records
+
+separately.
+
+
+change password 
+
+
+data should be consistent ...like if a student is deletd .....thne the fee class, all related things must be deleted 
+
+
+for imp things like delting student or any imp thins .....we need to make a pop up....like ask are you sure you want to do that.
+isolation--- school a data should be known to school b 
+
+and also i need to focus on security 
+

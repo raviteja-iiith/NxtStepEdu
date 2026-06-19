@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useParent } from '@/context/ParentContext';
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -9,22 +10,14 @@ const P = { fontFamily: "'Inter', sans-serif" };
 
 export default function ParentAttendancePage() {
   const supabase = createClient();
+  const { selectedChild, loading: childLoading } = useParent();
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear] = useState(new Date().getFullYear());
-  const [studentId, setStudentId] = useState('');
-  const [studentName, setStudentName] = useState('');
   const [attendanceMap, setAttendanceMap] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
 
-  const fetchStudentLink = useCallback(async () => {
-    const userId = (await supabase.auth.getUser()).data.user?.id;
-    if (!userId) return;
-    const { data: link } = await supabase
-      .from('student_parent_links')
-      .select('student_id, students(full_name)')
-      .eq('parent_id', userId).limit(1).maybeSingle();
-    if (link) { setStudentId(link.student_id); setStudentName((link.students as any)?.full_name || ''); }
-  }, [supabase]);
+  const studentId   = selectedChild?.student_id || '';
+  const studentName = selectedChild?.student_name || '';
 
   const fetchAttendance = useCallback(async () => {
     if (!studentId) return;
@@ -39,8 +32,10 @@ export default function ParentAttendancePage() {
     setLoading(false);
   }, [supabase, studentId, selectedMonth, selectedYear]);
 
-  useEffect(() => { fetchStudentLink(); }, [fetchStudentLink]);
-  useEffect(() => { if (studentId) fetchAttendance(); }, [fetchAttendance, studentId]);
+  useEffect(() => {
+    if (!childLoading && studentId) fetchAttendance();
+    else if (!childLoading && !studentId) setLoading(false);
+  }, [fetchAttendance, studentId, childLoading]);
 
   const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
   const firstDay    = new Date(selectedYear, selectedMonth, 1).getDay();

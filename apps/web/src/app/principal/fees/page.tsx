@@ -507,8 +507,21 @@ function TabBulk({ schoolId, academicYearId, classes, sections }: { schoolId: st
   );
 }
 
+// ─── Payment record (for void flow) ─────────────────────────────────────────
+interface PaymentRecord {
+  id: string;
+  fee_id: string;
+  amount_paid: number;
+  payment_mode: string;
+  payment_date: string;
+  notes: string | null;
+  is_voided: boolean;
+  voided_reason: string | null;
+  voided_at: string | null;
+}
+
 // ─── Aggregated per-student row ───────────────────────────────────────────────
-interface FeeDetail { fee_id: string; amount: number; paid: number; due: number; status: string; }
+interface FeeDetail { fee_id: string; amount: number; paid: number; due: number; status: string; payments: PaymentRecord[]; }
 interface OverviewRow {
   student_id:   string;
   student_name: string;
@@ -553,6 +566,19 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
 
   const filteredSections = sections.filter(s => s.class_id === filterClass);
 
+  // Void modal state
+  const [voidModal,  setVoidModal]  = useState<{ payment: PaymentRecord; feeId: string; studentName: string } | null>(null);
+  const [voidReason, setVoidReason] = useState('');
+  const [voiding,    setVoiding]    = useState(false);
+  const [voidError,  setVoidError]  = useState('');
+  const [voidMigrationNeeded, setVoidMigrationNeeded] = useState(false);
+
+  // Edit fee amount state
+  const [editFeeModal,   setEditFeeModal]   = useState<{ feeId: string; currentAmount: number; studentName: string } | null>(null);
+  const [editFeeVal,     setEditFeeVal]     = useState('');
+  const [editFeeSaving,  setEditFeeSaving]  = useState(false);
+  const [editFeeError,   setEditFeeError]   = useState('');
+
   const fetchOverview = useCallback(async () => {
     if (!schoolId) return;
     setLoading(true);
@@ -568,12 +594,37 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
     if (!fees || fees.length === 0) { setRows([]); setLoading(false); return; }
 
     const feeIds = fees.map((f: any) => f.id);
-    const { data: payments } = await supabase
-      .from('fee_payments').select('fee_id, amount_paid').in('fee_id', feeIds);
 
+    // Try fetching with void columns; fall back gracefully if migration not run
+    let rawPayments: any[] = [];
+    let hasVoidColumns = true;
+    const { data: p1, error: p1Err } = await supabase
+      .from('fee_payments')
+      .select('id, fee_id, amount_paid, payment_mode, payment_date, notes, is_voided, voided_reason, voided_at')
+      .in('fee_id', feeIds)
+      .order('payment_date', { ascending: false });
+    if (p1Err) {
+      // Migration not run — fall back to basic columns
+      hasVoidColumns = false;
+      setVoidMigrationNeeded(true);
+      const { data: p2 } = await supabase
+        .from('fee_payments')
+        .select('id, fee_id, amount_paid, payment_mode, payment_date, notes')
+        .in('fee_id', feeIds)
+        .order('payment_date', { ascending: false });
+      rawPayments = (p2 ?? []).map((p: any) => ({ ...p, is_voided: false, voided_reason: null, voided_at: null }));
+    } else {
+      setVoidMigrationNeeded(false);
+      rawPayments = p1 ?? [];
+    }
+
+    // Build paid map (exclude voided)
     const paidMap = new Map<string, number>();
-    (payments ?? []).forEach((p: any) => {
-      paidMap.set(p.fee_id, (paidMap.get(p.fee_id) ?? 0) + (p.amount_paid ?? 0));
+    const payMap  = new Map<string, PaymentRecord[]>();
+    rawPayments.forEach((p: any) => {
+      const rec: PaymentRecord = { id: p.id, fee_id: p.fee_id, amount_paid: p.amount_paid, payment_mode: p.payment_mode, payment_date: p.payment_date, notes: p.notes, is_voided: p.is_voided ?? false, voided_reason: p.voided_reason, voided_at: p.voided_at };
+      if (!p.is_voided) paidMap.set(p.fee_id, (paidMap.get(p.fee_id) ?? 0) + (p.amount_paid ?? 0));
+      payMap.set(p.fee_id, [...(payMap.get(p.fee_id) ?? []), rec]);
     });
 
     // Aggregate per student
@@ -581,7 +632,7 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
     (fees as any[]).filter(f => f.students).forEach(f => {
       const feePaid = paidMap.get(f.id) ?? 0;
       const feeAmt  = f.amount ?? 0;
-      const detail: FeeDetail = { fee_id: f.id, amount: feeAmt, paid: feePaid, due: Math.max(0, feeAmt - feePaid), status: f.status ?? 'pending' };
+      const detail: FeeDetail = { fee_id: f.id, amount: feeAmt, paid: feePaid, due: Math.max(0, feeAmt - feePaid), status: f.status ?? 'pending', payments: payMap.get(f.id) ?? [] };
       if (studentMap.has(f.student_id)) {
         const row = studentMap.get(f.student_id)!;
         row.total_fee += feeAmt;
@@ -610,6 +661,46 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
     setLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [schoolId]);
+
+  async function confirmVoid() {
+    if (!voidModal) return;
+    if (!voidReason.trim()) { setVoidError('Please enter a reason for voiding this payment.'); return; }
+    if (voidMigrationNeeded) { setVoidError('Run the void-payment-migration.sql in Supabase first to enable voiding.'); return; }
+    setVoiding(true); setVoidError('');
+    const { error } = await supabase.from('fee_payments').update({
+      is_voided: true,
+      voided_reason: voidReason.trim(),
+      voided_at: new Date().toISOString(),
+    }).eq('id', voidModal.payment.id);
+    if (error) { setVoidError(`Failed: ${error.message}`); setVoiding(false); return; }
+    // Recalculate fee status after void
+    const { data: otherPays } = await supabase.from('fee_payments')
+      .select('amount_paid, is_voided').eq('fee_id', voidModal.feeId);
+    const activePaid = (otherPays ?? []).filter((p: any) => !p.is_voided).reduce((s: number, p: any) => s + (p.amount_paid ?? 0), 0);
+    const { data: feeRow } = await supabase.from('fees').select('amount').eq('id', voidModal.feeId).single();
+    const feeAmt = feeRow?.amount ?? 0;
+    const newStatus = activePaid >= feeAmt ? 'paid' : activePaid > 0 ? 'partially_paid' : 'pending';
+    await supabase.from('fees').update({ status: newStatus }).eq('id', voidModal.feeId);
+    setVoiding(false); setVoidModal(null); setVoidReason('');
+    fetchOverview();
+  }
+
+  async function saveEditFee() {
+    if (!editFeeModal) return;
+    const newAmt = parseFloat(editFeeVal);
+    if (isNaN(newAmt) || newAmt <= 0) { setEditFeeError('Enter a valid positive amount.'); return; }
+    setEditFeeSaving(true); setEditFeeError('');
+    const { error } = await supabase.from('fees').update({ amount: newAmt }).eq('id', editFeeModal.feeId);
+    if (error) { setEditFeeError(`Save failed: ${error.message}`); setEditFeeSaving(false); return; }
+    // Recalculate status after amount change
+    const { data: pays } = await supabase.from('fee_payments')
+      .select('amount_paid, is_voided').eq('fee_id', editFeeModal.feeId);
+    const paid = (pays ?? []).filter((p: any) => !p.is_voided).reduce((s: number, p: any) => s + (p.amount_paid ?? 0), 0);
+    const newStatus = paid >= newAmt ? 'paid' : paid > 0 ? 'partially_paid' : 'pending';
+    await supabase.from('fees').update({ status: newStatus }).eq('id', editFeeModal.feeId);
+    setEditFeeSaving(false); setEditFeeModal(null);
+    fetchOverview();
+  }
 
   useEffect(() => { fetchOverview(); }, [fetchOverview]);
 
@@ -801,26 +892,94 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
                   </div>
                 </div>
 
-                {/* Expanded fee history */}
+                {/* Expanded fee history + payment corrections */}
                 {isExp && (
                   <div style={{ background: '#F8FAFC', borderTop: '1px solid #F1F5F9', padding: '12px 24px 16px 70px' }}>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 10px' }}>Fee Breakdown</p>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {row.fee_details.map((d, i) => (
-                        <div key={d.fee_id} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 100px 100px 90px', gap: 12, padding: '8px 14px', background: 'white', borderRadius: 8, border: '1px solid #E2E8F0', alignItems: 'center' }}>
-                          <p style={{ fontSize: 12, color: '#475569', margin: 0 }}>Fee #{i + 1}</p>
-                          <p style={{ fontSize: 12, fontWeight: 700, color: '#0F172A', margin: 0 }}>{fmt(d.amount)}</p>
+                    {row.fee_details.map((d, i) => (
+                      <div key={d.fee_id} style={{ marginBottom: 14 }}>
+                        {/* Fee header row */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: 'white', borderRadius: 8, border: '1px solid #E2E8F0', marginBottom: 4, flexWrap: 'wrap' }}>
+                          <p style={{ fontSize: 12, fontWeight: 700, color: '#475569', margin: 0, minWidth: 50 }}>Fee #{i + 1}</p>
+                          <p style={{ fontSize: 12, fontWeight: 700, color: '#0F172A', margin: 0, flex: 1 }}>{fmt(d.amount)}</p>
                           <p style={{ fontSize: 12, color: '#15803D', fontWeight: 600, margin: 0 }}>Paid {fmt(d.paid)}</p>
                           <p style={{ fontSize: 12, color: d.due > 0 ? '#DC2626' : '#15803D', fontWeight: 700, margin: 0 }}>Due {fmt(d.due)}</p>
                           <div>{statusBadge(d.status)}</div>
+                          <button
+                            onClick={() => { setEditFeeModal({ feeId: d.fee_id, currentAmount: d.amount, studentName: row.student_name }); setEditFeeVal(String(d.amount)); setEditFeeError(''); }}
+                            style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 7, border: '1px solid #DBEAFE', background: '#EFF6FF', color: '#1D4ED8', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                          >✏️ Edit Amount</button>
                         </div>
-                      ))}
-                    </div>
+                        {/* Payment records */}
+                        {d.payments.length > 0 && (
+                          <div style={{ paddingLeft: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <p style={{ fontSize: 10, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '2px 0 4px' }}>Payment Records</p>
+                            {d.payments.map((pay) => (
+                              <div key={pay.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 12px', background: pay.is_voided ? '#FEF2F2' : '#F0FDF4', border: `1px solid ${pay.is_voided ? '#FEE2E2' : '#BBF7D0'}`, borderRadius: 7, opacity: pay.is_voided ? 0.75 : 1 }}>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: pay.is_voided ? '#DC2626' : '#15803D', textDecoration: pay.is_voided ? 'line-through' : 'none', flex: 1 }}>
+                                  {fmt(pay.amount_paid)} · {pay.payment_mode.replace('_', ' ')}
+                                </span>
+                                <span style={{ fontSize: 11, color: '#64748B' }}>{new Date(pay.payment_date).toLocaleDateString('en-IN')}</span>
+                                {pay.notes && <span style={{ fontSize: 11, color: '#94A3B8', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pay.notes}</span>}
+                                {pay.is_voided ? (
+                                  <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: '#FEE2E2', color: '#DC2626' }}>VOIDED</span>
+                                ) : (
+                                  <button
+                                    onClick={() => { setVoidModal({ payment: pay, feeId: d.fee_id, studentName: row.student_name }); setVoidReason(''); setVoidError(''); }}
+                                    style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 7, border: '1px solid #FEE2E2', background: '#FEF2F2', color: '#DC2626', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                                  >⚠ Void</button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Edit Fee Amount Modal */}
+      {editFeeModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 65, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(4px)' }}>
+          <div style={{ width: '100%', maxWidth: 400, background: 'white', borderRadius: 18, boxShadow: '0 24px 64px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
+            <div style={{ padding: '18px 22px 14px', borderBottom: '1px solid #DBEAFE', background: 'linear-gradient(135deg,#EFF6FF,#DBEAFE)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <p style={{ fontSize: 15, fontWeight: 800, color: '#1E3A8A', margin: 0 }}>✏️ Correct Fee Amount</p>
+                  <p style={{ fontSize: 13, color: '#475569', marginTop: 4 }}>{editFeeModal.studentName}</p>
+                </div>
+                <button onClick={() => setEditFeeModal(null)} style={{ width: 30, height: 30, borderRadius: '50%', border: '1px solid #E2E8F0', background: 'white', cursor: 'pointer', color: '#64748B', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+              </div>
+            </div>
+            <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ padding: '10px 14px', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 9, fontSize: 12, color: '#92400E' }}>
+                <strong>⚠ Current amount:</strong> ₹{editFeeModal.currentAmount.toLocaleString('en-IN')} — the fee balance and status will be recalculated automatically after saving.
+              </div>
+              {editFeeError && <div style={{ padding: '9px 13px', background: '#FEF2F2', border: '1px solid #FEE2E2', borderRadius: 8, fontSize: 13, color: '#DC2626' }}>{editFeeError}</div>}
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Corrected Amount (₹) <span style={{ color: '#EF4444' }}>*</span></label>
+                <input
+                  type="number" min={1} value={editFeeVal}
+                  onChange={e => setEditFeeVal(e.target.value)}
+                  style={{ width: '100%', padding: '10px 13px', border: '1px solid #E2E8F0', borderRadius: 9, fontSize: 15, fontWeight: 700, outline: 'none', boxSizing: 'border-box' }}
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div style={{ padding: '0 22px 20px', display: 'flex', gap: 10 }}>
+              <button onClick={() => setEditFeeModal(null)} style={{ flex: 1, padding: 11, borderRadius: 9, border: '1px solid #E2E8F0', background: 'white', fontSize: 13, fontWeight: 600, color: '#475569', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={saveEditFee} disabled={editFeeSaving}
+                style={{ flex: 1, padding: 11, borderRadius: 9, border: 'none', fontSize: 13, fontWeight: 700,
+                  background: editFeeSaving ? '#93C5FD' : 'linear-gradient(135deg,#1E3A8A,#3B82F6)',
+                  color: 'white', cursor: editFeeSaving ? 'not-allowed' : 'pointer' }}>
+                {editFeeSaving ? 'Saving…' : '✓ Save Correction'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -876,6 +1035,65 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
                   background: paying ? '#86EFAC' : 'linear-gradient(135deg,#15803D,#22C55E)',
                   color: 'white', cursor: paying ? 'not-allowed' : 'pointer' }}>
                 {paying ? 'Recording…' : '✓ Record Payment'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Void Payment Modal ─────────────────────────────── */}
+      {voidModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)' }}>
+          <div style={{ width: '100%', maxWidth: 440, background: 'white', borderRadius: 18, boxShadow: '0 24px 64px rgba(0,0,0,0.25)', overflow: 'hidden' }}>
+            {/* Header */}
+            <div style={{ padding: '18px 22px 14px', borderBottom: '1px solid #FEE2E2', background: 'linear-gradient(135deg,#FFF1F2,#FEE2E2)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <p style={{ fontSize: 15, fontWeight: 800, color: '#991B1B', margin: 0 }}>⚠ Void Accidental Payment</p>
+                  <p style={{ fontSize: 13, color: '#64748B', marginTop: 4 }}>{voidModal.studentName}</p>
+                </div>
+                <button onClick={() => setVoidModal(null)} style={{ width: 30, height: 30, borderRadius: '50%', border: '1px solid #FEE2E2', background: 'white', cursor: 'pointer', color: '#64748B', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+              </div>
+            </div>
+            {/* Payment details */}
+            <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {/* What's being voided */}
+              <div style={{ padding: '12px 16px', background: '#FEF2F2', border: '1px solid #FEE2E2', borderRadius: 10 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: '#DC2626', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 8px' }}>Payment to be Voided</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                  {[['Amount', `₹${voidModal.payment.amount_paid.toLocaleString('en-IN')}`], ['Mode', voidModal.payment.payment_mode.replace('_', ' ')], ['Date', new Date(voidModal.payment.payment_date).toLocaleDateString('en-IN')], ['Notes', voidModal.payment.notes ?? '—']].map(([l, v]) => (
+                    <div key={l}>
+                      <p style={{ fontSize: 10, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>{l}</p>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: '#0F172A', margin: '2px 0 0', textTransform: 'capitalize' }}>{v}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {/* Info */}
+              <div style={{ padding: '10px 14px', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 9, fontSize: 12, color: '#92400E' }}>
+                <strong>ℹ Note:</strong> This payment will be <strong>voided, not deleted</strong>. The record stays in the audit trail for compliance. The fee balance will be recalculated automatically.
+              </div>
+              {/* Reason */}
+              {voidError && <div style={{ padding: '9px 13px', background: '#FEF2F2', border: '1px solid #FEE2E2', borderRadius: 8, fontSize: 13, color: '#DC2626' }}>{voidError}</div>}
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Reason for Voiding <span style={{ color: '#EF4444' }}>*</span></label>
+                <textarea
+                  value={voidReason}
+                  onChange={e => setVoidReason(e.target.value)}
+                  rows={2}
+                  placeholder='e.g. "Entered twice by mistake", "Wrong student", "Incorrect amount"'
+                  style={{ width: '100%', padding: '9px 13px', border: '1px solid #E2E8F0', borderRadius: 9, fontSize: 13, outline: 'none', resize: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                />
+              </div>
+            </div>
+            {/* Actions */}
+            <div style={{ padding: '0 22px 20px', display: 'flex', gap: 10 }}>
+              <button onClick={() => setVoidModal(null)} style={{ flex: 1, padding: 11, borderRadius: 9, border: '1px solid #E2E8F0', background: 'white', fontSize: 13, fontWeight: 600, color: '#475569', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={confirmVoid} disabled={voiding}
+                style={{ flex: 1, padding: 11, borderRadius: 9, border: 'none', fontSize: 13, fontWeight: 700,
+                  background: voiding ? '#FCA5A5' : 'linear-gradient(135deg,#991B1B,#DC2626)',
+                  color: 'white', cursor: voiding ? 'not-allowed' : 'pointer' }}>
+                {voiding ? 'Voiding…' : '⚠ Confirm Void'}
               </button>
             </div>
           </div>

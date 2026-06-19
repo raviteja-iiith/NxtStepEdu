@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useParent } from '@/context/ParentContext';
 
 interface Fee {
   id: string;
@@ -27,22 +28,16 @@ const statusCfg: Record<string, { bg: string; color: string; label: string; dot:
 
 export default function ParentFeesPage() {
   const supabase = createClient();
+  const { selectedChild, loading: childLoading } = useParent();
   const [fees, setFees] = useState<Fee[]>([]);
   const [loading, setLoading] = useState(true);
-  const [studentName, setStudentName] = useState('');
+
+  const studentName = selectedChild?.student_name || '';
 
   const fetchFees = useCallback(async () => {
+    if (!selectedChild) return;
     setLoading(true);
-    const userId = (await supabase.auth.getUser()).data.user?.id;
-    if (!userId) { setLoading(false); return; }
-
-    const { data: link } = await supabase
-      .from('student_parent_links').select('student_id, students(full_name)')
-      .eq('parent_id', userId).limit(1).maybeSingle();
-    if (!link) { setLoading(false); return; }
-
-    setStudentName((link.students as any)?.full_name || '');
-    const studentId = link.student_id;
+    const studentId = selectedChild.student_id;
 
     const { data } = await supabase
       .from('fees').select('id, amount, discount_amount, status, due_date, fee_structures(name, fee_type)')
@@ -58,9 +53,12 @@ export default function ParentFeesPage() {
       setFees((data as any[]).map(f => ({ ...f, amount_paid: pm[f.id]?.amount_paid, payment_date: pm[f.id]?.payment_date })));
     }
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, selectedChild]);
 
-  useEffect(() => { fetchFees(); }, [fetchFees]);
+  useEffect(() => {
+    if (!childLoading && selectedChild) fetchFees();
+    else if (!childLoading && !selectedChild) setLoading(false);
+  }, [fetchFees, selectedChild, childLoading]);
 
   const totalPending = fees.filter(f => f.status === 'pending' || f.status === 'overdue')
     .reduce((a, f) => a + Math.max(0, (f.amount - (f.discount_amount || 0)) - (f.amount_paid || 0)), 0);

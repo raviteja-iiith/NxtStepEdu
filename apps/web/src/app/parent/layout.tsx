@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { ParentProvider, useParent } from '@/context/ParentContext';
 
 const navGroups = [
   { title: 'Overview', items: [
@@ -28,29 +29,240 @@ const navGroups = [
 
 const allNavItems = navGroups.flatMap(g => g.items);
 
-export default function ParentLayout({ children }: { children: React.ReactNode }) {
+// ─── Child Switcher Dropdown ────────────────────────────────────────────────
+function ChildSwitcher({ collapsed }: { collapsed: boolean }) {
+  const { children, selectedChild, setSelectedChild } = useParent();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Close on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  if (!selectedChild) return null;
+
+  const hasMultiple = children.length > 1;
+
+  if (collapsed) {
+    // Collapsed: just show avatar with tooltip
+    return (
+      <div style={{ margin: '12px 10px 0', position: 'relative' }} ref={ref}>
+        {hasMultiple ? (
+          <button
+            onClick={() => setOpen(o => !o)}
+            title={`Viewing: ${selectedChild.student_name}\nClick to switch child`}
+            style={{
+              width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center',
+              background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(167,139,250,0.3)',
+              borderRadius: 10, padding: '8px', cursor: 'pointer', position: 'relative',
+            }}
+          >
+            <div style={{
+              width: 32, height: 32, borderRadius: '50%',
+              background: 'linear-gradient(135deg, #7C3AED, #A855F7)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 13, fontWeight: 800, color: 'white',
+            }}>
+              {selectedChild.student_name.charAt(0)}
+            </div>
+            {/* Badge showing count */}
+            <span style={{
+              position: 'absolute', top: 4, right: 4, width: 14, height: 14,
+              borderRadius: '50%', background: '#F59E0B', color: 'white',
+              fontSize: 9, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              border: '1.5px solid #2D1B69',
+            }}>
+              {children.length}
+            </span>
+          </button>
+        ) : (
+          <div style={{
+            display: 'flex', justifyContent: 'center', padding: '8px',
+            background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: 10,
+          }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: '50%',
+              background: 'linear-gradient(135deg, #7C3AED, #A855F7)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 13, fontWeight: 800, color: 'white',
+            }}>
+              {selectedChild.student_name.charAt(0)}
+            </div>
+          </div>
+        )}
+
+        {/* Dropdown when collapsed */}
+        {open && hasMultiple && (
+          <div style={{
+            position: 'absolute', left: 'calc(100% + 10px)', top: 0, zIndex: 100,
+            background: '#1E1035', border: '1px solid rgba(167,139,250,0.3)',
+            borderRadius: 12, padding: '8px', minWidth: 200,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+          }}>
+            <p style={{ fontSize: 9, color: '#A78BFA', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '4px 8px 8px' }}>
+              Switch Child
+            </p>
+            {children.map(child => (
+              <button
+                key={child.student_id}
+                onClick={() => { setSelectedChild(child); setOpen(false); }}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '8px 10px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                  background: selectedChild.student_id === child.student_id ? 'rgba(139,92,246,0.2)' : 'transparent',
+                  transition: 'all 0.15s',
+                }}
+              >
+                <div style={{
+                  width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+                  background: selectedChild.student_id === child.student_id
+                    ? 'linear-gradient(135deg, #7C3AED, #A855F7)'
+                    : 'rgba(167,139,250,0.2)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 12, fontWeight: 700, color: 'white',
+                }}>
+                  {child.student_name.charAt(0)}
+                </div>
+                <div style={{ textAlign: 'left' }}>
+                  <p style={{ fontSize: 12, fontWeight: 700, color: 'white', margin: 0 }}>{child.student_name}</p>
+                  <p style={{ fontSize: 10, color: '#A78BFA', margin: 0 }}>Class {child.class_name} – {child.section_name}</p>
+                </div>
+                {selectedChild.student_id === child.student_id && (
+                  <svg style={{ marginLeft: 'auto', flexShrink: 0 }} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A855F7" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Expanded sidebar
+  return (
+    <div style={{ margin: '12px 12px 0', position: 'relative' }} ref={ref}>
+      <div style={{ borderRadius: 10, background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(167,139,250,0.2)', overflow: 'visible' }}>
+        <p style={{ fontSize: 9, color: '#A78BFA', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '10px 12px 0', margin: 0 }}>
+          {hasMultiple ? 'Viewing Child' : 'Viewing For'}
+        </p>
+
+        {hasMultiple ? (
+          // Dropdown trigger
+          <button
+            onClick={() => setOpen(o => !o)}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+              padding: '8px 12px 10px', border: 'none', background: 'transparent',
+              cursor: 'pointer', borderRadius: 10,
+            }}
+          >
+            <div style={{
+              width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+              background: 'linear-gradient(135deg, #7C3AED, #A855F7)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 14, fontWeight: 800, color: 'white',
+            }}>
+              {selectedChild.student_name.charAt(0)}
+            </div>
+            <div style={{ flex: 1, textAlign: 'left', overflow: 'hidden' }}>
+              <p style={{ color: 'white', fontSize: 13, fontWeight: 700, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {selectedChild.student_name}
+              </p>
+              <p style={{ color: '#A78BFA', fontSize: 10, margin: 0 }}>
+                Class {selectedChild.class_name} · {selectedChild.section_name}
+              </p>
+            </div>
+            <svg
+              style={{ flexShrink: 0, transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}
+              width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+            >
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </button>
+        ) : (
+          // Single child — no dropdown, just display
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px 10px' }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+              background: 'linear-gradient(135deg, #7C3AED, #A855F7)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 14, fontWeight: 800, color: 'white',
+            }}>
+              {selectedChild.student_name.charAt(0)}
+            </div>
+            <div>
+              <p style={{ color: 'white', fontSize: 13, fontWeight: 700, margin: 0 }}>{selectedChild.student_name}</p>
+              <p style={{ color: '#A78BFA', fontSize: 10, margin: 0 }}>Class {selectedChild.class_name} · {selectedChild.section_name}</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Dropdown panel */}
+      {open && hasMultiple && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 100,
+          background: '#1A0D3B', border: '1px solid rgba(167,139,250,0.3)',
+          borderRadius: 12, padding: '8px', overflow: 'hidden',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+        }}>
+          <p style={{ fontSize: 9, color: '#A78BFA', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '4px 8px 8px' }}>
+            Switch Child
+          </p>
+          {children.map(child => {
+            const isActive = selectedChild.student_id === child.student_id;
+            return (
+              <button
+                key={child.student_id}
+                onClick={() => { setSelectedChild(child); setOpen(false); }}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '9px 10px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                  background: isActive ? 'rgba(139,92,246,0.25)' : 'transparent',
+                  marginBottom: 2, transition: 'all 0.15s',
+                }}
+                onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(139,92,246,0.1)'; }}
+                onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+              >
+                <div style={{
+                  width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
+                  background: isActive ? 'linear-gradient(135deg, #7C3AED, #A855F7)' : 'rgba(167,139,250,0.2)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 12, fontWeight: 800, color: 'white',
+                }}>
+                  {child.student_name.charAt(0)}
+                </div>
+                <div style={{ flex: 1, textAlign: 'left' }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: 'white', margin: 0 }}>{child.student_name}</p>
+                  <p style={{ fontSize: 10, color: '#94A3B8', margin: 0 }}>Class {child.class_name} – {child.section_name}</p>
+                </div>
+                {isActive && (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A855F7" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Inner layout (uses context) ─────────────────────────────────────────────
+function ParentLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
   const [collapsed, setCollapsed] = useState(false);
-  const [userName, setUserName] = useState('');
-  const [childName, setChildName] = useState('');
-
-  useEffect(() => {
-    async function load() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data } = await supabase.from('users').select('full_name').eq('id', user.id).single();
-        if (data) setUserName(data.full_name || 'Parent');
-        const { data: link } = await supabase.from('student_parent_links').select('students(full_name)').eq('parent_id', user.id).limit(1).maybeSingle();
-        if (link) setChildName(((link.students as Record<string, string>)?.full_name) || '');
-      }
-    }
-    load();
-  }, [supabase]);
+  const { selectedChild, parentName } = useParent();
 
   const handleSignOut = async () => { await supabase.auth.signOut(); router.push('/login'); };
-  const initials = userName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'P';
+  const initials = parentName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'P';
   const currentNav = allNavItems.find(n => pathname === n.href || pathname.startsWith(n.href + '/'));
 
   return (
@@ -71,14 +283,10 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
           </div>
         </div>
 
-        {!collapsed && childName && (
-          <div style={{ margin: '12px 12px 0', padding: '10px 12px', borderRadius: 10, background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(167,139,250,0.2)' }}>
-            <p style={{ fontSize: 9, color: '#A78BFA', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Viewing For</p>
-            <p style={{ color: 'white', fontSize: 13, fontWeight: 600 }}>{childName}</p>
-          </div>
-        )}
+        {/* ─── Child Switcher ─── */}
+        <ChildSwitcher collapsed={collapsed} />
 
-        <nav style={{ flex: 1, padding: '16px 10px', overflowY: 'auto' }}>
+        <nav style={{ flex: 1, padding: '16px 10px', overflowY: 'auto', marginTop: 8 }}>
           {navGroups.map((group) => (
             <div key={group.title} style={{ marginBottom: 24 }}>
               {!collapsed && <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(148,163,184,0.6)', textTransform: 'uppercase', letterSpacing: '0.1em', padding: '0 10px', marginBottom: 6 }}>{group.title}</p>}
@@ -113,7 +321,9 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
           <div style={{ padding: '0 32px', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
               <h1 style={{ fontSize: 17, fontWeight: 700, color: '#0F172A', letterSpacing: '-0.01em' }}>{currentNav?.label || 'Home'}</h1>
-              <p style={{ fontSize: 12, color: '#94A3B8', marginTop: 1, fontWeight: 500 }}>Parent Portal{childName ? ` · ${childName}` : ''}</p>
+              <p style={{ fontSize: 12, color: '#94A3B8', marginTop: 1, fontWeight: 500 }}>
+                Parent Portal{selectedChild ? ` · ${selectedChild.student_name}` : ''}
+              </p>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <button style={{ width: 38, height: 38, borderRadius: '50%', border: '1px solid #E2E8F0', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#64748B', position: 'relative' }}>
@@ -123,7 +333,7 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, padding: '6px 14px 6px 8px' }}>
                 <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #2E1065, #7C3AED)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'white', flexShrink: 0 }}>{initials}</div>
                 <div>
-                  <p style={{ fontSize: 13, fontWeight: 700, color: '#1E293B', lineHeight: 1.2 }}>{userName || 'Parent'}</p>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: '#1E293B', lineHeight: 1.2 }}>{parentName || 'Parent'}</p>
                   <p style={{ fontSize: 10, color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Parent</p>
                 </div>
               </div>
@@ -133,5 +343,14 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
         <div style={{ padding: '40px 48px', flex: 1, maxWidth: 1280 }}>{children}</div>
       </main>
     </div>
+  );
+}
+
+// ─── Outer layout wraps everything with the Provider ────────────────────────
+export default function ParentLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <ParentProvider>
+      <ParentLayoutInner>{children}</ParentLayoutInner>
+    </ParentProvider>
   );
 }

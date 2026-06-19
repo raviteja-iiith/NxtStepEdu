@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { useParent, ChildInfo } from '@/context/ParentContext';
 
-interface ChildLink { student_id: string; student_name: string; section_id: string; class_name?: string; section_name?: string; }
 interface Exam { id: string; name: string; exam_type: string; exam_date: string; total_marks: number; is_published: boolean; subject_name?: string; }
 interface Mark { id: string; marks_obtained: number | null; is_absent: boolean; remarks: string | null; exam: Exam | null; }
 interface Assignment { id: string; title: string; description: string | null; deadline: string; max_marks: number | null; subject_name?: string; }
@@ -22,36 +22,26 @@ function getGrade(obtained: number, total: number) {
 export default function AcademicsPage() {
   const supabase = createClient();
   const router = useRouter();
+  const { children, selectedChild: contextChild, setSelectedChild: setContextChild, loading: childLoading } = useParent();
   const [tab, setTab] = useState<'exams'|'marks'|'assignments'>('marks');
-  const [children, setChildren] = useState<ChildLink[]>([]);
-  const [selectedChild, setSelectedChild] = useState<ChildLink | null>(null);
+  // Local override: allow in-page switching while keeping context in sync
+  const [localSelected, setLocalSelected] = useState<ChildInfo | null>(null);
+  const selectedChild = localSelected ?? contextChild;
   const [exams, setExams] = useState<Exam[]>([]);
   const [marks, setMarks] = useState<Mark[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [linked, setLinked] = useState<boolean | null>(null); // null = checking
 
-  const fetchChildren = useCallback(async () => {
-    const userId = (await supabase.auth.getUser()).data.user?.id;
-    if (!userId) { setLinked(false); setLoading(false); return; }
-    const { data: links } = await supabase
-      .from('student_parent_links')
-      .select('student_id, students(full_name, section_id, sections(name), classes(name))')
-      .eq('parent_id', userId);
-    if (!links || links.length === 0) {
-      setLinked(false); setLoading(false); return;
-    }
-    setLinked(true);
-    const childList: ChildLink[] = links.map((l: any) => ({
-      student_id: l.student_id,
-      student_name: l.students?.full_name || 'Unknown',
-      section_id: l.students?.section_id || '',
-      class_name: l.students?.classes?.name || '',
-      section_name: l.students?.sections?.name || '',
-    }));
-    setChildren(childList);
-    setSelectedChild(childList[0] || null);
-  }, [supabase]);
+  // Sync local selection when context changes (e.g., sidebar switcher)
+  useEffect(() => { setLocalSelected(null); }, [contextChild]);
+
+  const handleSelectChild = (child: ChildInfo) => {
+    setLocalSelected(child);
+    setContextChild(child);  // also update global context
+    setMarks([]); setExams([]); setAssignments([]);
+  };
+
+  const linked = childLoading ? null : children.length > 0;
 
   const fetchData = useCallback(async () => {
     if (!selectedChild) return;
@@ -77,7 +67,6 @@ export default function AcademicsPage() {
     setLoading(false);
   }, [supabase, selectedChild]);
 
-  useEffect(() => { fetchChildren(); }, [fetchChildren]);
   useEffect(() => { if (selectedChild) fetchData(); }, [fetchData, selectedChild]);
 
   const TABS = [
@@ -130,7 +119,7 @@ export default function AcademicsPage() {
       {children.length > 1 && (
         <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
           {children.map(child => (
-            <button key={child.student_id} onClick={() => { setSelectedChild(child); setMarks([]); setExams([]); setAssignments([]); }}
+            <button key={child.student_id} onClick={() => handleSelectChild(child)}
               style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 18px', borderRadius:12, border:`2px solid ${selectedChild?.student_id===child.student_id?'#3B82F6':'#E2E8F0'}`, background:selectedChild?.student_id===child.student_id?'#EFF6FF':'white', cursor:'pointer', transition:'all 0.15s' }}>
               <div style={{ width:32, height:32, borderRadius:'50%', background:'linear-gradient(135deg,#6366F1,#8B5CF6)', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700 }}>
                 {child.student_name.charAt(0)}
