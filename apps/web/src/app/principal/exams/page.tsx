@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { createNotification } from '@/components/NotificationBell';
 
 interface Exam { id:string; name:string; exam_type:string; exam_date:string; start_time:string|null; duration_minutes:number|null; total_marks:number; passing_marks:number|null; is_published:boolean; class_id:string; class_name?:string; subject_name?:string; subject_id:string; }
 interface ClassItem { id:string; name:string; }
@@ -98,6 +99,29 @@ export default function ExamsPage() {
       const { error } = await supabase.from('exams').insert(valid.map(r => ({ ...base, subject_id:r.subject_id, total_marks:parseInt(r.total_marks), passing_marks:r.passing_marks?parseInt(r.passing_marks):null })));
       if (error) { setFormError(error.message); setSaving(false); return; }
     }
+
+    // ── Notify assigned teachers about the new exam ────────────────────────
+    try {
+      const selectedClassName = classes.find(c => c.id === form.class_id)?.name || '';
+      const examDateFmt = form.exam_date ? new Date(form.exam_date).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }) : '';
+      const { data: teacherLinks } = await supabase
+        .from('teacher_section_assignments')
+        .select('teacher_id')
+        .eq('class_id', form.class_id);
+      if (teacherLinks && teacherLinks.length > 0) {
+        const uniqueTeachers = [...new Set(teacherLinks.map((t:any) => t.teacher_id))];
+        await Promise.all(uniqueTeachers.map(tid => createNotification(supabase, {
+          recipient_id: tid as string,
+          school_id:    schoolId,
+          type:         'exam_scheduled',
+          title:        `New exam scheduled: ${form.name}`,
+          body:         `${selectedClassName} • ${form.exam_type.replace('_',' ')} • ${examDateFmt}`,
+          link:         '/teacher/marks',
+        })));
+      }
+    } catch (_) {}
+    // ──────────────────────────────────────────────────────────────
+
     setShowAdd(false); setForm(BLANK_FORM); setIsMulti(false); setMultiRows([{ subject_id:'', total_marks:'100', passing_marks:'35' }]);
     fetchExams(); setSaving(false);
   };
@@ -105,6 +129,31 @@ export default function ExamsPage() {
   const togglePublishGroup = async (group:Exam[]) => {
     const nv = !group[0].is_published;
     await Promise.all(group.map(e => supabase.from('exams').update({ is_published:nv }).eq('id',e.id)));
+
+    // Notify parents when marks are published
+    if (nv) {
+      const classId = group[0].class_id;
+      const examName = group[0].name;
+      // Get all students in this class
+      const { data: studentsInClass } = await supabase
+        .from('students').select('id').eq('class_id', classId).eq('is_active', true);
+      if (studentsInClass && studentsInClass.length > 0) {
+        const { data: links } = await supabase
+          .from('student_parent_links').select('parent_id')
+          .in('student_id', studentsInClass.map((s:any) => s.id));
+        if (links) {
+          await Promise.all(links.map((l:any) => createNotification(supabase, {
+            recipient_id: l.parent_id,
+            school_id:    schoolId,
+            type:         'marks_published',
+            title:        `Marks published: ${examName}`,
+            body:         'Your child\'s marks have been published. Check the Academics section.',
+            link:         '/parent/academics',
+          })));
+        }
+      }
+    }
+
     fetchExams();
   };
 

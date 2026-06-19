@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
-
 import { getTeacherSections, getSectionStudents, getStudentAttendance, getUserProfile } from '@school-erp/supabase/queries';
+import { createNotification } from '@/components/NotificationBell';
 
 interface Student { id: string; full_name: string; roll_number: number | null; }
 interface Section { id: string; name: string; class_name: string; }
@@ -76,9 +76,35 @@ export default function AttendancePage() {
     }));
     
     try {
-      // Using query from packages
       const { markAttendanceBulk } = await import('@school-erp/supabase/queries');
       await markAttendanceBulk(supabase, records);
+
+      // ── Notify parents of absent students ──────────────────────────
+      const absentStudentIds = students
+        .filter(s => attendance[s.id] === 'absent')
+        .map(s => s.id);
+
+      if (absentStudentIds.length > 0) {
+        const { data: links } = await supabase
+          .from('student_parent_links')
+          .select('parent_id, students(full_name)')
+          .in('student_id', absentStudentIds);
+
+        if (links && links.length > 0) {
+          await Promise.all(links.map((l: any) =>
+            createNotification(supabase, {
+              recipient_id: l.parent_id,
+              school_id:    userData?.school_id || '',
+              type:         'absent_alert',
+              title:        `${l.students?.full_name || 'Your child'} was marked Absent`,
+              body:         `Absent on ${date}. Please contact the school if this is incorrect.`,
+              link:         '/parent/attendance',
+            })
+          ));
+        }
+      }
+      // ──────────────────────────────────────────────────────────────
+
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (e) {

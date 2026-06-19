@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { createNotification } from '@/components/NotificationBell';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface ClassItem    { id: string; name: string; }
@@ -383,6 +384,30 @@ function TabBulk({ schoolId, academicYearId, classes, sections }: { schoolId: st
       _updated: updated, _inserted: inserted } as any);
     setApplying(false);
     if (!errors.length) { setAmount(''); setLabel(''); setDueDate(''); }
+
+    // ── Notify parents of newly-assigned fees ──────────────────────────────
+    if (!errors.length && inserted > 0) {
+      const newStudentIds = students
+        .filter((s: any) => !feeMap.has(s.id))
+        .map((s: any) => s.id);
+      if (newStudentIds.length > 0) {
+        const { data: links } = await supabase
+          .from('student_parent_links').select('parent_id')
+          .in('student_id', newStudentIds);
+        if (links) {
+          const dueTxt = dueDate ? new Date(dueDate).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }) : '';
+          await Promise.all(links.map((l: any) => createNotification(supabase, {
+            recipient_id: l.parent_id,
+            school_id:    schoolId,
+            type:         'fee_reminder',
+            title:        `New fee assigned: ${label} — ₹${amt.toLocaleString('en-IN')}`,
+            body:         dueTxt ? `Due by ${dueTxt}. Please pay on time to avoid late fees.` : 'Please check the Fees section for details.',
+            link:         '/parent/fees',
+          })));
+        }
+      }
+    }
+    // ──────────────────────────────────────────────────────────────────────
   }
 
   const canApply = selClass && selSection && label.trim() && parseFloat(amount) > 0;
