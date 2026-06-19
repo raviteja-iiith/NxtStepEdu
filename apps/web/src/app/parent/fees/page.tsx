@@ -48,9 +48,23 @@ export default function ParentFeesPage() {
       const { data: payments } = feeIds.length > 0
         ? await supabase.from('fee_payments').select('fee_id, amount_paid, payment_date').in('fee_id', feeIds)
         : { data: [] };
-      const pm: Record<string, any> = {};
-      (payments ?? []).forEach((p: any) => { pm[p.fee_id] = p; });
-      setFees((data as any[]).map(f => ({ ...f, amount_paid: pm[f.id]?.amount_paid, payment_date: pm[f.id]?.payment_date })));
+
+      // Sum ALL payments per fee (not just the latest one)
+      const pmTotals: Record<string, { total_paid: number; last_date: string | null }> = {};
+      (payments ?? []).forEach((p: any) => {
+        if (!pmTotals[p.fee_id]) pmTotals[p.fee_id] = { total_paid: 0, last_date: null };
+        pmTotals[p.fee_id].total_paid += (p.amount_paid || 0);
+        // Track most recent payment date
+        if (!pmTotals[p.fee_id].last_date || p.payment_date > pmTotals[p.fee_id].last_date!) {
+          pmTotals[p.fee_id].last_date = p.payment_date;
+        }
+      });
+
+      setFees((data as any[]).map(f => ({
+        ...f,
+        amount_paid:  pmTotals[f.id]?.total_paid  ?? 0,
+        payment_date: pmTotals[f.id]?.last_date   ?? null,
+      })));
     }
     setLoading(false);
   }, [supabase, selectedChild]);
@@ -60,11 +74,15 @@ export default function ParentFeesPage() {
     else if (!childLoading && !selectedChild) setLoading(false);
   }, [fetchFees, selectedChild, childLoading]);
 
-  const totalPending = fees.filter(f => f.status === 'pending' || f.status === 'overdue')
+  // Total pending = sum of (net amount - total paid) for pending/overdue/partially_paid fees
+  const totalPending = fees
+    .filter(f => f.status === 'pending' || f.status === 'overdue' || f.status === 'partially_paid')
     .reduce((a, f) => a + Math.max(0, (f.amount - (f.discount_amount || 0)) - (f.amount_paid || 0)), 0);
-  const totalPaid = fees.filter(f => f.status === 'paid')
-    .reduce((a, f) => a + (f.amount_paid || f.amount), 0);
-  const nextDue = fees.find(f => f.status === 'pending' && f.due_date);
+
+  // Total paid = sum of ALL payments made (regardless of fee status)
+  const totalPaid = fees.reduce((a, f) => a + (f.amount_paid || 0), 0);
+
+  const nextDue = fees.find(f => (f.status === 'pending' || f.status === 'partially_paid') && f.due_date);
 
   const summaryCards = [
     { label: 'Total Pending', value: fmt(totalPending), color: '#DC2626', bg: '#FEF2F2', border: '#FECACA', icon: '⚠️' },
@@ -133,7 +151,12 @@ export default function ParentFeesPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0 }}>
                   <div style={{ textAlign: 'right' }}>
                     <p style={{ fontSize: 20, fontWeight: 900, color: '#1E40AF', letterSpacing: '-0.02em', margin: 0 }}>{fmt(netAmount)}</p>
-                    {f.amount_paid && f.status !== 'paid' && <p style={{ fontSize: 12, color: '#16A34A', fontWeight: 600, margin: '2px 0 0' }}>{fmt(f.amount_paid)} paid</p>}
+                    {/* Show total paid amount for partially paid fees */}
+                    {(f.amount_paid > 0) && f.status !== 'paid' && (
+                      <p style={{ fontSize: 12, color: '#16A34A', fontWeight: 600, margin: '2px 0 0' }}>
+                        {fmt(f.amount_paid)} paid · {fmt(Math.max(0, f.amount - (f.discount_amount||0) - f.amount_paid))} remaining
+                      </p>
+                    )}
                   </div>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 999, fontSize: 12, fontWeight: 700, background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.dot}44`, whiteSpace: 'nowrap' }}>
                     <span style={{ width: 6, height: 6, borderRadius: '50%', background: cfg.dot, display: 'inline-block' }} />
