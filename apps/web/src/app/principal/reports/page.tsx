@@ -62,8 +62,8 @@ export default function ReportsPage() {
   ] : [];
 
   return (
-    <div style={{ maxWidth:1100, margin:'0 auto', display:'flex', flexDirection:'column', gap:24 }}>
-      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
+    <div className="dashboard-container">
+      <div className="page-header-row">
         <div>
           <h2 style={{ fontSize:22, fontWeight:800, color:'#0F172A', letterSpacing:'-0.02em', margin:0 }}>School Reports</h2>
           <p style={{ fontSize:13, color:'#94A3B8', marginTop:4 }}>Live statistics from your school database</p>
@@ -76,13 +76,13 @@ export default function ReportsPage() {
 
       {/* Grouped Stat Sections */}
       {loading ? (
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14 }}>
+        <div className="stat-cards-container">
           {Array.from({length:12}).map((_,i)=><div key={i} style={{ height:90, background:'#F1F5F9', borderRadius:12 }}/>)}
         </div>
       ) : groups.map((g,gi) => (
         <div key={gi}>
           <p style={{ fontSize:11, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:10 }}>{g.title}</p>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14 }}>
+          <div className="stat-cards-container">
             {g.items.map((c,i) => (
               <div key={i} style={{ background:c.bg, border:`1px solid ${c.border}`, borderRadius:12, padding:'16px 18px' }}>
                 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>

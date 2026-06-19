@@ -126,8 +126,8 @@ export default function PrincipalMarksPage() {
   const filteredSections = sections.filter(s => !selectedClass || s.class_id === selectedClass);
 
   return (
-    <div style={{ maxWidth:1100, margin:'0 auto', display:'flex', flexDirection:'column', gap:24 }}>
-      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
+    <div className="dashboard-container">
+      <div className="page-header-row">
         <div>
           <h2 style={{ fontSize:22, fontWeight:800, color:'#0F172A', letterSpacing:'-0.02em', margin:0 }}>Marks &amp; Results</h2>
           <p style={{ fontSize:13, color:'#94A3B8', marginTop:4 }}>View results · or enter marks for multi-subject exams</p>

@@ -143,9 +143,9 @@ export default function PrincipalClassesPage() {
   const totalSections = classes.reduce((a, c) => a + c.sections.length, 0);
 
   return (
-    <div style={{ maxWidth:1100, margin:'0 auto', display:'flex', flexDirection:'column', gap:24 }}>
+    <div className="dashboard-container">
       {/* Header */}
-      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
+      <div className="page-header-row">
         <div>
           <h2 style={{ fontSize:22, fontWeight:800, color:'#0F172A', letterSpacing:'-0.02em', margin:0 }}>Classes & Sections</h2>
           <p style={{ fontSize:13, color:'#94A3B8', marginTop:4 }}>Create classes, add sections, and assign class teachers</p>
@@ -156,7 +156,7 @@ export default function PrincipalClassesPage() {
       </div>
 
       {/* Stat Cards */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:14 }}>
+      <div className="three-col-stats">
         {[{ label:'Total Classes', value:classes.length, color:'#1D4ED8', bg:'#EFF6FF', border:'#DBEAFE' },
           { label:'Total Sections', value:totalSections, color:'#7C3AED', bg:'#F5F3FF', border:'#EDE9FE' },
           { label:'Class Teachers Assigned', value:classes.reduce((a,c)=>a+c.sections.filter(s=>s.class_teacher_id).length,0), color:'#16A34A', bg:'#F0FDF4', border:'#DCFCE7' }

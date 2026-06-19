@@ -30,7 +30,7 @@ export default function AdminSettings() {
   const labelStyle: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 5 };
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <div className="dashboard-container">
 
       {/* Header */}
       <div>
@@ -105,7 +105,7 @@ export default function AdminSettings() {
 
       {/* Maintenance Mode */}
       <div style={{ background: maintenanceMode ? '#FFF7ED' : 'white', borderRadius: 14, border: `1px solid ${maintenanceMode ? '#FED7AA' : '#E8ECF0'}`, padding: '20px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', transition: 'all 0.2s' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+        <div className="page-header-row">
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ width: 42, height: 42, borderRadius: 11, background: maintenanceMode ? '#FEF3C7' : '#F1F5F9', color: maintenanceMode ? '#D97706' : '#64748B', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 20 }}>
               🔧

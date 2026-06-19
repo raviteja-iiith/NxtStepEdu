@@ -69,7 +69,7 @@ export default function ParentAttendancePage() {
       </div>
 
       {/* Stat Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 20 }}>
+      <div className="stat-cards-container">
         {stats.map((s, i) => (
           <div key={i} style={{ background: 'white', borderRadius: 18, padding: '22px 24px', border: `1px solid ${s.border}`, boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>

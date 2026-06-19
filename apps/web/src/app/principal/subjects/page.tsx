@@ -130,9 +130,9 @@ export default function PrincipalSubjectsPage() {
   const assignedCount = subjects.filter(s => s.teacher_id).length;
 
   return (
-    <div style={{ maxWidth:1100, margin:'0 auto', display:'flex', flexDirection:'column', gap:24 }}>
+    <div className="dashboard-container">
       {/* Header */}
-      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
+      <div className="page-header-row">
         <div>
           <h2 style={{ fontSize:22, fontWeight:800, color:'#0F172A', letterSpacing:'-0.02em', margin:0 }}>Subjects</h2>
           <p style={{ fontSize:13, color:'#94A3B8', marginTop:4 }}>Add subjects and assign teachers</p>
@@ -143,7 +143,7 @@ export default function PrincipalSubjectsPage() {
       </div>
 
       {/* Stat Cards */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:14 }}>
+      <div className="three-col-stats">
         {[{ label:'Total Subjects', value:subjects.length, color:'#1D4ED8', bg:'#EFF6FF', border:'#DBEAFE' },
           { label:'Assigned', value:assignedCount, color:'#16A34A', bg:'#F0FDF4', border:'#DCFCE7' },
           { label:'Unassigned', value:subjects.length-assignedCount, color:'#D97706', bg:'#FFFBEB', border:'#FDE68A' }

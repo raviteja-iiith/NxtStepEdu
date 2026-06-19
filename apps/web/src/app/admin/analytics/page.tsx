@@ -84,7 +84,7 @@ export default function AdminAnalytics() {
   ];
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <div className="dashboard-container">
 
       {/* Header */}
       <div>
@@ -95,7 +95,7 @@ export default function AdminAnalytics() {
       </div>
 
       {/* Summary Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+      <div className="stat-cards-container">
         {summaryCards.map((s, i) => (
           <div key={i} style={{ background: s.bg, border: `1px solid ${s.border}`, borderRadius: 12, padding: '16px 20px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>

@@ -102,7 +102,7 @@ export default function ParentFeesPage() {
       </div>
 
       {/* Summary Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20 }}>
+      <div className="stat-cards-container">
         {loading
           ? [1,2,3].map(i => <div key={i} style={{ height: 96, background: '#F8FAFC', borderRadius: 18, border: '1px solid #F1F5F9' }} />)
           : summaryCards.map((c, i) => (

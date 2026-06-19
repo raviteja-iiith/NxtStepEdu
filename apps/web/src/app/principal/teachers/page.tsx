@@ -90,8 +90,8 @@ export default function TeachersPage() {
   const activeCount = teachers.filter(t=>t.is_active).length;
 
   return (
-    <div style={{ maxWidth:1100, margin:'0 auto', display:'flex', flexDirection:'column', gap:24 }}>
-      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
+    <div className="dashboard-container">
+      <div className="page-header-row">
         <div>
           <h2 style={{ fontSize:22, fontWeight:800, color:'#0F172A', letterSpacing:'-0.02em', margin:0 }}>Teacher Management</h2>
           <p style={{ fontSize:13, color:'#94A3B8', marginTop:4 }}>Manage teachers, assignments, and credentials</p>
@@ -102,7 +102,7 @@ export default function TeachersPage() {
       </div>
 
       {/* Stats */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:14 }}>
+      <div className="three-col-stats">
         {[{ label:'Total Teachers', value:teachers.length, color:'#1D4ED8', bg:'#EFF6FF', border:'#DBEAFE' },
           { label:'Active', value:activeCount, color:'#16A34A', bg:'#F0FDF4', border:'#DCFCE7' },
           { label:'Inactive', value:teachers.length-activeCount, color:'#DC2626', bg:'#FEF2F2', border:'#FEE2E2' }
@@ -123,8 +123,8 @@ export default function TeachersPage() {
       </div>
 
       {/* List */}
-      <div style={{ background:'white', borderRadius:14, border:'1px solid #E8ECF0', overflow:'hidden', boxShadow:'0 1px 3px rgba(0,0,0,0.04)' }}>
-        <div style={{ display:'grid', gridTemplateColumns:'2fr 110px 1.2fr 100px 140px', padding:'12px 20px', background:'#F8FAFC', borderBottom:'1px solid #F1F5F9' }}>
+      <div className="list-table-container">
+        <div className="teacher-list-grid header-row" style={{ padding:'12px 20px', background:'#F8FAFC', borderBottom:'1px solid #F1F5F9' }}>
           {['Teacher','Employee ID','Contact','Status','Actions'].map((h,i)=>(
             <p key={h} style={{ fontSize:11, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', letterSpacing:'0.06em', margin:0, textAlign:i===4?'right':'left' }}>{h}</p>
           ))}
@@ -140,7 +140,7 @@ export default function TeachersPage() {
             <p style={{ fontSize:13, color:'#94A3B8', marginTop:6 }}>Click <strong>+ Add Teacher</strong> to get started</p>
           </div>
         ) : filtered.map((t,idx)=>(
-          <div key={t.id} style={{ display:'grid', gridTemplateColumns:'2fr 110px 1.2fr 100px 140px', padding:'14px 20px', borderBottom:idx<filtered.length-1?'1px solid #F8FAFC':'none', alignItems:'center' }}>
+          <div key={t.id} className="teacher-list-grid" style={{ padding:'14px 20px', borderBottom:idx<filtered.length-1?'1px solid #F8FAFC':'none', alignItems:'center' }}>
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
               <div style={{ width:36, height:36, borderRadius:'50%', background:'linear-gradient(135deg, #1E3A8A, #3B82F6)', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:800, flexShrink:0 }}>
                 {t.full_name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase()}

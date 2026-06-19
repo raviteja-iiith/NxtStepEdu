@@ -55,7 +55,7 @@ export default function ProfilePage() {
   const initials = form.full_name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || '👤';
 
   return (
-    <div style={{ ...P, display: 'flex', flexDirection: 'column', gap: 32 }}>
+    <div className="dashboard-container">
 
       {/* Page Header */}
       <div style={{ paddingBottom: 24, borderBottom: '1px solid #F1F5F9' }}>
@@ -64,11 +64,11 @@ export default function ProfilePage() {
       </div>
 
       {loading ? (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+        <div className="two-col-grid">
           {[1,2].map(i => <div key={i} style={{ height: 260, background: '#F8FAFC', borderRadius: 20, border: '1px solid #F1F5F9' }} />)}
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+        <div className="two-col-grid">
 
           {/* Personal Info Card */}
           <div style={{ background: 'white', borderRadius: 20, padding: '32px', border: '1px solid #E8ECF0', boxShadow: '0 2px 12px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', gap: 20 }}>

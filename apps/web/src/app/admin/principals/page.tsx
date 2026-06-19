@@ -88,10 +88,10 @@ export default function PrincipalsPage() {
   const selectedSchoolCode = schools.find(s => s.id === form.school_id)?.code;
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <div className="dashboard-container">
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+      <div className="page-header-row">
         <div>
           <h2 style={{ fontSize: 22, fontWeight: 800, color: '#0F172A', letterSpacing: '-0.02em', margin: 0 }}>Principal Management</h2>
           <p style={{ fontSize: 13, color: '#94A3B8', marginTop: 4 }}>Create and manage principals across all schools</p>
@@ -103,7 +103,7 @@ export default function PrincipalsPage() {
       </div>
 
       {/* Stat Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
+      <div className="three-col-stats">
         {[
           { label: 'Total Principals', value: principals.length, color: '#1D4ED8', bg: '#EFF6FF', border: '#DBEAFE' },
           { label: 'Active', value: activeCount, color: '#16A34A', bg: '#F0FDF4', border: '#DCFCE7' },

@@ -117,8 +117,8 @@ export default function StudentsPage() {
   const genderColors: Record<string,string> = { male:'#EFF6FF', female:'#FDF2F8', other:'#F5F3FF' };
 
   return (
-    <div style={{ maxWidth:1100, margin:'0 auto', display:'flex', flexDirection:'column', gap:24 }}>
-      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
+    <div className="dashboard-container">
+      <div className="page-header-row">
         <div>
           <h2 style={{ fontSize:22, fontWeight:800, color:'#0F172A', letterSpacing:'-0.02em', margin:0 }}>Student Management</h2>
           <p style={{ fontSize:13, color:'#94A3B8', marginTop:4 }}>Admissions, profiles, and academic tracking</p>
@@ -129,7 +129,7 @@ export default function StudentsPage() {
       </div>
 
       {/* Stats */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:14 }}>
+      <div className="three-col-stats">
         {[{ label:'Total Students', value:students.length, color:'#1D4ED8', bg:'#EFF6FF', border:'#DBEAFE' },
           { label:'Boys', value:students.filter(s=>s.gender==='male').length, color:'#0F766E', bg:'#F0FDF4', border:'#CCFBF1' },
           { label:'Girls', value:students.filter(s=>s.gender==='female').length, color:'#BE185D', bg:'#FDF2F8', border:'#FBCFE8' }
@@ -158,8 +158,8 @@ export default function StudentsPage() {
       </div>
 
       {/* List */}
-      <div style={{ background:'white', borderRadius:14, border:'1px solid #E8ECF0', overflow:'hidden', boxShadow:'0 1px 3px rgba(0,0,0,0.04)' }}>
-        <div style={{ display:'grid', gridTemplateColumns:'2fr 140px 1fr 80px 90px 180px', padding:'12px 20px', background:'#F8FAFC', borderBottom:'1px solid #F1F5F9' }}>
+      <div className="list-table-container">
+        <div className="student-list-grid header-row" style={{ padding:'12px 20px', background:'#F8FAFC', borderBottom:'1px solid #F1F5F9' }}>
           {['Student','Admission No.','Class','Roll No.','Gender','Actions'].map((h,i)=>(
             <p key={h} style={{ fontSize:11, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', letterSpacing:'0.06em', margin:0, textAlign:i===5?'right':'left' }}>{h}</p>
           ))}
@@ -175,7 +175,7 @@ export default function StudentsPage() {
             <p style={{ fontSize:13, color:'#94A3B8', marginTop:6 }}>Click <strong>+ Admit Student</strong> to enroll the first student</p>
           </div>
         ) : searched.map((s,idx)=>(
-          <div key={s.id} style={{ display:'grid', gridTemplateColumns:'2fr 140px 1fr 80px 90px 180px', padding:'14px 20px', borderBottom:idx<searched.length-1?'1px solid #F8FAFC':'none', alignItems:'center' }}>
+          <div key={s.id} className="student-list-grid" style={{ padding:'14px 20px', borderBottom:idx<searched.length-1?'1px solid #F8FAFC':'none', alignItems:'center' }}>
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
               <div style={{ width:34, height:34, borderRadius:'50%', background:'linear-gradient(135deg, #1E3A8A, #60A5FA)', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:800, flexShrink:0 }}>
                 {s.full_name.charAt(0).toUpperCase()}

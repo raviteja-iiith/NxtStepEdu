@@ -110,7 +110,7 @@ export default function NotificationBell({ accentColor = '#1E3A8A' }: Props) {
 
       {/* Dropdown panel */}
       {open && (
-        <div style={{ position: 'absolute', right: 0, top: 46, width: 380, background: 'white', borderRadius: 16, boxShadow: '0 20px 60px rgba(0,0,0,0.18)', border: '1px solid #E8ECF0', zIndex: 100, overflow: 'hidden' }}>
+        <div className="notification-panel" style={{ position: 'absolute', right: 0, top: 46, width: 380, maxWidth: 'calc(100vw - 32px)', background: 'white', borderRadius: 16, boxShadow: '0 20px 60px rgba(0,0,0,0.18)', border: '1px solid #E8ECF0', zIndex: 100, overflow: 'hidden' }}>
           {/* Header */}
           <div style={{ padding: '14px 18px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: `linear-gradient(135deg,${accentColor}10,${accentColor}05)` }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

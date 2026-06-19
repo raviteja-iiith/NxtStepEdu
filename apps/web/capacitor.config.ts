@@ -9,7 +9,7 @@ const config: CapacitorConfig = {
   // This allows API routes, Supabase auth, and SSR to all work correctly.
   // Replace the URL below with your Vercel/production deployment URL.
   server: {
-    url: 'https://nxt-step-edu.vercel.app',  // ← UPDATE with your production URL
+    url: 'https://app.nxtstepedu.in/',  // ← UPDATE with your production URL
     cleartext: false,
     // For local development testing, comment out the URL above and use:
     // url: 'http://YOUR_LOCAL_IP:3000',

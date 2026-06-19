@@ -1020,3 +1020,420 @@ body {
     padding: 0 !important;
   }
 }
+
+/* ============================================================
+   EXPLICIT RESPONSIVE CLASSES FOR DASHBOARDS
+   ============================================================ */
+
+.dashboard-container {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.dashboard-banner {
+  border-radius: 16px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 60%, #3B82F6 100%);
+  padding: 32px;
+  position: relative;
+}
+
+.dashboard-banner-inner {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.dashboard-banner-buttons {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.stat-cards-container {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.two-col-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
+}
+
+.bottom-grid-container {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 16px;
+}
+
+.page-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.three-col-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+.list-table-container {
+  background: white;
+  border-radius: 14px;
+  border: 1px solid #E8ECF0;
+  overflow-x: auto;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
+.student-list-grid {
+  display: grid;
+  grid-template-columns: 2fr 140px 1fr 80px 90px 180px;
+}
+
+.teacher-list-grid {
+  display: grid;
+  grid-template-columns: 2fr 110px 1.2fr 100px 140px;
+}
+
+@media (max-width: 768px) {
+  .dashboard-container {
+    padding: 16px;
+  }
+  
+  .dashboard-banner {
+    padding: 20px;
+  }
+  
+  .dashboard-banner-inner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .dashboard-banner-buttons {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .stat-cards-container {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .two-col-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bottom-grid-container {
+    grid-template-columns: 1fr;
+  }
+  
+  .page-header-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .three-col-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .student-list-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  
+  .student-list-grid.header-row {
+    display: none;
+  }
+  
+  .teacher-list-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  
+  .teacher-list-grid.header-row {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .stat-cards-container {
+    grid-template-columns: 1fr;
+  }
+  
+  .three-col-stats {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================================
+   COMPREHENSIVE MOBILE RESPONSIVE OVERRIDES
+   Targets inline style grids/tables across all portals
+   ============================================================ */
+
+/* Prevent horizontal scroll on the whole page */
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+@media (max-width: 768px) {
+
+  /* ── Global box sizing and overflow guards ── */
+  * { box-sizing: border-box; }
+  div, section, main, article { max-width: 100%; }
+
+  /* ── All inline-style grids: collapse to single or two col ── */
+
+  /* 4-column stat grids → 2 cols */
+  div[style*="repeat(4, 1fr)"],
+  div[style*="repeat(4,1fr)"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  /* 3-column grids → 2 cols on mobile */
+  div[style*="repeat(3, 1fr)"],
+  div[style*="repeat(3,1fr)"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  /* 2-column content splits (e.g. 1fr 280px, 2fr 1fr, 1fr 1fr) → stack */
+  div[style*="1fr 280px"],
+  div[style*="280px 1fr"],
+  div[style*="2fr 1fr"],
+  div[style*="1fr 2fr"],
+  div[style*="gridTemplateColumns: '2fr 140px"],
+  div[style*="gridTemplateColumns: '1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Narrow fixed-px grid layouts (table headers / rows) → scroll */
+  div[style*="gridTemplateColumns:'2fr 140px"],
+  div[style*="gridTemplateColumns:'2fr 110px"],
+  div[style*="gridTemplateColumns: '2fr 1fr 80px"],
+  div[style*="gridTemplateColumns:'2fr 1fr 80px"] {
+    display: none !important; /* hide desktop table header on mobile */
+  }
+
+  /* ── Table horizontal scroll ── */
+  /* Wrap any grid-based table in scroll */
+  div[style*="display:'grid'"][style*="gridTemplateColumns:'2fr"],
+  div[style*="display: 'grid'"][style*="gridTemplateColumns: '2fr"] {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    min-width: 0 !important;
+  }
+
+  /* ── Banner / hero sections: stack vertically ── */
+  div[style*="alignItems: 'flex-end'"][style*="justifyContent: 'space-between'"],
+  div[style*="alignItems:'flex-end'"][style*="justifyContent:'space-between'"] {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 12px !important;
+  }
+
+  /* ── Quick action buttons in banners ── */
+  div[style*="flexShrink: 0"][style*="display: 'flex'"] {
+    flex-wrap: wrap !important;
+    flex-shrink: 1 !important;
+  }
+
+  /* ── Page header row (title + CTA button) ── */
+  div[style*="justifyContent:'space-between'"][style*="flexWrap:'wrap'"],
+  div[style*="justifyContent: 'space-between'"][style*="flexWrap: 'wrap'"] {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+  }
+
+  /* ── Stat value text: shrink on very small screens ── */
+  p[style*="fontSize: 30"],
+  p[style*="fontSize:30"],
+  p[style*="fontSize: 28"],
+  p[style*="fontSize:28"] {
+    font-size: 22px !important;
+  }
+
+  /* ── Form grids inside modals ── */
+  div[style*="gridTemplateColumns:'1fr 1fr'"],
+  div[style*="gridTemplateColumns: '1fr 1fr'"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* ── Content padding ── */
+  div[style*="maxWidth:1100"],
+  div[style*="maxWidth: 1100"],
+  div[style*="maxWidth:900"],
+  div[style*="maxWidth: 900"] {
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+
+  /* ── Scrollable table container for student/teacher lists ── */
+  div[style*="overflow:'hidden'"][style*="borderRadius:14"],
+  div[style*="overflow: 'hidden'"][style*="borderRadius: 14"],
+  div[style*="overflow:'hidden'"][style*="borderRadius: 20"],
+  div[style*="overflow: 'hidden'"][style*="borderRadius: 20"] {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+}
+
+/* Extra small screens — phones under 480px */
+@media (max-width: 480px) {
+
+  /* 3-col and 4-col grids → 1 col */
+  div[style*="repeat(3, 1fr)"],
+  div[style*="repeat(3,1fr)"],
+  div[style*="repeat(4, 1fr)"],
+  div[style*="repeat(4,1fr)"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* All two-column grids → 1 col */
+  div[style*="1fr 280px"],
+  div[style*="2fr 1fr"],
+  div[style*="1fr 1fr"],
+  div[style*="gridTemplateColumns:'1fr 1fr'"],
+  div[style*="gridTemplateColumns: '1fr 1fr'"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Welcome banner padding */
+  div[style*="padding: 32"][style*="background: 'linear-gradient"] {
+    padding: 20px 16px !important;
+  }
+  div[style*="padding:32"][style*="background:'linear-gradient"] {
+    padding: 20px 16px !important;
+  }
+
+  /* Font sizes in headers */
+  h2[style*="fontSize: 26"],
+  h2[style*="fontSize:26"],
+  h2[style*="fontSize: 28"],
+  h2[style*="fontSize:28"] {
+    font-size: 20px !important;
+  }
+}
+
+/* ── Principal: student/teacher list rows — card layout on mobile ── */
+@media (max-width: 768px) {
+
+  /* Student list rows */
+  div[style*="gridTemplateColumns:'2fr 140px 1fr 80px 90px 180px'"],
+  div[style*="gridTemplateColumns: '2fr 140px 1fr 80px 90px 180px'"] {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+    padding: 14px 16px !important;
+  }
+
+  /* Teacher list rows */
+  div[style*="gridTemplateColumns:'2fr 110px 1.2fr 100px 140px'"],
+  div[style*="gridTemplateColumns: '2fr 110px 1.2fr 100px 140px'"] {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+    padding: 14px 16px !important;
+  }
+
+  /* Action buttons inside list rows — wrap */
+  div[style*="justifyContent:'flex-end'"],
+  div[style*="justifyContent: 'flex-end'"] {
+    justify-content: flex-start !important;
+    flex-wrap: wrap !important;
+  }
+}
+
+/* ── Teacher dashboard grid ── */
+@media (max-width: 768px) {
+  /* "2fr 1fr" sidebar layout used in teacher dashboard */
+  div[style*="gridTemplateColumns: '2fr 1fr'"],
+  div[style*="gridTemplateColumns:'2fr 1fr'"] {
+    grid-template-columns: 1fr !important;
+  }
+  /* "1fr 2fr" reverse variant */
+  div[style*="gridTemplateColumns: '1fr 2fr'"],
+  div[style*="gridTemplateColumns:'1fr 2fr'"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ── Fees and attendance pages: key figures ── */
+@media (max-width: 768px) {
+  /* Fee card amounts */
+  p[style*="fontSize: 20"][style*="fontWeight: 900"],
+  p[style*="fontSize:20"][style*="fontWeight:900"] {
+    font-size: 17px !important;
+  }
+
+  /* Wide padding in cards */
+  div[style*="padding: '28px 32px'"],
+  div[style*="padding:'28px 32px'"] {
+    padding: 16px !important;
+  }
+  div[style*="padding: '24px 28px'"],
+  div[style*="padding:'24px 28px'"] {
+    padding: 14px 16px !important;
+  }
+}
+
+/* ── Calendar: 7-col grid should still work — make cells smaller ── */
+@media (max-width: 480px) {
+  div[style*="repeat(7, 1fr)"],
+  div[style*="repeat(7,1fr)"] {
+    gap: 2px !important;
+  }
+  div[style*="repeat(7, 1fr)"] > div,
+  div[style*="repeat(7,1fr)"] > div {
+    border-radius: 6px !important;
+  }
+}
+
+/* ── Charts: Allow overflow scroll on chart containers ── */
+@media (max-width: 768px) {
+  .recharts-wrapper,
+  .recharts-responsive-container {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+}
+
+/* ── Messages page: side-by-side layout → stack ── */
+@media (max-width: 768px) {
+  div[style*="gridTemplateColumns: '320px 1fr'"],
+  div[style*="gridTemplateColumns:'320px 1fr'"],
+  div[style*="gridTemplateColumns: '300px 1fr'"],
+  div[style*="gridTemplateColumns:'300px 1fr'"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ── Admin portal ── */
+@media (max-width: 768px) {
+  div[style*="gridTemplateColumns: 'repeat(2,1fr)'"],
+  div[style*="gridTemplateColumns:'repeat(2,1fr)'"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ── Quick actions wrap on mobile ── */
+@media (max-width: 768px) {
+  div[style*="gap: 10"][style*="flexShrink: 0"],
+  div[style*="gap:10"][style*="flexShrink:0"] {
+    flex-wrap: wrap !important;
+  }
+}
+

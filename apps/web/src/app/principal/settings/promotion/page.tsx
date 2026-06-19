@@ -247,7 +247,7 @@ export default function PromotionPage() {
       )}
 
       {/* Info cards */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:12 }}>
+      <div className="stat-cards-container">
         {[
           { label:'Active Students', value:students.length, icon:'🎓', color:'#1D4ED8', bg:'#EFF6FF', border:'#DBEAFE' },
           { label:'Classes', value:classes.length, icon:'🏫', color:'#0F766E', bg:'#F0FDF4', border:'#CCFBF1' },

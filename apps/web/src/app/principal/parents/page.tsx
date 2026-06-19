@@ -36,8 +36,8 @@ export default function PrincipalParentsPage() {
   const activeCount = parents.filter(p => p.is_active).length;
 
   return (
-    <div style={{ maxWidth:1100, margin:'0 auto', display:'flex', flexDirection:'column', gap:24 }}>
-      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
+    <div className="dashboard-container">
+      <div className="page-header-row">
         <div>
           <h2 style={{ fontSize:22, fontWeight:800, color:'#0F172A', letterSpacing:'-0.02em', margin:0 }}>Parent Management</h2>
           <p style={{ fontSize:13, color:'#94A3B8', marginTop:4 }}>Parents linked to students in your school</p>
@@ -45,7 +45,7 @@ export default function PrincipalParentsPage() {
       </div>
 
       {/* Stat Cards */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:14 }}>
+      <div className="three-col-stats">
         {[{ label:'Total Parents', value:parents.length, color:'#7C3AED', bg:'#F5F3FF', border:'#EDE9FE' },
           { label:'Active', value:activeCount, color:'#16A34A', bg:'#F0FDF4', border:'#DCFCE7' },
           { label:'Linked to Students', value:parents.filter(p=>p.student_name).length, color:'#1D4ED8', bg:'#EFF6FF', border:'#DBEAFE' }

@@ -442,7 +442,7 @@ function TabBulk({ schoolId, academicYearId, classes, sections }: { schoolId: st
           </div>
 
           {/* Row 2: Label + Amount */}
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14 }}>
+          <div className="bottom-grid-container">
             <div>
               <label style={LABEL}>Fee Label <span style={{ color: '#EF4444' }}>*</span></label>
               <input
@@ -831,7 +831,7 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
 
       {/* Stats */}
       {!loading && visible.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12 }}>
+        <div className="stat-cards-container">
           {[{ label:'Students',  value: String(visible.length), color:'#1D4ED8', bg:'#EFF6FF', border:'#DBEAFE', icon:'🎓' },
             { label:'Total Fees',value: fmt(totalFee),          color:'#0F766E', bg:'#F0FDF4', border:'#CCFBF1', icon:'🏫' },
             { label:'Total Paid',value: fmt(totalPaid),         color:'#15803D', bg:'#DCFCE7', border:'#BBF7D0', icon:'✅' },
@@ -1178,7 +1178,7 @@ export default function FeesPage() {
   ];
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <div className="dashboard-container">
       {/* Header */}
       <div>
         <h2 style={{ fontSize: 22, fontWeight: 800, color: '#0F172A', letterSpacing: '-0.02em', margin: 0 }}>Fee Management</h2>

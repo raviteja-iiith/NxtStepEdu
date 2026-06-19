@@ -52,13 +52,13 @@ export default function PrincipalDashboard() {
   ];
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <div className="dashboard-container">
 
       {/* Welcome Banner */}
-      <div style={{ borderRadius: 16, overflow: 'hidden', background: 'linear-gradient(135deg, #1E3A8A 0%, #2563EB 60%, #3B82F6 100%)', padding: 32, position: 'relative' }}>
+      <div className="dashboard-banner">
         <div style={{ position: 'absolute', top: -40, right: -40, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.04)' }} />
         <div style={{ position: 'absolute', bottom: -20, right: 100, width: 120, height: 120, borderRadius: '50%', background: 'rgba(255,255,255,0.03)' }} />
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+        <div className="dashboard-banner-inner">
           <div>
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.1)', borderRadius: 99, padding: '5px 12px', marginBottom: 12, border: '1px solid rgba(255,255,255,0.15)' }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#4ADE80', display: 'inline-block' }} />
@@ -71,15 +71,15 @@ export default function PrincipalDashboard() {
               Here&apos;s what&apos;s happening in your school today, {dateStr}.
             </p>
           </div>
-          <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
-            <button style={{ background: 'white', color: '#1D4ED8', fontWeight: 700, fontSize: 13, padding: '10px 20px', borderRadius: 10, border: 'none', cursor: 'pointer', boxShadow: '0 4px 16px rgba(0,0,0,0.15)', whiteSpace: 'nowrap' }}>Generate Report</button>
-            <button style={{ background: 'rgba(255,255,255,0.1)', color: 'white', fontWeight: 700, fontSize: 13, padding: '10px 20px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', whiteSpace: 'nowrap' }}>Broadcast</button>
+          <div className="dashboard-banner-buttons">
+            <button style={{ background: 'white', color: '#1D4ED8', fontWeight: 700, fontSize: 13, padding: '10px 20px', borderRadius: 10, border: 'none', cursor: 'pointer', boxShadow: '0 4px 16px rgba(0,0,0,0.15)', whiteSpace: 'nowrap', flex: 1 }}>Generate Report</button>
+            <button style={{ background: 'rgba(255,255,255,0.1)', color: 'white', fontWeight: 700, fontSize: 13, padding: '10px 20px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', whiteSpace: 'nowrap', flex: 1 }}>Broadcast</button>
           </div>
         </div>
       </div>
 
       {/* Stat Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+      <div className="stat-cards-container">
         {statCards.map((s, i) => (
           <div key={i} style={{ background: 'white', borderRadius: 14, border: '1px solid #E8ECF0', padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
@@ -95,7 +95,7 @@ export default function PrincipalDashboard() {
       </div>
 
       {/* Bottom Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 16 }}>
+      <div className="bottom-grid-container">
 
         {/* Recent Activity */}
         <div style={{ background: 'white', borderRadius: 14, border: '1px solid #E8ECF0', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>

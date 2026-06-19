@@ -164,7 +164,7 @@ export default function ExamsPage() {
 
   // ─── JSX ────────────────────────────────────────────────────────────────────
   return (
-    <div style={{ maxWidth:1100, margin:'0 auto', display:'flex', flexDirection:'column', gap:24 }}>
+    <div className="dashboard-container">
       {/* Header */}
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:16 }}>
         <div>

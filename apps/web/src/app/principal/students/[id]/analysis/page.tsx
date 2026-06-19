@@ -101,9 +101,9 @@ export default function StudentAnalysisPage() {
   useEffect(() => { fetchAnalysis(); }, [fetchAnalysis]);
 
   if (loading) return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div className="dashboard-container">
       <div style={{ height: 120, background: '#F1F5F9', borderRadius: 16 }} />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
+      <div className="stat-cards-container">
         {[1,2,3,4].map(i => <div key={i} style={{ height: 90, background: '#F1F5F9', borderRadius: 14 }} />)}
       </div>
       <div style={{ height: 300, background: '#F1F5F9', borderRadius: 16 }} />
@@ -178,7 +178,7 @@ export default function StudentAnalysisPage() {
   ];
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <div className="dashboard-container">
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
         <button onClick={() => router.back()} style={{ padding: '8px 16px', borderRadius: 9, border: '1px solid #E2E8F0', background: 'white', fontSize: 13, fontWeight: 600, color: '#475569', cursor: 'pointer' }}>← Back</button>
@@ -214,7 +214,7 @@ export default function StudentAnalysisPage() {
       </div>
 
       {/* Stat Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
+      <div className="stat-cards-container">
         <StatCard label="Best Subject" value={analysis.bestSubject} color="#059669" bg="#ECFDF5" />
         <StatCard label="Weakest Subject" value={analysis.weakestSubject} color="#DC2626" bg="#FEF2F2" />
         <StatCard label="Improving Subjects" value={analysis.improvingSubjectsCount} sub="subjects trending up" color="#7C3AED" bg="#F5F3FF" />

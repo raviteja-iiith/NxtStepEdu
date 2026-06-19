@@ -73,13 +73,13 @@ export default function TeacherDashboard() {
   ];
 
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <div className="dashboard-container">
 
       {/* Welcome Banner */}
-      <div style={{ borderRadius: 16, overflow: 'hidden', background: 'linear-gradient(135deg, #042F2E 0%, #0F766E 60%, #14B8A6 100%)', padding: 32, position: 'relative' }}>
+      <div className="dashboard-banner">
         <div style={{ position: 'absolute', top: -40, right: -40, width: 220, height: 220, borderRadius: '50%', background: 'rgba(255,255,255,0.04)' }} />
         <div style={{ position: 'absolute', bottom: -30, right: 120, width: 140, height: 140, borderRadius: '50%', background: 'rgba(255,255,255,0.03)' }} />
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+        <div className="dashboard-banner-inner">
           <div>
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.1)', borderRadius: 99, padding: '5px 12px', marginBottom: 12, border: '1px solid rgba(255,255,255,0.15)' }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#4ADE80', display: 'inline-block' }} />
@@ -99,7 +99,7 @@ export default function TeacherDashboard() {
       </div>
 
       {/* Stats Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+      <div className="stat-cards-container">
         {stats.map((s, i) => (
           <div key={i} style={{ background: 'white', borderRadius: 14, border: '1px solid #E8ECF0', padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -117,7 +117,7 @@ export default function TeacherDashboard() {
       </div>
 
       {/* Bottom Grid: Timetable + Quick Actions */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 16 }}>
+      <div className="bottom-grid-container">
 
         {/* Today's Timetable */}
         <div style={{ background: 'white', borderRadius: 14, border: '1px solid #E8ECF0', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflow: 'hidden' }}>

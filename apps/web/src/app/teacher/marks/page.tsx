@@ -143,7 +143,7 @@ export default function MarksPage() {
   const IS: React.CSSProperties = { width:'100%', padding:'7px 10px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, outline:'none', boxSizing:'border-box' };
 
   return (
-    <div style={{ maxWidth:1100, margin:'0 auto', display:'flex', flexDirection:'column', gap:24 }}>
+    <div className="dashboard-container">
       <div>
         <h2 style={{ fontSize:22, fontWeight:800, color:'#0F172A', letterSpacing:'-0.02em', margin:0 }}>Marks Entry</h2>
         <p style={{ fontSize:13, color:'#94A3B8', marginTop:4 }}>Enter marks for any exam across your assigned subjects</p>
@@ -165,7 +165,7 @@ export default function MarksPage() {
 
       {/* Exam Info */}
       {exam && (
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12 }}>
+        <div className="stat-cards-container">
           {[
             { label:'Subject', value:exam.subject_name||'—', icon:'📚' },
             { label:'Class', value:exam.class_name||'—', icon:'🏫' },
@@ -199,7 +199,7 @@ export default function MarksPage() {
       ) : (
         <>
           {/* Progress + Actions */}
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
+          <div className="page-header-row">
             <div style={{ display:'flex', alignItems:'center', gap:16 }}>
               <div>
                 <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
@@ -286,7 +286,7 @@ export default function MarksPage() {
 
           {/* Stats */}
           {filledCount > 0 && (
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12 }}>
+            <div className="stat-cards-container">
               {[{ label:'Total', value:students.length, color:'#1D4ED8', bg:'#EFF6FF', border:'#DBEAFE' },
                 { label:'Filled', value:filledCount, color:'#0F766E', bg:'#F0FDF4', border:'#CCFBF1' },
                 { label:'Passing', value:passCount, color:'#16A34A', bg:'#DCFCE7', border:'#BBF7D0' },

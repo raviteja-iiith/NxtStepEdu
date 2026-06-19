@@ -87,10 +87,10 @@ export default function DocumentsPage() {
   };
 
   return (
-    <div style={{ fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column', gap: 32 }}>
+    <div className="dashboard-container">
 
       {/* Page Header */}
-      <div style={{ paddingBottom: 24, borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+      <div className="page-header-row" style={{ paddingBottom: 24, borderBottom: '1px solid #F1F5F9' }}>
         <div>
           <h2 style={{ fontSize: 28, fontWeight: 900, color: '#0F172A', letterSpacing: '-0.02em', margin: 0 }}>Documents</h2>
           <p style={{ fontSize: 14, color: '#64748B', marginTop: 6 }}>Request and track official school certificates</p>
@@ -111,7 +111,7 @@ export default function DocumentsPage() {
       {/* Document Type Cards */}
       <div>
         <h3 style={{ fontSize: 12, fontWeight: 800, color: '#475569', margin: '0 0 16px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Available Documents</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+        <div className="three-col-stats">
           {DOC_TYPES.map(d => (
             <div key={d.value}
               onClick={() => { setForm(f => ({ ...f, document_type: d.value })); setShowRequest(true); setFormError(''); }}
@@ -128,7 +128,7 @@ export default function DocumentsPage() {
       </div>
 
       {/* Request History */}
-      <div style={{ background: 'white', borderRadius: 20, border: '1px solid #E8ECF0', overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
+      <div className="list-table-container">
         <div style={{ padding: '18px 24px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
           <h3 style={{ fontSize: 14, fontWeight: 800, color: '#475569', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>My Requests</h3>
         </div>

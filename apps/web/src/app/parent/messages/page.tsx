@@ -123,7 +123,7 @@ export default function ParentMessagesPage() {
         <p style={{ fontSize: 14, color: '#64748B', marginTop: 6 }}>Chat with your child's teachers directly</p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 20, height: 620 }}>
+      <div className="bottom-grid-container" style={{ height: 620 }}>
         {/* Contacts Sidebar */}
         <div style={{ background: 'white', borderRadius: 20, border: '1px solid #E8ECF0', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
           <div style={{ padding: '18px 20px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>

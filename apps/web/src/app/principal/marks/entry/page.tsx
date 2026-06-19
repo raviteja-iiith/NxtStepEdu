@@ -137,7 +137,7 @@ export default function MultiMarksEntry() {
   if (initLoad) return <div style={{ padding:40, textAlign:'center', color:'#94A3B8' }}>Loading...</div>;
 
   return (
-    <div style={{ maxWidth:1200, margin:'0 auto', display:'flex', flexDirection:'column', gap:24 }}>
+    <div className="dashboard-container">
       {/* Header */}
       <div>
         <h2 style={{ fontSize:22, fontWeight:800, color:'#0F172A', letterSpacing:'-0.02em', margin:0 }}>📝 Multi-Subject Marks Entry</h2>

@@ -64,7 +64,7 @@ export default function TeacherStudentAnalysisPage() {
   useEffect(() => { fetchAnalysis(); }, [fetchAnalysis]);
 
   if (loading) return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div className="dashboard-container">
       {[120, 90, 300].map((h, i) => <div key={i} style={{ height: h, background: '#F1F5F9', borderRadius: 16 }} />)}
     </div>
   );
@@ -102,7 +102,7 @@ export default function TeacherStudentAnalysisPage() {
   const TABS = [{ key: 'overview' as const, label: '📊 Overview' }, { key: 'charts' as const, label: '📈 Charts' }, { key: 'remarks' as const, label: '💬 Remarks' }];
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <div className="dashboard-container">
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
         <button onClick={() => router.back()} style={{ padding: '8px 16px', borderRadius: 9, border: '1px solid #E2E8F0', background: 'white', fontSize: 13, fontWeight: 600, color: '#475569', cursor: 'pointer' }}>← Back</button>
         <div>
@@ -131,7 +131,7 @@ export default function TeacherStudentAnalysisPage() {
       </div>
 
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
+      <div className="stat-cards-container">
         {[
           { label: 'Best Subject', value: analysis.bestSubject, color: '#059669', bg: '#ECFDF5' },
           { label: 'Weakest Subject', value: analysis.weakestSubject, color: '#DC2626', bg: '#FEF2F2' },

@@ -107,7 +107,7 @@ export default function ParentDashboard() {
       </div>
 
       {/* Metric Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 20 }}>
+      <div className="stat-cards-container">
         {cards.map((card, i) => (
           <div key={i} style={{ background: 'white', borderRadius: 20, padding: '24px', boxShadow: '0 2px 16px rgba(0,0,0,0.06)', border: `1px solid ${card.border}`, transition: 'transform 0.2s, box-shadow 0.2s', cursor: 'default' }}
             onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-3px)'; (e.currentTarget as HTMLDivElement).style.boxShadow = '0 8px 32px rgba(0,0,0,0.1)'; }}
@@ -125,7 +125,7 @@ export default function ParentDashboard() {
       </div>
 
       {/* Content Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 24 }}>
+      <div className="bottom-grid-container">
 
         {/* Recent Activity */}
         <div style={{ background: 'white', borderRadius: 20, padding: '28px 32px', boxShadow: '0 2px 12px rgba(0,0,0,0.05)', border: '1px solid #E8ECF0' }}>

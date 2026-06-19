@@ -62,7 +62,7 @@ export default function AdminDashboard() {
   ];
 
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <div className="dashboard-container">
 
       {/* Welcome Banner */}
       <div style={{ borderRadius: 16, overflow: 'hidden', background: 'linear-gradient(135deg, #1E1B4B 0%, #3730A3 60%, #6366F1 100%)', padding: 32, position: 'relative' }}>
@@ -93,7 +93,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* Stat Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+      <div className="stat-cards-container">
         {statCards.map((s, i) => (
           <div key={i} style={{ background: 'white', borderRadius: 14, border: '1px solid #E8ECF0', padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -188,7 +188,7 @@ export default function AdminDashboard() {
 
       {/* Schools Summary */}
       {!loading && stats && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+        <div className="three-col-stats">
           {[
             { label: 'Total Schools', value: stats.totalSchools, color: '#6366F1', bg: '#EEF2FF' },
             { label: 'Active Schools', value: stats.activeSchools, color: '#16A34A', bg: '#F0FDF4' },
