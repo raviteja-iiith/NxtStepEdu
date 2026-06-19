@@ -302,7 +302,7 @@ export default function StudentAnalysisPage() {
                   <YAxis domain={[0, 100]} tick={{ fontSize: 12, fill: '#93C5FD' }} tickFormatter={v => `${v}%`} />
                   <Tooltip
                     contentStyle={{ background: '#1E293B', border: '1px solid #334155', borderRadius: 10, fontSize: 13, color: 'white' }}
-                    formatter={(val: any, name: string | undefined) => [`${val}%`, name ?? '']}
+                    formatter={(val: any, name: any) => [`${val}%`, name ?? '']}
                     labelStyle={{ color: '#93C5FD', fontWeight: 700, marginBottom: 6 }}
                   />
                   <Legend wrapperStyle={{ fontSize: 12, paddingTop: 16, color: '#CBD5E1' }} />

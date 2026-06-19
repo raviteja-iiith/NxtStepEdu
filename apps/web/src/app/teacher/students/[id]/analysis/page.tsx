@@ -213,7 +213,7 @@ export default function TeacherStudentAnalysisPage() {
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
                   <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#5EEAD4' }} angle={-35} textAnchor="end" interval={0} height={70} />
                   <YAxis domain={[0, 100]} tick={{ fontSize: 12, fill: '#5EEAD4' }} tickFormatter={v => `${v}%`} />
-                  <Tooltip contentStyle={{ background: '#1E293B', border: '1px solid #134E4A', borderRadius: 10, fontSize: 13, color: 'white' }} formatter={(val: any, name: string | undefined) => [`${val}%`, name ?? '']} labelStyle={{ color: '#5EEAD4', fontWeight: 700, marginBottom: 6 }} />
+                  <Tooltip contentStyle={{ background: '#1E293B', border: '1px solid #334155', borderRadius: 10, fontSize: 13, color: 'white' }} formatter={(val: any, name: any) => [`${val}%`, name ?? '']} labelStyle={{ color: '#93C5FD', fontWeight: 700, marginBottom: 6 }} />
                   <Legend wrapperStyle={{ fontSize: 12, paddingTop: 16, color: '#CBD5E1' }} />
                   <ReferenceLine y={75} stroke="#10B981" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: '75%', fill: '#10B981', fontSize: 11 }} />
                   <ReferenceLine y={40} stroke="#EF4444" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: '40%', fill: '#EF4444', fontSize: 11 }} />

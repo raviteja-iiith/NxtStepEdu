@@ -42,7 +42,7 @@ export default function ParentDashboard() {
       monthlyAttendance = `${Math.round((presentCount / monthlyAtt.data.length) * 100)}%`;
     }
 
-    const totalFees = fees.data ? fees.data.reduce((acc, f: any) => acc + Math.max(0, (f.amount || 0) - (f.discount_amount || 0)), 0) : 0;
+    const totalFees = fees.data ? fees.data.reduce((acc: number, f: any) => acc + Math.max(0, (f.amount || 0) - (f.discount_amount || 0)), 0) : 0;
 
     setStats({
       attendanceToday: todayAtt.data

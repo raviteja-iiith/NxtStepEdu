@@ -17,11 +17,6 @@ const config: CapacitorConfig = {
   },
 
   android: {
-    buildOptions: {
-      // Android 5.0+ (API 21) = covers 99.5%+ of all Android devices
-      minSdkVersion: 21,
-      targetSdkVersion: 34,
-    },
     allowMixedContent: false,
     captureInput: true,
     webContentsDebuggingEnabled: false,  // set true for debug builds

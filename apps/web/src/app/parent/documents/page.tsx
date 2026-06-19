@@ -110,7 +110,7 @@ export default function DocumentsPage() {
 
       {/* Document Type Cards */}
       <div>
-        <h3 style={{ fontSize: 15, fontWeight: 800, color: '#475569', margin: '0 0 16px', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: 12 }}>Available Documents</h3>
+        <h3 style={{ fontSize: 12, fontWeight: 800, color: '#475569', margin: '0 0 16px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Available Documents</h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
           {DOC_TYPES.map(d => (
             <div key={d.value}
@@ -217,3 +217,4 @@ export default function DocumentsPage() {
       )}
     </div>
   );
+}

@@ -152,9 +152,9 @@ export default function ParentFeesPage() {
                   <div style={{ textAlign: 'right' }}>
                     <p style={{ fontSize: 20, fontWeight: 900, color: '#1E40AF', letterSpacing: '-0.02em', margin: 0 }}>{fmt(netAmount)}</p>
                     {/* Show total paid amount for partially paid fees */}
-                    {(f.amount_paid > 0) && f.status !== 'paid' && (
+                    {((f.amount_paid || 0) > 0) && f.status !== 'paid' && (
                       <p style={{ fontSize: 12, color: '#16A34A', fontWeight: 600, margin: '2px 0 0' }}>
-                        {fmt(f.amount_paid)} paid · {fmt(Math.max(0, f.amount - (f.discount_amount||0) - f.amount_paid))} remaining
+                        {fmt(f.amount_paid || 0)} paid · {fmt(Math.max(0, f.amount - (f.discount_amount||0) - (f.amount_paid || 0)))} remaining
                       </p>
                     )}
                   </div>

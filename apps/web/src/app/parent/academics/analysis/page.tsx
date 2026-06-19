@@ -242,7 +242,7 @@ export default function ParentAnalysisPage() {
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
                   <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#DDD6FE' }} angle={-35} textAnchor="end" interval={0} height={70} />
                   <YAxis domain={[0, 100]} tick={{ fontSize: 12, fill: '#DDD6FE' }} tickFormatter={v => `${v}%`} />
-                  <Tooltip contentStyle={{ background: '#4C1D95', border: '1px solid #6D28D9', borderRadius: 10, fontSize: 13, color: 'white' }} formatter={(val: any, name: string | undefined) => [`${val}%`, name ?? '']} labelStyle={{ color: '#DDD6FE', fontWeight: 700, marginBottom: 6 }} />
+                  <Tooltip contentStyle={{ background: '#4C1D95', border: '1px solid #6D28D9', borderRadius: 10, fontSize: 13, color: 'white' }} formatter={(val: any, name: any) => [`${val}%`, name ?? '']} labelStyle={{ color: '#DDD6FE', fontWeight: 700, marginBottom: 6 }} />
                   <Legend wrapperStyle={{ fontSize: 12, paddingTop: 16, color: '#E9D5FF' }} />
                   <ReferenceLine y={75} stroke="#4ADE80" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: '75% Good', fill: '#4ADE80', fontSize: 11 }} />
                   <ReferenceLine y={40} stroke="#F87171" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: '40% Pass', fill: '#F87171', fontSize: 11 }} />
