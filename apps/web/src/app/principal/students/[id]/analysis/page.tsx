@@ -10,6 +10,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine,
   Cell
 } from 'recharts';
+import { ChartWrapper } from '@/components/ChartWrapper';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const CAT_COLOR: Record<PerformanceCategory, { text: string; bg: string; border: string }> = {
@@ -280,7 +281,7 @@ export default function StudentAnalysisPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24, width: '100%', minWidth: 0 }}>
 
           {/* ── TIMELINE: Marks Journey (all exams, scaled %) ── */}
-          <div style={{ background: 'linear-gradient(135deg,#0F172A,#1E3A8A)', border: '1px solid #334155', borderRadius: 18, padding: '24px 28px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
+          <div style={{ background: 'linear-gradient(135deg,#0F172A,#1E3A8A)', border: '1px solid #334155', borderRadius: 18, padding: '24px 28px', width: '100%', minWidth: 0 }}>
             <div style={{ marginBottom: 20 }}>
               <h4 style={{ fontSize: 16, fontWeight: 800, color: 'white', margin: 0 }}>📈 Marks Journey — All Exams (Scaled to %)</h4>
               <p style={{ fontSize: 12, color: '#93C5FD', margin: '6px 0 0' }}>Each subject's score scaled as % of max marks · chronological order from first exam to latest</p>
@@ -288,7 +289,7 @@ export default function StudentAnalysisPage() {
             {timelineData.length < 1 ? (
               <div style={{ textAlign: 'center', padding: '40px 0', color: '#64748B' }}><p>No exam history yet</p></div>
             ) : (
-              <ResponsiveContainer width="100%" height={360}>
+              <ChartWrapper height={360}>
                 <LineChart data={timelineData} margin={{ top: 5, right: 30, left: 0, bottom: 60 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
                   <XAxis
@@ -321,14 +322,14 @@ export default function StudentAnalysisPage() {
                     />
                   ))}
                 </LineChart>
-              </ResponsiveContainer>
+              </ChartWrapper>
             )}
           </div>
 
           {/* Bar: Subject Marks */}
-          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
+          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0 }}>
             <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>📊 Subject-wise Marks (Current vs Maximum)</h4>
-            <ResponsiveContainer width="100%" height={280}>
+            <ChartWrapper height={280}>
               <BarChart data={barData} barCategoryGap="30%">
                 <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
                 <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748B' }} />
@@ -338,13 +339,13 @@ export default function StudentAnalysisPage() {
                 <Bar dataKey="Max" fill="#E2E8F0" radius={[4,4,0,0]} name="Max Marks" />
                 <Bar dataKey="Marks" fill="#3B82F6" radius={[4,4,0,0]} name="Marks Obtained" />
               </BarChart>
-            </ResponsiveContainer>
+            </ChartWrapper>
           </div>
 
           {/* Bar: Percentage */}
-          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
+          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0 }}>
             <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>📈 Subject-wise Percentage</h4>
-            <ResponsiveContainer width="100%" height={280}>
+            <ChartWrapper height={280}>
               <BarChart data={barData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
                 <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748B' }} />
@@ -360,13 +361,13 @@ export default function StudentAnalysisPage() {
                   ))}
                 </Bar>
               </BarChart>
-            </ResponsiveContainer>
+            </ChartWrapper>
           </div>
 
           {/* Line: Trend */}
-          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
+          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0 }}>
             <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>📉 Performance Trend (Current vs Previous Average)</h4>
-            <ResponsiveContainer width="100%" height={280}>
+            <ChartWrapper height={280}>
               <LineChart data={trendData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
                 <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748B' }} />
@@ -376,13 +377,13 @@ export default function StudentAnalysisPage() {
                 <Line type="monotone" dataKey="Current %" stroke="#3B82F6" strokeWidth={3} dot={{ r: 5, fill: '#3B82F6' }} />
                 <Line type="monotone" dataKey="Prev Avg %" stroke="#94A3B8" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 4, fill: '#94A3B8' }} />
               </LineChart>
-            </ResponsiveContainer>
+            </ChartWrapper>
           </div>
 
           {/* Bar: Improvement Score */}
-          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
+          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0 }}>
             <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>🔼 Improvement Score (vs Previous Average, in %pts)</h4>
-            <ResponsiveContainer width="100%" height={240}>
+            <ChartWrapper height={240}>
               <BarChart data={improvData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
                 <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748B' }} />
@@ -395,21 +396,21 @@ export default function StudentAnalysisPage() {
                   ))}
                 </Bar>
               </BarChart>
-            </ResponsiveContainer>
+            </ChartWrapper>
           </div>
 
           {/* Radar */}
           {analysis.subjects.length >= 3 && (
-            <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
+            <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0 }}>
               <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>🕸️ Performance Radar</h4>
-              <ResponsiveContainer width="100%" height={320}>
+              <ChartWrapper height={320}>
                 <RadarChart data={radarData}>
                   <PolarGrid stroke="#E2E8F0" />
                   <PolarAngleAxis dataKey="subject" tick={{ fontSize: 12, fill: '#475569' }} />
                   <Radar name="Score %" dataKey="score" stroke="#6366F1" fill="#6366F1" fillOpacity={0.25} strokeWidth={2} />
                   <Tooltip formatter={(val) => [`${val}%`, 'Score']} contentStyle={{ borderRadius: 10, border: '1px solid #E2E8F0', fontSize: 13 }} />
                 </RadarChart>
-              </ResponsiveContainer>
+              </ChartWrapper>
             </div>
           )}
         </div>

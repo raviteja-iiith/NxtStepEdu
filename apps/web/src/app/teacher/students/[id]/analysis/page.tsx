@@ -9,6 +9,7 @@ import {
   BarChart, Bar, LineChart, Line, RadarChart, Radar, PolarGrid, PolarAngleAxis,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, Cell
 } from 'recharts';
+import { ChartWrapper } from '@/components/ChartWrapper';
 
 const CAT_COLOR: Record<PerformanceCategory, { text: string; bg: string; border: string }> = {
   'Excellent':          { text: '#065F46', bg: '#ECFDF5', border: '#6EE7B7' },
@@ -202,13 +203,13 @@ export default function TeacherStudentAnalysisPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24, width: '100%', minWidth: 0 }}>
 
           {/* Marks Journey Timeline */}
-          <div style={{ background: 'linear-gradient(135deg,#0F172A,#0F766E)', border: '1px solid #134E4A', borderRadius: 18, padding: '24px 28px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
+          <div style={{ background: 'linear-gradient(135deg,#0F172A,#0F766E)', border: '1px solid #134E4A', borderRadius: 18, padding: '24px 28px', width: '100%', minWidth: 0 }}>
             <h4 style={{ fontSize: 16, fontWeight: 800, color: 'white', margin: '0 0 6px' }}>📈 Marks Journey — All Exams (Scaled to %)</h4>
             <p style={{ fontSize: 12, color: '#5EEAD4', margin: '0 0 20px' }}>Each subject scaled as % of max marks · first exam → latest</p>
             {timelineData.length < 1 ? (
               <p style={{ color: '#64748B', textAlign: 'center', padding: '32px 0' }}>No exam history yet</p>
             ) : (
-              <ResponsiveContainer width="100%" height={340}>
+              <ChartWrapper height={340}>
                 <LineChart data={timelineData} margin={{ top: 5, right: 24, left: 0, bottom: 60 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
                   <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#5EEAD4' }} angle={-35} textAnchor="end" interval={0} height={70} />
@@ -221,13 +222,13 @@ export default function TeacherStudentAnalysisPage() {
                     <Line key={subj} type="monotone" dataKey={subj} stroke={TIMELINE_COLORS[i % TIMELINE_COLORS.length]} strokeWidth={2.5} dot={{ r: 5, fill: TIMELINE_COLORS[i % TIMELINE_COLORS.length] }} activeDot={{ r: 7, strokeWidth: 0 }} connectNulls={false} />
                   ))}
                 </LineChart>
-              </ResponsiveContainer>
+              </ChartWrapper>
             )}
           </div>
 
-          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
+          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0 }}>
             <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>📊 Subject Marks (Current vs Maximum)</h4>
-            <ResponsiveContainer width="100%" height={260}>
+            <ChartWrapper height={260}>
               <BarChart data={barData} barCategoryGap="30%">
                 <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
                 <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748B' }} />
@@ -237,12 +238,12 @@ export default function TeacherStudentAnalysisPage() {
                 <Bar dataKey="Max" fill="#E2E8F0" radius={[4,4,0,0]} name="Max Marks" />
                 <Bar dataKey="Marks" fill="#0F766E" radius={[4,4,0,0]} name="Obtained" />
               </BarChart>
-            </ResponsiveContainer>
+            </ChartWrapper>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 24, width: '100%', minWidth: 0 }}>
-            <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
+            <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0 }}>
               <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>📈 Percentage Scores</h4>
-              <ResponsiveContainer width="100%" height={240}>
+              <ChartWrapper height={240}>
                 <BarChart data={barData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
                   <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748B' }} />
@@ -253,11 +254,11 @@ export default function TeacherStudentAnalysisPage() {
                     {barData.map((entry, i) => <Cell key={i} fill={entry.Percentage >= 75 ? '#10B981' : entry.Percentage >= 40 ? '#F59E0B' : '#EF4444'} />)}
                   </Bar>
                 </BarChart>
-              </ResponsiveContainer>
+              </ChartWrapper>
             </div>
-            <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
+            <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0 }}>
               <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>🔼 Improvement Score</h4>
-              <ResponsiveContainer width="100%" height={240}>
+              <ChartWrapper height={240}>
                 <BarChart data={improvData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
                   <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748B' }} />
@@ -268,12 +269,12 @@ export default function TeacherStudentAnalysisPage() {
                     {improvData.map((entry, i) => <Cell key={i} fill={entry.improvement > 0 ? '#10B981' : entry.improvement < 0 ? '#EF4444' : '#94A3B8'} />)}
                   </Bar>
                 </BarChart>
-              </ResponsiveContainer>
+              </ChartWrapper>
             </div>
           </div>
-          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
+          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0 }}>
             <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>📉 Trend (Current vs Previous Average)</h4>
-            <ResponsiveContainer width="100%" height={260}>
+            <ChartWrapper height={260}>
               <LineChart data={trendData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
                 <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748B' }} />
@@ -283,19 +284,19 @@ export default function TeacherStudentAnalysisPage() {
                 <Line type="monotone" dataKey="Current %" stroke="#0F766E" strokeWidth={3} dot={{ r: 5 }} />
                 <Line type="monotone" dataKey="Prev Avg %" stroke="#94A3B8" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 4 }} />
               </LineChart>
-            </ResponsiveContainer>
+            </ChartWrapper>
           </div>
           {analysis.subjects.length >= 3 && (
-            <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
+            <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0 }}>
               <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>🕸️ Performance Radar</h4>
-              <ResponsiveContainer width="100%" height={300}>
+              <ChartWrapper height={300}>
                 <RadarChart data={radarData}>
                   <PolarGrid stroke="#E2E8F0" />
                   <PolarAngleAxis dataKey="subject" tick={{ fontSize: 12, fill: '#475569' }} />
                   <Radar dataKey="score" stroke="#0F766E" fill="#0F766E" fillOpacity={0.25} strokeWidth={2} />
                   <Tooltip formatter={(val) => [`${val}%`]} contentStyle={{ borderRadius: 10, border: '1px solid #E2E8F0', fontSize: 13 }} />
                 </RadarChart>
-              </ResponsiveContainer>
+              </ChartWrapper>
             </div>
           )}
         </div>
