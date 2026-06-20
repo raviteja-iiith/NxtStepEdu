@@ -51,7 +51,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="min-h-screen flex" style={{ background: '#F0F2F5' }}>
       {/* Sidebar */}
       <aside className="fixed left-0 top-0 h-full z-40 flex flex-col transition-all duration-300"
-        style={{ width: collapsed ? '68px' : '256px', background: 'linear-gradient(180deg, #0F172A 0%, #1E293B 100%)', boxShadow: '4px 0 24px rgba(0,0,0,0.15)' }}>
+        style={{ width: collapsed ? '68px' : '256px', background: 'linear-gradient(180deg, #0F172A 0%, #1E293B 100%)', boxShadow: '4px 0 24px rgba(0,0,0,0.15)', color: 'white' }}>
 
         {/* Logo */}
         <div style={{ padding: collapsed ? '20px 14px' : '20px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)', minHeight: 72 }}>
