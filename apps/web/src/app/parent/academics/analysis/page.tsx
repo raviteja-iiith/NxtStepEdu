@@ -115,7 +115,7 @@ export default function ParentAnalysisPage() {
   const TABS = [{ key: 'overview' as const, label: '📊 Overview' }, { key: 'charts' as const, label: '📈 Charts' }, { key: 'remarks' as const, label: '💬 Remarks' }];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24, width: '100%', minWidth: 0 }}>
       {/* Page Header */}
       <div style={{ paddingBottom: 20, borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div>
@@ -228,10 +228,10 @@ export default function ParentAnalysisPage() {
 
       {/* Charts */}
       {activeTab === 'charts' && analysis.subjects.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20, width: '100%', minWidth: 0 }}>
 
           {/* Marks Journey Timeline */}
-          <div style={{ background: 'linear-gradient(135deg,#4C1D95,#7C3AED)', border: '1px solid #6D28D9', borderRadius: 18, padding: '24px 28px' }}>
+          <div style={{ background: 'linear-gradient(135deg,#4C1D95,#7C3AED)', border: '1px solid #6D28D9', borderRadius: 18, padding: '24px 28px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
             <h4 style={{ fontSize: 16, fontWeight: 800, color: 'white', margin: '0 0 6px' }}>📈 My Child's Marks Journey — All Exams</h4>
             <p style={{ fontSize: 12, color: '#DDD6FE', margin: '0 0 20px' }}>Scores scaled to % of max marks for fair comparison · from first exam to latest</p>
             {timelineData.length < 1 ? (
@@ -254,7 +254,7 @@ export default function ParentAnalysisPage() {
             )}
           </div>
 
-          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px' }}>
+          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
             <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>📊 Subject-wise Percentage</h4>
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={barData}>
@@ -269,7 +269,7 @@ export default function ParentAnalysisPage() {
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px' }}>
+          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
             <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>📈 Marks Obtained vs Maximum</h4>
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={barData} barCategoryGap="30%">
@@ -283,7 +283,7 @@ export default function ParentAnalysisPage() {
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px' }}>
+          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
             <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>📉 Trend (Current vs Previous Average)</h4>
             <ResponsiveContainer width="100%" height={240}>
               <LineChart data={trendData}>
@@ -297,7 +297,7 @@ export default function ParentAnalysisPage() {
               </LineChart>
             </ResponsiveContainer>
           </div>
-          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px' }}>
+          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
             <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>🔼 Improvement Score</h4>
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={improvData}>
@@ -313,7 +313,7 @@ export default function ParentAnalysisPage() {
             </ResponsiveContainer>
           </div>
           {analysis.subjects.length >= 3 && (
-            <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px' }}>
+            <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
               <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>🕸️ Strength Radar</h4>
               <ResponsiveContainer width="100%" height={280}>
                 <RadarChart data={radarData}>

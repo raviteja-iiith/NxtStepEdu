@@ -199,10 +199,10 @@ export default function TeacherStudentAnalysisPage() {
 
       {/* Charts tab */}
       {activeTab === 'charts' && analysis.subjects.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24, width: '100%', minWidth: 0 }}>
 
           {/* Marks Journey Timeline */}
-          <div style={{ background: 'linear-gradient(135deg,#0F172A,#0F766E)', border: '1px solid #134E4A', borderRadius: 18, padding: '24px 28px' }}>
+          <div style={{ background: 'linear-gradient(135deg,#0F172A,#0F766E)', border: '1px solid #134E4A', borderRadius: 18, padding: '24px 28px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
             <h4 style={{ fontSize: 16, fontWeight: 800, color: 'white', margin: '0 0 6px' }}>📈 Marks Journey — All Exams (Scaled to %)</h4>
             <p style={{ fontSize: 12, color: '#5EEAD4', margin: '0 0 20px' }}>Each subject scaled as % of max marks · first exam → latest</p>
             {timelineData.length < 1 ? (
@@ -225,7 +225,7 @@ export default function TeacherStudentAnalysisPage() {
             )}
           </div>
 
-          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px' }}>
+          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
             <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>📊 Subject Marks (Current vs Maximum)</h4>
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={barData} barCategoryGap="30%">
@@ -239,8 +239,8 @@ export default function TeacherStudentAnalysisPage() {
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
-            <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 24, width: '100%', minWidth: 0 }}>
+            <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
               <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>📈 Percentage Scores</h4>
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={barData}>
@@ -255,7 +255,7 @@ export default function TeacherStudentAnalysisPage() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-            <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px' }}>
+            <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
               <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>🔼 Improvement Score</h4>
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={improvData}>
@@ -271,7 +271,7 @@ export default function TeacherStudentAnalysisPage() {
               </ResponsiveContainer>
             </div>
           </div>
-          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px' }}>
+          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
             <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>📉 Trend (Current vs Previous Average)</h4>
             <ResponsiveContainer width="100%" height={260}>
               <LineChart data={trendData}>
@@ -286,7 +286,7 @@ export default function TeacherStudentAnalysisPage() {
             </ResponsiveContainer>
           </div>
           {analysis.subjects.length >= 3 && (
-            <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px' }}>
+            <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
               <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>🕸️ Performance Radar</h4>
               <ResponsiveContainer width="100%" height={300}>
                 <RadarChart data={radarData}>

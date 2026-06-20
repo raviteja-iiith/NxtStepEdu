@@ -277,10 +277,10 @@ export default function StudentAnalysisPage() {
 
       {/* ── TAB: CHARTS ── */}
       {activeTab === 'charts' && analysis.subjects.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24, width: '100%', minWidth: 0 }}>
 
           {/* ── TIMELINE: Marks Journey (all exams, scaled %) ── */}
-          <div style={{ background: 'linear-gradient(135deg,#0F172A,#1E3A8A)', border: '1px solid #334155', borderRadius: 18, padding: '24px 28px' }}>
+          <div style={{ background: 'linear-gradient(135deg,#0F172A,#1E3A8A)', border: '1px solid #334155', borderRadius: 18, padding: '24px 28px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
             <div style={{ marginBottom: 20 }}>
               <h4 style={{ fontSize: 16, fontWeight: 800, color: 'white', margin: 0 }}>📈 Marks Journey — All Exams (Scaled to %)</h4>
               <p style={{ fontSize: 12, color: '#93C5FD', margin: '6px 0 0' }}>Each subject's score scaled as % of max marks · chronological order from first exam to latest</p>
@@ -326,7 +326,7 @@ export default function StudentAnalysisPage() {
           </div>
 
           {/* Bar: Subject Marks */}
-          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px' }}>
+          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
             <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>📊 Subject-wise Marks (Current vs Maximum)</h4>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={barData} barCategoryGap="30%">
@@ -342,7 +342,7 @@ export default function StudentAnalysisPage() {
           </div>
 
           {/* Bar: Percentage */}
-          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px' }}>
+          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
             <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>📈 Subject-wise Percentage</h4>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={barData}>
@@ -364,7 +364,7 @@ export default function StudentAnalysisPage() {
           </div>
 
           {/* Line: Trend */}
-          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px' }}>
+          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
             <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>📉 Performance Trend (Current vs Previous Average)</h4>
             <ResponsiveContainer width="100%" height={280}>
               <LineChart data={trendData}>
@@ -380,7 +380,7 @@ export default function StudentAnalysisPage() {
           </div>
 
           {/* Bar: Improvement Score */}
-          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px' }}>
+          <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
             <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>🔼 Improvement Score (vs Previous Average, in %pts)</h4>
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={improvData}>
@@ -400,7 +400,7 @@ export default function StudentAnalysisPage() {
 
           {/* Radar */}
           {analysis.subjects.length >= 3 && (
-            <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px' }}>
+            <div style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 16, padding: '20px 24px', width: '100%', minWidth: 0, overflowX: 'auto' }}>
               <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: '0 0 20px' }}>🕸️ Performance Radar</h4>
               <ResponsiveContainer width="100%" height={320}>
                 <RadarChart data={radarData}>
