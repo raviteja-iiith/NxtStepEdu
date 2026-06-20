@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 
 interface FeatureFlag { label: string; desc: string; enabled: boolean; icon: React.ReactNode; }
 
@@ -8,6 +8,30 @@ export default function AdminSettings() {
   const [appName, setAppName] = useState('NxtStepEdu');
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleLogoFile = (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = (e) => setLogoUrl(e.target?.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const handleLogoClick = () => fileInputRef.current?.click();
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleLogoFile(file);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleLogoFile(file);
+  };
   const [flags, setFlags] = useState<FeatureFlag[]>([
     { label: 'AI Features', desc: 'Enable AI report summaries and chatbot (per plan)', enabled: true, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 6v6l4 2"/><path d="M22 6l-3 3-3-3"/></svg> },
     { label: 'SMS Notifications', desc: 'Send SMS alerts via MSG91 gateway', enabled: true, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> },
@@ -58,9 +82,41 @@ export default function AdminSettings() {
             </div>
             <div>
               <label style={labelStyle}>Platform Logo</label>
-              <div style={{ width: '100%', height: 100, border: '2px dashed #E2E8F0', borderRadius: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', background: '#FAFAFA' }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                <p style={{ fontSize: 12, color: '#94A3B8', margin: 0 }}>Drop logo here or click to upload</p>
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={handleFileChange}
+              />
+              <div
+                onClick={handleLogoClick}
+                onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                onDragLeave={() => setIsDragOver(false)}
+                onDrop={handleDrop}
+                style={{
+                  width: '100%', height: 110, border: `2px dashed ${isDragOver ? '#3B82F6' : logoUrl ? '#93C5FD' : '#E2E8F0'}`,
+                  borderRadius: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  gap: 6, cursor: 'pointer', background: isDragOver ? '#EFF6FF' : logoUrl ? '#F0F9FF' : '#FAFAFA',
+                  transition: 'all 0.2s', overflow: 'hidden', position: 'relative'
+                }}
+              >
+                {logoUrl ? (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={logoUrl} alt="Logo preview" style={{ maxHeight: 80, maxWidth: '90%', objectFit: 'contain', borderRadius: 6 }} />
+                    <p style={{ fontSize: 11, color: '#3B82F6', margin: 0, fontWeight: 600 }}>Click to change logo</p>
+                  </>
+                ) : (
+                  <>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={isDragOver ? '#3B82F6' : '#CBD5E1'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    <p style={{ fontSize: 12, color: isDragOver ? '#3B82F6' : '#94A3B8', margin: 0 }}>
+                      {isDragOver ? 'Drop to upload' : 'Click or drag logo here to upload'}
+                    </p>
+                    <p style={{ fontSize: 10, color: '#CBD5E1', margin: 0 }}>PNG, JPG, SVG up to 2MB</p>
+                  </>
+                )}
               </div>
             </div>
             <button onClick={handleSaveBranding}
