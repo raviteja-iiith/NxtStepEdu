@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { createNotification } from '@/components/NotificationBell';
+import * as XLSX from 'xlsx';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface ClassItem    { id: string; name: string; }
@@ -1131,9 +1132,193 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
 
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// TAB 4 — IMPORT FEES FROM EXCEL
+// ═══════════════════════════════════════════════════════════════════════════════
+const VALID_FEE_TYPES = ['tuition','transport','hostel','examination','activity','library','uniform','miscellaneous'];
+const VALID_FEE_STATUSES = ['pending','paid','partially_paid','overdue','waived'];
+
+function TabImportFees({ schoolId, academicYearId }: { schoolId: string; academicYearId: string }) {
+  const supabase = createClient();
+  const [rows, setRows] = useState<any[]>([]);
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [studentMap, setStudentMap] = useState<Map<string, string>>(new Map());
+  const [mapLoaded, setMapLoaded] = useState(false);
+
+  // Fetch admission_no → student_id map once schoolId is available
+  useEffect(() => {
+    if (!schoolId) return;
+    (async () => {
+      const { data } = await supabase.from('students').select('id, admission_number').eq('school_id', schoolId).eq('is_active', true);
+      const m = new Map<string, string>();
+      (data ?? []).forEach((s: any) => { if (s.admission_number) m.set(s.admission_number.trim(), s.id); });
+      setStudentMap(m);
+      setMapLoaded(true);
+    })();
+  }, [supabase, schoolId]);
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(''); setSuccess('');
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target?.result, { type: 'binary' });
+        // Try to find the fees sheet (sheet index 1, or named "2. Student Fees")
+        const wsName = wb.SheetNames.find(n => n.toLowerCase().includes('fee')) ?? wb.SheetNames[1] ?? wb.SheetNames[0];
+        const ws = wb.Sheets[wsName];
+        const data: any[] = XLSX.utils.sheet_to_json(ws);
+        const parsed = data.map((row: any, idx: number) => {
+          let err = '';
+          const admNo = String(row['Admission No *'] ?? row['Admission No'] ?? '').trim();
+          const feeType = String(row['Fee Type *\n(tuition/transport/hostel/\nexamination/activity/\nlibrary/uniform/miscellaneous)'] ?? row['Fee Type *'] ?? row['Fee Type'] ?? '').trim().toLowerCase();
+          const feeLabel = String(row['Fee Label *'] ?? row['Fee Label'] ?? '').trim();
+          const totalFee = parseFloat(row['Total Fee Amount (₹) *'] ?? row['Total Fee Amount'] ?? 0);
+          const amtPaid = parseFloat(row['Amount Paid (₹)'] ?? row['Amount Paid'] ?? 0);
+          const status = String(row['Fee Status *\n(pending/paid/\npartially_paid/overdue/waived)'] ?? row['Fee Status *'] ?? row['Fee Status'] ?? 'pending').trim().toLowerCase();
+          let dueDate = String(row['Due Date *\n(YYYY-MM-DD)'] ?? row['Due Date *'] ?? row['Due Date'] ?? '').trim();
+
+          // Normalize date if it's an Excel serial number
+          const dueDateNum = parseFloat(dueDate);
+          if (!isNaN(dueDateNum) && dueDateNum > 1000) {
+            const d = new Date(Math.round((dueDateNum - 25569) * 86400 * 1000));
+            dueDate = d.toISOString().split('T')[0];
+          }
+
+          if (!admNo) err = 'Missing Admission No';
+          else if (!feeLabel) err = 'Missing Fee Label';
+          else if (!totalFee || isNaN(totalFee) || totalFee <= 0) err = 'Invalid Total Fee';
+          else if (!VALID_FEE_TYPES.includes(feeType)) err = `Invalid fee type: '${feeType}'`;
+          else if (!VALID_FEE_STATUSES.includes(status)) err = `Invalid status: '${status}'`;
+          else if (!dueDate) err = 'Missing Due Date';
+          else if (!studentMap.has(admNo)) err = `Admission No '${admNo}' not found`;
+
+          return { rowNum: idx + 2, admNo, feeType, feeLabel, totalFee, amtPaid: isNaN(amtPaid) ? 0 : amtPaid, status, dueDate, studentId: studentMap.get(admNo) ?? '', err };
+        });
+        setRows(parsed);
+      } catch { setError('Failed to parse file. Ensure it matches the template.'); }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = '';
+  };
+
+  const handleImport = async () => {
+    const valid = rows.filter(r => !r.err);
+    if (!valid.length) { setError('No valid rows to import.'); return; }
+    setImporting(true); setError(''); setSuccess('');
+    let inserted = 0; const errors: string[] = [];
+    for (const r of valid) {
+      const feePayload = {
+        school_id: schoolId,
+        student_id: r.studentId,
+        amount: r.totalFee,
+        status: r.status,
+        due_date: r.dueDate,
+        ...(academicYearId ? { academic_year_id: academicYearId } : {}),
+      };
+      const { data: feeData, error: feeErr } = await supabase.from('fees').insert(feePayload).select('id').single();
+      if (feeErr) { errors.push(`Row ${r.rowNum}: ${feeErr.message}`); continue; }
+      // If amount already paid, record a fee_payment
+      if (r.amtPaid > 0 && feeData?.id) {
+        await supabase.from('fee_payments').insert({
+          fee_id: feeData.id,
+          student_id: r.studentId,
+          school_id: schoolId,
+          amount_paid: r.amtPaid,
+          payment_mode: 'cash',
+          payment_date: new Date().toISOString(),
+          notes: 'Imported via bulk import',
+        });
+      }
+      inserted++;
+    }
+    if (errors.length) setError(errors.join('\n'));
+    if (inserted) setSuccess(`✅ Successfully imported ${inserted} fee record(s)!`);
+    setImporting(false);
+    if (!errors.length) setRows([]);
+  };
+
+  const validCount = rows.filter(r => !r.err).length;
+  const invalidCount = rows.filter(r => r.err).length;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* Step cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+        <div style={{ padding: 18, background: '#F8FAFC', borderRadius: 12, border: '1px dashed #CBD5E1' }}>
+          <p style={{ fontSize: 14, fontWeight: 700, color: '#0F172A', margin: '0 0 4px' }}>1. Download Template</p>
+          <p style={{ fontSize: 12, color: '#64748B', margin: '0 0 12px' }}>Use Sheet 2 (Student Fees) from the master template.</p>
+          <a href="/Student_Import_Template.xlsx" download style={{ display: 'inline-block', padding: '7px 14px', background: 'white', border: '1px solid #CBD5E1', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#334155', textDecoration: 'none', cursor: 'pointer' }}>Download .xlsx</a>
+        </div>
+        <div style={{ padding: 18, background: '#EFF6FF', borderRadius: 12, border: '1px dashed #93C5FD' }}>
+          <p style={{ fontSize: 14, fontWeight: 700, color: '#1D4ED8', margin: '0 0 4px' }}>2. Upload Fee Data</p>
+          <p style={{ fontSize: 12, color: '#3B82F6', margin: '0 0 12px' }}>{mapLoaded ? `${studentMap.size} students loaded. Select your fee Excel file.` : 'Loading students…'}</p>
+          <label style={{ display: 'inline-block', padding: '7px 14px', background: '#1D4ED8', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: 'white', cursor: 'pointer' }}>
+            Select File
+            <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} style={{ display: 'none' }} disabled={!mapLoaded} />
+          </label>
+        </div>
+      </div>
+
+      {error && <div style={{ padding: '10px 14px', background: '#FEF2F2', border: '1px solid #FEE2E2', borderRadius: 9, fontSize: 13, color: '#DC2626', whiteSpace: 'pre-line' }}>{error}</div>}
+      {success && <div style={{ padding: '10px 14px', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 9, fontSize: 13, color: '#065F46', fontWeight: 600 }}>{success}</div>}
+
+      {rows.length > 0 && (
+        <div>
+          <p style={{ fontSize: 13, fontWeight: 700, color: '#0F172A', marginBottom: 8 }}>
+            Preview — {validCount} valid, {invalidCount} invalid
+          </p>
+          <div style={{ border: '1px solid #E2E8F0', borderRadius: 8, overflow: 'hidden', overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
+              <thead style={{ background: '#F8FAFC' }}>
+                <tr>
+                  {['Row','Admission No','Fee Label','Fee Type','Total (₹)','Paid (₹)','Status','Due Date','Valid?'].map(h => (
+                    <th key={h} style={{ padding: '8px 12px', fontSize: 11, fontWeight: 700, color: '#64748B', textAlign: 'left', borderBottom: '1px solid #E2E8F0' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={i} style={{ background: r.err ? '#FEF2F2' : (i % 2 === 0 ? '#F8FAFC' : 'white'), borderBottom: '1px solid #F1F5F9' }}>
+                    <td style={{ padding: '7px 12px', fontSize: 12 }}>{r.rowNum}</td>
+                    <td style={{ padding: '7px 12px', fontSize: 12, fontFamily: 'monospace' }}>{r.admNo}</td>
+                    <td style={{ padding: '7px 12px', fontSize: 12 }}>{r.feeLabel}</td>
+                    <td style={{ padding: '7px 12px', fontSize: 12 }}>{r.feeType}</td>
+                    <td style={{ padding: '7px 12px', fontSize: 12, fontWeight: 600 }}>₹{r.totalFee?.toLocaleString('en-IN')}</td>
+                    <td style={{ padding: '7px 12px', fontSize: 12 }}>₹{r.amtPaid?.toLocaleString('en-IN')}</td>
+                    <td style={{ padding: '7px 12px', fontSize: 12 }}>{r.status}</td>
+                    <td style={{ padding: '7px 12px', fontSize: 12 }}>{r.dueDate}</td>
+                    <td style={{ padding: '7px 12px', fontSize: 12 }}>
+                      {r.err ? <span style={{ color: '#DC2626', fontWeight: 600 }}>{r.err}</span> : <span style={{ color: '#059669', fontWeight: 700 }}>✓ Valid</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
+            <button
+              onClick={handleImport}
+              disabled={importing || validCount === 0}
+              style={{ padding: '10px 24px', borderRadius: 10, border: 'none', fontSize: 13, fontWeight: 700,
+                background: importing || validCount === 0 ? '#93C5FD' : 'linear-gradient(135deg,#1E3A8A,#3B82F6)',
+                color: 'white', cursor: importing || validCount === 0 ? 'not-allowed' : 'pointer' }}
+            >
+              {importing ? 'Importing…' : `Import ${validCount} Fee Record(s)`}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // MAIN PAGE
 // ═══════════════════════════════════════════════════════════════════════════════
-type Tab = 'individual' | 'bulk' | 'overview';
+type Tab = 'individual' | 'bulk' | 'overview' | 'import';
 
 export default function FeesPage() {
   const supabase = createClient();
@@ -1175,6 +1360,7 @@ export default function FeesPage() {
     { key: 'individual', label: 'Individual Fee Manager', icon: '👤' },
     { key: 'bulk',       label: 'Bulk Add-on',            icon: '⚡' },
     { key: 'overview',   label: 'Payment Overview',        icon: '📊' },
+    { key: 'import',     label: 'Import Fees',             icon: '📥' },
   ];
 
   return (
@@ -1212,6 +1398,7 @@ export default function FeesPage() {
           {tab === 'individual' && <TabIndividual schoolId={schoolId} academicYearId={academicYearId} classes={classes} sections={sections} />}
           {tab === 'bulk'       && <TabBulk       schoolId={schoolId} academicYearId={academicYearId} classes={classes} sections={sections} />}
           {tab === 'overview'   && <TabOverview   schoolId={schoolId} classes={classes} sections={sections} />}
+          {tab === 'import'     && <TabImportFees schoolId={schoolId} academicYearId={academicYearId} />}
         </>
       )}
     </div>

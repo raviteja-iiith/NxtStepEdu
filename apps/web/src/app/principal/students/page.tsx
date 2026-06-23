@@ -118,76 +118,93 @@ export default function StudentsPage() {
   };
 
   const handleDownloadTemplate = () => {
-    const ws = XLSX.utils.json_to_sheet([
-      { "Full Name": "John Doe", "Date of Birth (YYYY-MM-DD)": "2010-05-15", "Gender (male/female/other)": "male", "Class Name": "Class 1", "Section Name": "A", "Admission No": "STU-1001", "Roll Number": "1", "Address": "123 School Lane" }
-    ]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Template");
-    XLSX.writeFile(wb, "Student_Import_Template.xlsx");
+    const a = document.createElement('a');
+    a.href = '/Student_Import_Template.xlsx';
+    a.download = 'Student_Import_Template.xlsx';
+    a.click();
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setBulkError('');
-    setBulkSuccess('');
+    setBulkError(''); setBulkSuccess('');
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json(ws);
-        
-        const parsed = data.map((row:any, index) => {
+        const wb = XLSX.read(evt.target?.result, { type: 'binary' });
+        // Support both old single-sheet files and new master template (Sheet 1 = Students)
+        const wsName = wb.SheetNames.find(n => n.toLowerCase().includes('student')) ?? wb.SheetNames[0];
+        const ws = wb.Sheets[wsName];
+        const data: any[] = XLSX.utils.sheet_to_json(ws);
+
+        const parsed = data.map((row: any, index: number) => {
           let error = '';
-          const name = row['Full Name'] || '';
-          let dob = row['Date of Birth (YYYY-MM-DD)'] || '';
-          
-          // Handle excel date format parsing if it comes as number
+
+          // Helper to find column regardless of line breaks or exact spaces
+          const getVal = (keywords: string[]) => {
+            const key = Object.keys(row).find(k => keywords.some(kw => k.toLowerCase().includes(kw.toLowerCase())));
+            return key ? row[key] : undefined;
+          };
+
+          const name = String(getVal(['full name']) ?? '').trim();
+
+          let dob = getVal(['date of birth', 'dob']);
           if (typeof dob === 'number') {
-            const date = new Date(Math.round((dob - 25569) * 86400 * 1000));
-            dob = date.toISOString().split('T')[0];
-          } else if (typeof dob === 'string') {
+            dob = new Date(Math.round((dob - 25569) * 86400 * 1000)).toISOString().split('T')[0];
+          } else {
+            dob = String(dob ?? '').trim();
             const parts = dob.split('/');
-            if (parts.length === 3) {
-              dob = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-            }
+            if (parts.length === 3) dob = `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
           }
+
+          const gender = String(getVal(['gender']) ?? '').trim().toLowerCase();
+          const className = String(getVal(['class name']) ?? '').trim();
+          const sectionName = String(getVal(['section name']) ?? '').trim();
+          const admNo = String(getVal(['admission no']) ?? '').trim();
+          const penNumber = String(getVal(['pen number']) ?? '').trim() || null;
           
-          const gender = String(row['Gender (male/female/other)'] || '').toLowerCase();
-          const className = String(row['Class Name'] || '').trim();
-          const sectionName = String(row['Section Name'] || '').trim();
-          
-          if (!name || !dob || !gender || !className || !sectionName) error = 'Missing required fields';
-          if (gender !== 'male' && gender !== 'female' && gender !== 'other') error = 'Invalid gender';
-          
+          const rawRoll = getVal(['roll number']);
+          const rollNumber = rawRoll ? parseInt(String(rawRoll)) : null;
+
+          const address = String(getVal(['address']) ?? '').trim() || null;
+
+          let admDate = String(getVal(['admission date']) ?? '').trim();
+          if (!admDate) admDate = new Date().toISOString().split('T')[0];
+
+          // Validate
+          if (!name) error = 'Missing Full Name';
+          else if (!dob) error = 'Missing Date of Birth';
+          else if (!['male','female','other'].includes(gender)) error = `Invalid gender: '${gender}'`;
+          else if (!className) error = 'Missing Class Name';
+          else if (!sectionName) error = 'Missing Section Name';
+
           const foundClass = classes.find(c => c.name.toLowerCase() === className.toLowerCase());
-          const foundSection = foundClass ? sections.find(s => s.class_id === foundClass.id && s.name.toLowerCase() === sectionName.toLowerCase()) : null;
-          
-          if (!foundClass && !error) error = `Class '${className}' not found`;
-          else if (!foundSection && !error) error = `Section '${sectionName}' not found in ${className}`;
-          
+          const foundSection = foundClass
+            ? sections.find(s => s.class_id === foundClass.id && s.name.toLowerCase() === sectionName.toLowerCase())
+            : null;
+
+          if (!error && !foundClass) error = `Class '${className}' not found in system`;
+          else if (!error && !foundSection) error = `Section '${sectionName}' not found in ${className}`;
+
           return {
             rowNum: index + 2,
             full_name: name,
             date_of_birth: dob,
-            gender: gender,
+            gender,
             class_id: foundClass?.id || '',
             section_id: foundSection?.id || '',
             class_name: className,
             section_name: sectionName,
-            admission_number: row['Admission No'] ? String(row['Admission No']) : null,
-            roll_number: row['Roll Number'] ? parseInt(row['Roll Number']) : null,
-            address: row['Address'] || null,
-            error
+            admission_number: admNo || null,
+            pen_number: penNumber,
+            roll_number: rollNumber,
+            address,
+            admission_date: admDate,
+            error,
           };
         });
         setBulkData(parsed);
-      } catch (err) {
-        setBulkError('Failed to parse Excel file. Please ensure it matches the template.');
-      }
+      } catch { setBulkError('Failed to parse file. Ensure it matches the master template.'); }
     };
     reader.readAsBinaryString(file);
     e.target.value = '';
@@ -217,12 +234,12 @@ export default function StudentsPage() {
         class_id: r.class_id,
         section_id: r.section_id,
         admission_number: r.admission_number || `STU-${year}-${String(currentCount).padStart(4,'0')}`,
-        roll_number: r.roll_number,
-        address: r.address,
-        academic_year_id: yr?.id||null,
+        roll_number: r.roll_number ?? null,
+        address: r.address ?? null,
+        admission_date: r.admission_date || new Date().toISOString().split('T')[0],
+        academic_year_id: yr?.id || null,
         school_id: schoolId,
         is_active: true,
-        admission_date: new Date().toISOString().split('T')[0]
       };
     });
 
@@ -478,8 +495,8 @@ export default function StudentsPage() {
           <div style={{ ...modal, maxWidth:800, maxHeight:'95vh' }}>
             <div style={{ padding:'24px 28px 18px', borderBottom:'1px solid #F1F5F9', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
               <div>
-                <h3 style={{ fontSize:17, fontWeight:800, color:'#0F172A', margin:0 }}>Bulk Import Students</h3>
-                <p style={{ fontSize:12, color:'#94A3B8', marginTop:3 }}>Upload an Excel file to admit multiple students at once</p>
+                <h3 style={{ fontSize:17, fontWeight:800, color:'#0F172A', margin:0 }}>📥 Bulk Import Students</h3>
+                <p style={{ fontSize:12, color:'#94A3B8', marginTop:3 }}>Upload the master template (Sheet 1 – Students) to admit multiple students at once</p>
               </div>
               <button onClick={()=>setShowBulkImport(false)} style={{ width:32, height:32, borderRadius:'50%', border:'1px solid #E2E8F0', background:'white', cursor:'pointer', color:'#64748B', fontSize:16, display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
             </div>
@@ -509,25 +526,34 @@ export default function StudentsPage() {
 
               {bulkData.length > 0 && (
                 <div style={{ marginTop:8 }}>
-                  <p style={{ fontSize:13, fontWeight:700, color:'#0F172A', marginBottom:8 }}>Preview Data ({bulkData.length} rows)</p>
+                  <p style={{ fontSize:13, fontWeight:700, color:'#0F172A', marginBottom:8 }}>
+                    Preview — {bulkData.filter(r=>!r.error).length} valid, {bulkData.filter(r=>r.error).length} invalid (of {bulkData.length} rows)
+                  </p>
                   <div style={{ border:'1px solid #E2E8F0', borderRadius:8, overflow:'hidden', overflowX:'auto' }}>
-                    <table style={{ width:'100%', borderCollapse:'collapse', minWidth:600 }}>
-                      <thead style={{ background:'#F8FAFC' }}>
+                    <table style={{ width:'100%', borderCollapse:'collapse', minWidth:900 }}>
+                      <thead style={{ background:'#1E3A8A' }}>
                         <tr>
-                          <th style={{ padding:'8px 12px', fontSize:11, fontWeight:700, color:'#64748B', textAlign:'left', borderBottom:'1px solid #E2E8F0' }}>Row</th>
-                          <th style={{ padding:'8px 12px', fontSize:11, fontWeight:700, color:'#64748B', textAlign:'left', borderBottom:'1px solid #E2E8F0' }}>Name</th>
-                          <th style={{ padding:'8px 12px', fontSize:11, fontWeight:700, color:'#64748B', textAlign:'left', borderBottom:'1px solid #E2E8F0' }}>Class/Sec</th>
-                          <th style={{ padding:'8px 12px', fontSize:11, fontWeight:700, color:'#64748B', textAlign:'left', borderBottom:'1px solid #E2E8F0' }}>Status</th>
+                          {['Row','Full Name *','Date of Birth *','Gender *','Class Name *','Section Name *','Admission No','Pen Number','Roll Number','Address','Admission Date','Status'].map(h=>(
+                            <th key={h} style={{ padding:'8px 12px', fontSize:11, fontWeight:700, color:'white', textAlign:'left', borderBottom:'1px solid #2563EB', whiteSpace:'nowrap' }}>{h}</th>
+                          ))}
                         </tr>
                       </thead>
                       <tbody>
                         {bulkData.map((r, i) => (
-                          <tr key={i} style={{ borderBottom:i<bulkData.length-1?'1px solid #F1F5F9':'none', background:r.error?'#FEF2F2':'white' }}>
-                            <td style={{ padding:'8px 12px', fontSize:12, color:'#475569' }}>{r.rowNum}</td>
-                            <td style={{ padding:'8px 12px', fontSize:12, color:'#0F172A', fontWeight:500 }}>{r.full_name}</td>
-                            <td style={{ padding:'8px 12px', fontSize:12, color:'#475569' }}>{r.class_name} - {r.section_name}</td>
-                            <td style={{ padding:'8px 12px', fontSize:12 }}>
-                              {r.error ? <span style={{ color:'#DC2626', fontWeight:600 }}>{r.error}</span> : <span style={{ color:'#059669', fontWeight:600 }}>Valid</span>}
+                          <tr key={i} style={{ borderBottom:'1px solid #F1F5F9', background:r.error?'#FEF2F2':i%2===0?'#F8FAFC':'white' }}>
+                            <td style={{ padding:'7px 12px', fontSize:12, color:'#64748B' }}>{r.rowNum}</td>
+                            <td style={{ padding:'7px 12px', fontSize:12, fontWeight:600, color:'#0F172A', whiteSpace:'nowrap' }}>{r.full_name}</td>
+                            <td style={{ padding:'7px 12px', fontSize:12, color:'#475569', fontFamily:'monospace' }}>{r.date_of_birth}</td>
+                            <td style={{ padding:'7px 12px', fontSize:12, color:'#475569', textTransform:'capitalize' }}>{r.gender}</td>
+                            <td style={{ padding:'7px 12px', fontSize:12, color:'#475569' }}>{r.class_name}</td>
+                            <td style={{ padding:'7px 12px', fontSize:12, color:'#475569' }}>{r.section_name}</td>
+                            <td style={{ padding:'7px 12px', fontSize:11, color:'#64748B', fontFamily:'monospace' }}>{r.admission_number||<span style={{color:'#CBD5E1',fontStyle:'italic'}}>auto</span>}</td>
+                            <td style={{ padding:'7px 12px', fontSize:11, color:'#64748B', fontFamily:'monospace' }}>{r.pen_number||'—'}</td>
+                            <td style={{ padding:'7px 12px', fontSize:12, color:'#64748B' }}>{r.roll_number??'—'}</td>
+                            <td style={{ padding:'7px 12px', fontSize:11, color:'#64748B', maxWidth:150, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.address||'—'}</td>
+                            <td style={{ padding:'7px 12px', fontSize:11, color:'#64748B', fontFamily:'monospace' }}>{r.admission_date}</td>
+                            <td style={{ padding:'7px 12px', fontSize:12 }}>
+                              {r.error ? <span style={{ color:'#DC2626', fontWeight:600, whiteSpace:'nowrap' }}>{r.error}</span> : <span style={{ color:'#059669', fontWeight:700 }}>✓ Valid</span>}
                             </td>
                           </tr>
                         ))}
