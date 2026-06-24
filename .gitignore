@@ -94,3 +94,4 @@ sync-*.sql
 clean-database.sql
 admin-credentials.sql
 supplemental-migrations.sql
+check_class_links.*
