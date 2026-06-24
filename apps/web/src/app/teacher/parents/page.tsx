@@ -28,7 +28,7 @@ export default function TeacherParentsPage() {
     const userId = (await supabase.auth.getUser()).data.user?.id;
     if (!userId) { setLoading(false); return; }
 
-    // Step 1: Get teacher's sections (class_teacher_id first, then subject assignments)
+    // Step 1: Get teacher's sections
     const { data: classSecs } = await supabase
       .from('sections')
       .select('id')
@@ -53,7 +53,7 @@ export default function TeacherParentsPage() {
       return;
     }
 
-    // Step 2: Get ONLY students in those sections
+    // Step 2: Get all students in teacher's sections
     const { data: studentData } = await supabase
       .from('students')
       .select('id, full_name, sections(name)')
@@ -65,7 +65,7 @@ export default function TeacherParentsPage() {
     setStudents(myStudents.map((s: any) => ({
       id: s.id,
       full_name: s.full_name,
-      section_name: s.sections?.name || '',
+      section_name: (s.sections as any)?.name || '',
     })));
 
     const studentIds = myStudents.map((s: any) => s.id as string);
@@ -75,26 +75,43 @@ export default function TeacherParentsPage() {
       return;
     }
 
-    // Step 3: Get ONLY parents linked to those students — nothing more
+    // Step 3: Get parent links for those students
     const { data: links } = await supabase
       .from('student_parent_links')
-      .select('parent_id, student_id, students(full_name, sections(name)), users(id, full_name, phone, is_active)')
+      .select('parent_id, student_id, students(id, full_name, sections(name)), users(id, full_name, phone, is_active)')
       .in('student_id', studentIds);
 
-    const seen = new Set<string>();
-    const list: ParentRecord[] = [];
-
+    // Build a map: student_id → parent record
+    const parentByStudent = new Map<string, ParentRecord>();
     (links || []).forEach((l: any) => {
-      if (!l.parent_id || seen.has(l.parent_id)) return;
-      seen.add(l.parent_id);
-      list.push({
+      if (!l.parent_id) return;
+      parentByStudent.set(l.student_id, {
         id: l.parent_id,
         full_name: l.users?.full_name || 'Unknown',
         phone: l.users?.phone || null,
         is_active: l.users?.is_active ?? true,
         student_name: l.students?.full_name || '',
-        section_name: l.students?.sections?.name || '',
+        section_name: (l.students?.sections as any)?.name || '',
       });
+    });
+
+    // Show one entry per student: either their linked parent or "No parent" placeholder
+    const list: ParentRecord[] = [];
+    myStudents.forEach((s: any) => {
+      const linked = parentByStudent.get(s.id);
+      if (linked) {
+        list.push(linked);
+      } else {
+        // Student has no parent — show them so teacher knows to add one
+        list.push({
+          id: `no-parent-${s.id}`,   // synthetic id to avoid key collision
+          full_name: '',
+          phone: null,
+          is_active: true,
+          student_name: s.full_name,
+          section_name: (s.sections as any)?.name || '',
+        });
+      }
     });
 
     setParents(list);
@@ -226,31 +243,46 @@ export default function TeacherParentsPage() {
                   <p className="text-3xl mb-2">👨‍👩‍👧</p>
                   <p className="text-sm">No parents found for your sections.</p>
                 </div>
-              ) : filtered.map(p => (
-                <div key={p.id} className="grid grid-cols-1 md:grid-cols-[2fr_110px_1.5fr_80px_120px] gap-3 md:gap-0 px-6 py-4 items-center hover:bg-gray-50">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: '#F5F3FF', color: '#7C3AED' }}>{p.full_name.charAt(0)}</div>
-                    <p className="text-sm font-semibold text-gray-900">{p.full_name}</p>
+              ) : filtered.map(p => {
+                const hasParent = !!p.full_name;
+                return (
+                  <div key={p.id} className="grid grid-cols-1 md:grid-cols-[2fr_110px_1.5fr_80px_120px] gap-3 md:gap-0 px-6 py-4 items-center hover:bg-gray-50">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                        style={{ background: hasParent ? '#F5F3FF' : '#F8FAFC', color: hasParent ? '#7C3AED' : '#94A3B8' }}>
+                        {hasParent ? p.full_name.charAt(0) : '?'}
+                      </div>
+                      {hasParent
+                        ? <p className="text-sm font-semibold text-gray-900">{p.full_name}</p>
+                        : <p className="text-sm text-gray-400 italic">No parent yet</p>
+                      }
+                    </div>
+                    <div className="font-mono text-sm text-gray-600">{p.phone || '—'}</div>
+                    <div className="text-sm">
+                      {p.student_name
+                        ? <span className="text-gray-700 font-medium">{p.student_name} {p.section_name && <span className="text-xs text-gray-400">(Sec {p.section_name})</span>}</span>
+                        : <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ background: '#FFFBEB', color: '#D97706' }}>⚠️ Not linked</span>
+                      }
+                    </div>
+                    <div>
+                      {hasParent
+                        ? <span className="text-xs font-medium px-2.5 py-1 rounded-full w-fit" style={{ background: p.is_active ? '#F0FDF4' : '#FEF2F2', color: p.is_active ? '#16A34A' : '#DC2626' }}>{p.is_active ? 'Active' : 'Inactive'}</span>
+                        : <span className="text-xs font-medium px-2.5 py-1 rounded-full w-fit" style={{ background: '#FEF9C3', color: '#854D0E' }}>Unlinked</span>
+                      }
+                    </div>
+                    <div className="flex justify-start md:justify-end">
+                      {!hasParent && (
+                        <button
+                          onClick={() => { setShowAddModal(true); setFormError(''); setSelectedStudentId(p.id.replace('no-parent-', '')); }}
+                          className="text-xs font-semibold px-3 py-1.5 rounded-lg w-fit"
+                          style={{ background: '#F0FDF4', color: '#16A34A', border: '1px solid #DCFCE7' }}>
+                          + Add Parent
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="font-mono text-sm text-gray-600">{p.phone || '—'}</div>
-                  <div className="text-sm">
-                    {p.student_name ? (
-                      <span className="text-gray-700 font-medium">{p.student_name} {p.section_name && <span className="text-xs text-gray-400">(Sec {p.section_name})</span>}</span>
-                    ) : (
-                      <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ background: '#FFFBEB', color: '#D97706' }}>⚠️ Not linked</span>
-                    )}
-                  </div>
-                  <div><span className="text-xs font-medium px-2.5 py-1 rounded-full w-fit" style={{ background: p.is_active ? '#F0FDF4' : '#FEF2F2', color: p.is_active ? '#16A34A' : '#DC2626' }}>{p.is_active ? 'Active' : 'Inactive'}</span></div>
-                  <div className="flex justify-start md:justify-end">
-                    {!p.student_name && (
-                      <button onClick={() => { setShowLinkModal({ parentId: p.id, parentName: p.full_name }); setLinkError(''); setLinkStudentId(''); setLinkRelationship('guardian'); }}
-                        className="text-xs font-semibold px-3 py-1.5 rounded-lg w-fit" style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #DBEAFE' }}>
-                        🔗 Link to Child
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
