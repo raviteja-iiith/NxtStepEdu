@@ -125,18 +125,26 @@ export default function PrincipalClassesPage() {
     fetchAll(); setSaving(false);
   };
 
-  // Delete section
+  // Delete section — delegates to DB function (SECURITY DEFINER bypasses RLS)
   const handleDeleteSection = async (sectionId: string) => {
-    if (!confirm('Delete this section? Students in this section will need to be reassigned.')) return;
-    await supabase.from('sections').delete().eq('id', sectionId);
+    if (!confirm('Delete this section? All related timetable, attendance, and assignment data will also be removed.')) return;
+    const { error } = await supabase.rpc('delete_section_cascade', { p_section_id: sectionId });
+    if (error) {
+      alert(`Cannot delete section.\n(Error: ${error.message})`);
+      return;
+    }
     fetchAll();
   };
 
-  // Delete class
+  // Delete class — delegates to DB function (SECURITY DEFINER bypasses RLS)
   const handleDeleteClass = async (classId: string, sectionCount: number) => {
     if (sectionCount > 0) { alert('Remove all sections from this class before deleting it.'); return; }
-    if (!confirm('Delete this class?')) return;
-    await supabase.from('classes').delete().eq('id', classId);
+    if (!confirm('Delete this class? This will also clear class references from any removed/inactive students.')) return;
+    const { error } = await supabase.rpc('delete_class_cascade', { p_class_id: classId });
+    if (error) {
+      alert(`Cannot delete class.\n(Error: ${error.message})`);
+      return;
+    }
     fetchAll();
   };
 
@@ -224,11 +232,11 @@ export default function PrincipalClassesPage() {
                 ) : cls.sections.map((sec, si) => (
                   <div key={sec.id} style={{ display:'grid', gridTemplateColumns:'120px 1fr 180px', alignItems:'center', padding:'12px 20px', borderBottom:si<cls.sections.length-1?'1px solid #F8FAFC':'none', gap:16 }}>
                     {/* Section Badge */}
-                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                      <div style={{ width:32, height:32, borderRadius:8, background:col.bg, border:`1px solid ${col.light}`, color:col.accent, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:800 }}>
-                        {sec.name}
+                    <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
+                      <div style={{ width:32, height:32, borderRadius:8, background:col.bg, border:`1px solid ${col.light}`, color:col.accent, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:800, flexShrink:0, overflow:'hidden' }}>
+                        {sec.name.charAt(0).toUpperCase()}
                       </div>
-                      <span style={{ fontSize:13, fontWeight:600, color:'#334155' }}>Section {sec.name}</span>
+                      <span style={{ fontSize:13, fontWeight:600, color:'#334155', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>Section {sec.name}</span>
                     </div>
 
                     {/* Class Teacher */}

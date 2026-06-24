@@ -6,9 +6,19 @@ import { createClient } from '@/lib/supabase/client';
 import { getTeacherDashboardStats } from '@school-erp/supabase/queries';
 import { getUserProfile } from '@school-erp/supabase/queries';
 
+interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  is_urgent: boolean;
+  created_at: string;
+}
+
 export default function TeacherDashboard() {
   const supabase = createClient();
   const [userName, setUserName] = useState('');
+  const [schoolId, setSchoolId] = useState<string | null>(null);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
   const [sectionsCount, setSectionsCount] = useState(0);
   const [assignmentsCount, setAssignmentsCount] = useState(0);
@@ -21,6 +31,7 @@ export default function TeacherDashboard() {
     if (user) {
       const u = await getUserProfile(supabase, user.id);
       if (u) setUserName(u.full_name || 'Teacher');
+      if (u?.school_id) setSchoolId(u.school_id);
       const stats = await getTeacherDashboardStats(supabase, user.id);
       setSectionsCount(stats.sectionsCount);
       const { count: aCount } = await supabase.from('assignments').select('*', { count: 'exact', head: true }).eq('teacher_id', user.id).eq('is_published', true).gte('deadline', new Date().toISOString());
@@ -46,6 +57,22 @@ export default function TeacherDashboard() {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // fetch announcements when schoolId is ready
+  useEffect(() => {
+    if (!schoolId) return;
+    const fetchAnn = async () => {
+      const { data } = await supabase
+        .from('announcements')
+        .select('id, title, content, is_urgent, created_at')
+        .eq('school_id', schoolId)
+        .in('target_audience', ['all', 'teachers'])
+        .order('created_at', { ascending: false })
+        .limit(5);
+      if (data) setAnnouncements(data as Announcement[]);
+    };
+    fetchAnn();
+  }, [schoolId]);
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
@@ -178,6 +205,45 @@ export default function TeacherDashboard() {
         </div>
 
       </div>
+
+      {/* Announcements from Principal */}
+      <div style={{ background: 'white', borderRadius: 14, border: '1px solid #E8ECF0', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
+        <div style={{ padding: '18px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 18 }}>📢</span>
+          <div>
+            <h3 style={{ fontSize: 15, fontWeight: 700, color: '#0F172A', margin: 0 }}>School Announcements</h3>
+            <p style={{ fontSize: 12, color: '#94A3B8', marginTop: 2 }}>Broadcasts from the Principal</p>
+          </div>
+        </div>
+        <div style={{ padding: 20 }}>
+          {announcements.length === 0 ? (
+            <div style={{ padding: '32px 0', textAlign: 'center' }}>
+              <div style={{ width: 52, height: 52, borderRadius: '50%', background: '#F8FAFC', border: '1px solid #E8ECF0', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', fontSize: 22 }}>🔕</div>
+              <p style={{ fontWeight: 600, color: '#475569', fontSize: 14, margin: 0 }}>No announcements yet</p>
+              <p style={{ fontSize: 12, color: '#94A3B8', marginTop: 4 }}>Principal broadcasts will appear here.</p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {announcements.map(a => (
+                <div key={a.id} style={{ padding: '13px 16px', borderRadius: 10, border: `1px solid ${a.is_urgent ? '#FECACA' : '#F1F5F9'}`, background: a.is_urgent ? '#FFF5F5' : '#FAFAFA', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: a.is_urgent ? '#FEF2F2' : '#EFF6FF', border: `1px solid ${a.is_urgent ? '#FEE2E2' : '#DBEAFE'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>
+                    {a.is_urgent ? '🚨' : '📢'}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 2 }}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: '#0F172A', margin: 0 }}>{a.title}</p>
+                      {a.is_urgent && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: '#DC2626', color: 'white' }}>URGENT</span>}
+                    </div>
+                    <p style={{ fontSize: 12, color: '#64748B', margin: '0 0 4px', lineHeight: 1.5 }}>{a.content}</p>
+                    <p style={{ fontSize: 11, color: '#94A3B8', margin: 0 }}>{new Date(a.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
     </div>
   );
 }

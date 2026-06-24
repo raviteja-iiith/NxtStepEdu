@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { getPrincipalDashboardStats } from '@school-erp/supabase/queries';
@@ -9,10 +9,22 @@ import { getUserProfile } from '@school-erp/supabase/queries';
 export default function PrincipalDashboard() {
   const supabase = createClient();
   const [userName, setUserName] = useState('');
+  const [schoolId, setSchoolId] = useState<string | null>(null);
+  const [userId, setUserId]     = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [recentAnnouncements, setRecentAnnouncements] = useState<{id:string;title:string;created_at:string;is_urgent:boolean}[]>([]);
   const [pendingLeaves, setPendingLeaves] = useState<{id:string;users:any;leave_type:string;from_date:string}[]>([]);
   const [stats, setStats] = useState({ totalStudents: 0, totalTeachers: 0, attendanceToday: '—', pendingFees: '₹0' });
+
+  // ── Report modal ──────────────────────────────────────────
+  const [showReport, setShowReport] = useState(false);
+  const reportRef = useRef<HTMLDivElement>(null);
+
+  // ── Broadcast modal ───────────────────────────────────────
+  const [showBroadcast, setShowBroadcast]     = useState(false);
+  const [broadcastSaving, setBroadcastSaving] = useState(false);
+  const [broadcastDone, setBroadcastDone]     = useState(false);
+  const [broadcastForm, setBroadcastForm]     = useState({ title: '', content: '', target_audience: 'all', is_urgent: false });
 
   const fetchData = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -20,6 +32,8 @@ export default function PrincipalDashboard() {
       const u = await getUserProfile(supabase, user.id);
       if (u) setUserName(u.full_name || 'Principal');
       if (u?.school_id) {
+        setSchoolId(u.school_id);
+        setUserId(user.id);
         const dashboardStats = await getPrincipalDashboardStats(supabase, u.school_id);
         setStats(dashboardStats);
         const { data: ann } = await supabase.from('announcements').select('id, title, created_at, is_urgent').eq('school_id', u.school_id).order('created_at', { ascending: false }).limit(3);
@@ -36,6 +50,58 @@ export default function PrincipalDashboard() {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
   const dateStr = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+  /* ── Generate Report ─────────────────────────────────── */
+  const handlePrint = () => {
+    const el = reportRef.current;
+    if (!el) return;
+    const w = window.open('', '_blank');
+    if (!w) return;
+    w.document.write(`
+      <html><head><title>School Report – ${dateStr}</title>
+      <style>
+        body{font-family:system-ui,sans-serif;padding:32px;color:#0F172A}
+        h1{font-size:22px;font-weight:800;margin-bottom:4px}
+        .sub{font-size:13px;color:#64748B;margin-bottom:28px}
+        .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:28px}
+        .card{border:1px solid #E2E8F0;border-radius:12px;padding:18px}
+        .card-label{font-size:11px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:.06em}
+        .card-val{font-size:28px;font-weight:800;margin:6px 0 0}
+        table{width:100%;border-collapse:collapse;font-size:13px}
+        th{text-align:left;font-size:11px;color:#94A3B8;text-transform:uppercase;letter-spacing:.06em;padding:8px 12px;border-bottom:1px solid #F1F5F9}
+        td{padding:10px 12px;border-bottom:1px solid #F8FAFC}
+        .badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700}
+        .urgent{background:#FEF2F2;color:#DC2626}
+        .normal{background:#EFF6FF;color:#1D4ED8}
+        footer{margin-top:32px;font-size:11px;color:#94A3B8;border-top:1px solid #F1F5F9;padding-top:12px}
+        @media print{body{padding:0}}
+      </style></head><body>
+      ${el.innerHTML}
+      </body></html>`);
+    w.document.close();
+    w.focus();
+    setTimeout(() => { w.print(); w.close(); }, 400);
+  };
+
+  /* ── Broadcast ───────────────────────────────────────── */
+  const handleBroadcast = async () => {
+    if (!broadcastForm.title || !broadcastForm.content) return;
+    setBroadcastSaving(true);
+    await supabase.from('announcements').insert({
+      ...broadcastForm,
+      school_id:  schoolId,
+      created_by: userId,
+    });
+    setBroadcastSaving(false);
+    setBroadcastDone(true);
+    setBroadcastForm({ title: '', content: '', target_audience: 'all', is_urgent: false });
+    setTimeout(() => { setShowBroadcast(false); setBroadcastDone(false); }, 1800);
+    // refresh recent announcements
+    if (schoolId) {
+      const { data: ann } = await supabase.from('announcements').select('id, title, created_at, is_urgent').eq('school_id', schoolId).order('created_at', { ascending: false }).limit(3);
+      if (ann) setRecentAnnouncements(ann as any);
+    }
+  };
 
   const statCards = [
     { label: 'Total Students', value: stats.totalStudents, desc: 'Enrolled across all classes', color: '#1D4ED8', bg: '#EFF6FF', iconBg: '#DBEAFE', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg> },
@@ -72,8 +138,8 @@ export default function PrincipalDashboard() {
             </p>
           </div>
           <div className="dashboard-banner-buttons">
-            <button style={{ background: 'white', color: '#1D4ED8', fontWeight: 700, fontSize: 13, padding: '10px 20px', borderRadius: 10, border: 'none', cursor: 'pointer', boxShadow: '0 4px 16px rgba(0,0,0,0.15)', whiteSpace: 'nowrap', flex: 1 }}>Generate Report</button>
-            <button style={{ background: 'rgba(255,255,255,0.1)', color: 'white', fontWeight: 700, fontSize: 13, padding: '10px 20px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', whiteSpace: 'nowrap', flex: 1 }}>Broadcast</button>
+            <button onClick={() => setShowReport(true)} style={{ background: 'white', color: '#1D4ED8', fontWeight: 700, fontSize: 13, padding: '10px 20px', borderRadius: 10, border: 'none', cursor: 'pointer', boxShadow: '0 4px 16px rgba(0,0,0,0.15)', whiteSpace: 'nowrap', flex: 1 }}>📄 Generate Report</button>
+            <button onClick={() => setShowBroadcast(true)} style={{ background: 'rgba(255,255,255,0.1)', color: 'white', fontWeight: 700, fontSize: 13, padding: '10px 20px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', whiteSpace: 'nowrap', flex: 1 }}>📢 Broadcast</button>
           </div>
         </div>
       </div>
@@ -173,6 +239,196 @@ export default function PrincipalDashboard() {
           </div>
         </div>
       </div>
+
+      {/* ── REPORT MODAL ─────────────────────────────────────── */}
+      {showReport && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{ background: 'white', borderRadius: 20, width: '100%', maxWidth: 640, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 80px rgba(0,0,0,0.25)' }}>
+            {/* Modal Header */}
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, background: 'white', borderRadius: '20px 20px 0 0', zIndex: 1 }}>
+              <div>
+                <p style={{ fontSize: 17, fontWeight: 800, color: '#0F172A', margin: 0 }}>📄 School Report</p>
+                <p style={{ fontSize: 12, color: '#94A3B8', marginTop: 2 }}>{dateStr}</p>
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={handlePrint} style={{ padding: '8px 18px', borderRadius: 10, background: '#1D4ED8', color: 'white', border: 'none', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>🖨️ Print / Save PDF</button>
+                <button onClick={() => setShowReport(false)} style={{ width: 34, height: 34, borderRadius: '50%', border: '1px solid #E2E8F0', background: 'white', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748B' }}>✕</button>
+              </div>
+            </div>
+
+            {/* Printable Content */}
+            <div ref={reportRef} style={{ padding: '24px 28px' }}>
+              <h1 style={{ fontSize: 22, fontWeight: 800, margin: '0 0 4px' }}>School Dashboard Report</h1>
+              <p className="sub" style={{ fontSize: 13, color: '#64748B', marginBottom: 28 }}>Generated on {dateStr} · Principal: {userName}</p>
+
+              {/* Stat Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 28 }}>
+                {[
+                  { label: 'Total Students', value: stats.totalStudents, color: '#1D4ED8' },
+                  { label: 'Total Staff',    value: stats.totalTeachers, color: '#7C3AED' },
+                  { label: "Today's Attendance", value: stats.attendanceToday, color: '#0F766E' },
+                  { label: 'Fee Deficit',    value: stats.pendingFees,   color: '#DC2626' },
+                ].map((s) => (
+                  <div key={s.label} style={{ border: '1px solid #E2E8F0', borderRadius: 12, padding: 18 }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '.06em', margin: 0 }}>{s.label}</p>
+                    <p style={{ fontSize: 28, fontWeight: 800, color: s.color, margin: '6px 0 0' }}>{s.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Pending Leaves Table */}
+              {pendingLeaves.length > 0 && (
+                <div style={{ marginBottom: 24 }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: '#0F172A', marginBottom: 10 }}>⏳ Pending Leave Requests ({pendingLeaves.length})</p>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <thead>
+                      <tr>
+                        {['Staff Name', 'Leave Type', 'From Date'].map(h => (
+                          <th key={h} style={{ textAlign: 'left', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '.06em', padding: '8px 12px', borderBottom: '1px solid #F1F5F9' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pendingLeaves.map(l => (
+                        <tr key={l.id}>
+                          <td style={{ padding: '10px 12px', borderBottom: '1px solid #F8FAFC' }}>{(l.users as any)?.full_name || '—'}</td>
+                          <td style={{ padding: '10px 12px', borderBottom: '1px solid #F8FAFC', textTransform: 'capitalize' }}>{l.leave_type?.replace(/_/g, ' ')}</td>
+                          <td style={{ padding: '10px 12px', borderBottom: '1px solid #F8FAFC' }}>{new Date(l.from_date).toLocaleDateString('en-IN')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Recent Announcements Table */}
+              {recentAnnouncements.length > 0 && (
+                <div style={{ marginBottom: 24 }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: '#0F172A', marginBottom: 10 }}>📢 Recent Announcements ({recentAnnouncements.length})</p>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <thead>
+                      <tr>
+                        {['Title', 'Date', 'Priority'].map(h => (
+                          <th key={h} style={{ textAlign: 'left', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '.06em', padding: '8px 12px', borderBottom: '1px solid #F1F5F9' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recentAnnouncements.map(a => (
+                        <tr key={a.id}>
+                          <td style={{ padding: '10px 12px', borderBottom: '1px solid #F8FAFC' }}>{a.title}</td>
+                          <td style={{ padding: '10px 12px', borderBottom: '1px solid #F8FAFC' }}>{new Date(a.created_at).toLocaleDateString('en-IN')}</td>
+                          <td style={{ padding: '10px 12px', borderBottom: '1px solid #F8FAFC' }}>
+                            <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 99, fontSize: 10, fontWeight: 700, background: a.is_urgent ? '#FEF2F2' : '#EFF6FF', color: a.is_urgent ? '#DC2626' : '#1D4ED8' }}>
+                              {a.is_urgent ? 'URGENT' : 'Normal'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <p style={{ marginTop: 32, fontSize: 11, color: '#94A3B8', borderTop: '1px solid #F1F5F9', paddingTop: 12 }}>
+                This report was auto-generated by NxtStepEdu ERP · {dateStr}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── BROADCAST MODAL ──────────────────────────────────── */}
+      {showBroadcast && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{ background: 'white', borderRadius: 20, width: '100%', maxWidth: 480, boxShadow: '0 24px 80px rgba(0,0,0,0.25)', overflow: 'hidden' }}>
+            {/* Header */}
+            <div style={{ padding: '20px 24px', background: 'linear-gradient(135deg,#1E3A8A,#2563EB)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <p style={{ fontSize: 16, fontWeight: 800, color: 'white', margin: 0 }}>📢 Broadcast Announcement</p>
+                <p style={{ fontSize: 12, color: 'rgba(191,219,254,0.85)', marginTop: 2 }}>Send to teachers, parents, or everyone</p>
+              </div>
+              <button onClick={() => { setShowBroadcast(false); setBroadcastForm({ title: '', content: '', target_audience: 'all', is_urgent: false }); }} style={{ width: 32, height: 32, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.1)', cursor: 'pointer', fontSize: 15, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+            </div>
+
+            {broadcastDone ? (
+              <div style={{ padding: '48px 24px', textAlign: 'center' }}>
+                <p style={{ fontSize: 40, margin: '0 0 12px' }}>✅</p>
+                <p style={{ fontSize: 16, fontWeight: 800, color: '#15803D' }}>Broadcast Sent!</p>
+                <p style={{ fontSize: 13, color: '#94A3B8', marginTop: 4 }}>Your announcement has been posted successfully.</p>
+              </div>
+            ) : (
+              <div style={{ padding: '24px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  {/* Title */}
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 6 }}>Title *</label>
+                    <input
+                      value={broadcastForm.title}
+                      onChange={e => setBroadcastForm(f => ({ ...f, title: e.target.value }))}
+                      placeholder="e.g. School closed tomorrow"
+                      style={{ width: '100%', padding: '10px 14px', border: '1px solid #E2E8F0', borderRadius: 10, fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  {/* Content */}
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 6 }}>Message *</label>
+                    <textarea
+                      value={broadcastForm.content}
+                      onChange={e => setBroadcastForm(f => ({ ...f, content: e.target.value }))}
+                      placeholder="Write your announcement here…"
+                      rows={4}
+                      style={{ width: '100%', padding: '10px 14px', border: '1px solid #E2E8F0', borderRadius: 10, fontSize: 14, outline: 'none', resize: 'none', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  {/* Audience + Urgent row */}
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: 12, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 6 }}>Audience</label>
+                      <select
+                        value={broadcastForm.target_audience}
+                        onChange={e => setBroadcastForm(f => ({ ...f, target_audience: e.target.value }))}
+                        style={{ width: '100%', padding: '10px 14px', border: '1px solid #E2E8F0', borderRadius: 10, fontSize: 14, outline: 'none', background: 'white' }}
+                      >
+                        <option value="all">Everyone</option>
+                        <option value="teachers">Teachers Only</option>
+                        <option value="parents">Parents Only</option>
+                      </select>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 22 }}>
+                      <input
+                        type="checkbox"
+                        id="bc-urgent"
+                        checked={broadcastForm.is_urgent}
+                        onChange={e => setBroadcastForm(f => ({ ...f, is_urgent: e.target.checked }))}
+                        style={{ width: 16, height: 16, cursor: 'pointer' }}
+                      />
+                      <label htmlFor="bc-urgent" style={{ fontSize: 13, fontWeight: 600, color: '#DC2626', cursor: 'pointer', whiteSpace: 'nowrap' }}>🔴 Urgent</label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
+                  <button
+                    onClick={() => { setShowBroadcast(false); setBroadcastForm({ title: '', content: '', target_audience: 'all', is_urgent: false }); }}
+                    style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid #E2E8F0', background: 'white', fontWeight: 600, fontSize: 14, cursor: 'pointer', color: '#374151' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleBroadcast}
+                    disabled={broadcastSaving || !broadcastForm.title || !broadcastForm.content}
+                    style={{ flex: 2, padding: '11px 0', borderRadius: 10, border: 'none', background: broadcastSaving ? '#93C5FD' : '#1E3A8A', color: 'white', fontWeight: 700, fontSize: 14, cursor: broadcastSaving ? 'not-allowed' : 'pointer', transition: 'background 0.2s' }}
+                  >
+                    {broadcastSaving ? 'Sending…' : '📢 Send Broadcast'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

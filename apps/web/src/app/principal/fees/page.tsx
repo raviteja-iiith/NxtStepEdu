@@ -605,6 +605,92 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
   const [editFeeSaving,  setEditFeeSaving]  = useState(false);
   const [editFeeError,   setEditFeeError]   = useState('');
 
+  // ── Fee Reminder state ────────────────────────────────────────────────────
+  const [reminderSending, setReminderSending] = useState(false);
+  const [reminderResult,  setReminderResult]  = useState<{ sent: number; skipped: number } | null>(null);
+
+  async function sendReminders() {
+    setReminderSending(true);
+    setReminderResult(null);
+
+    // 1. Get all unpaid students from the current filtered view
+    const unpaid = visible.filter(r => r.status !== 'paid');
+    if (unpaid.length === 0) {
+      setReminderResult({ sent: 0, skipped: visible.length });
+      setReminderSending(false);
+      return;
+    }
+
+    // 2. Fetch fee rows with due_date for these students
+    const studentIds = unpaid.map(r => r.student_id);
+    const { data: feeRows } = await supabase
+      .from('fees')
+      .select('student_id, amount, status, due_date')
+      .eq('school_id', schoolId)
+      .in('student_id', studentIds)
+      .neq('status', 'paid')
+      .order('due_date', { ascending: true });
+
+    // Map student_id → earliest unpaid fee info
+    const feeInfoMap = new Map<string, { amount: number; due: number; due_date: string | null; status: string }>();
+    (feeRows ?? []).forEach((f: any) => {
+      if (!feeInfoMap.has(f.student_id)) {
+        const row = visible.find(r => r.student_id === f.student_id);
+        feeInfoMap.set(f.student_id, {
+          amount:   row?.total_fee ?? f.amount,
+          due:      row?.due ?? f.amount,
+          due_date: f.due_date ?? null,
+          status:   f.status,
+        });
+      }
+    });
+
+    // 3. Fetch parent links
+    const { data: links } = await supabase
+      .from('student_parent_links')
+      .select('student_id, parent_id')
+      .in('student_id', studentIds);
+
+    if (!links || links.length === 0) {
+      setReminderResult({ sent: 0, skipped: unpaid.length });
+      setReminderSending(false);
+      return;
+    }
+
+    // 4. Send one notification per parent link
+    let sent = 0;
+    await Promise.all(links.map(async (l: any) => {
+      const info = feeInfoMap.get(l.student_id);
+      const student = visible.find(r => r.student_id === l.student_id);
+      if (!info || !student) return;
+
+      const dueDateStr = info.due_date
+        ? new Date(info.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+        : null;
+
+      const statusLabel = info.status === 'overdue' ? '🔴 Overdue'
+        : info.status === 'partially_paid' ? '🟡 Partially Paid'
+        : '🟠 Pending';
+
+      await createNotification(supabase, {
+        recipient_id: l.parent_id,
+        school_id:    schoolId,
+        type:         'fee_reminder',
+        title:        `Fee Reminder: ₹${info.due.toLocaleString('en-IN')} due for ${student.student_name}`,
+        body:         `Total Fee: ₹${info.amount.toLocaleString('en-IN')} · Amount Due: ₹${info.due.toLocaleString('en-IN')} · Status: ${statusLabel}${
+          dueDateStr ? ` · Due Date: ${dueDateStr}` : ''
+        }. Please visit the Fees section to clear the balance.`,
+        link: '/parent/fees',
+      });
+      sent++;
+    }));
+
+    setReminderResult({ sent, skipped: unpaid.length - sent });
+    setReminderSending(false);
+    // auto-clear result after 6s
+    setTimeout(() => setReminderResult(null), 6000);
+  }
+
   const fetchOverview = useCallback(async () => {
     if (!schoolId) return;
     setLoading(true);
@@ -807,26 +893,72 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {/* Filters */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr', gap: 12 }}>
-        <div>
-          <label style={LABEL}>Class</label>
-          <select value={filterClass} onChange={e => { setFilterClass(e.target.value); setFilterSec(''); }} style={IS}>
-            <option value="">Whole School</option>
-            {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+      {/* Filters + Send Reminders */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr', gap: 12 }}>
+          <div>
+            <label style={LABEL}>Class</label>
+            <select value={filterClass} onChange={e => { setFilterClass(e.target.value); setFilterSec(''); }} style={IS}>
+              <option value="">Whole School</option>
+              {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={LABEL}>Section</label>
+            <select value={filterSec} onChange={e => setFilterSec(e.target.value)} disabled={!filterClass} style={{ ...IS, opacity: filterClass ? 1 : 0.5 }}>
+              <option value="">All Sections</option>
+              {filteredSections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={LABEL}>Search Student</label>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Type a student name…"
+              style={{ ...IS, paddingLeft: 36, backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'14\' height=\'14\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2394A3B8\' stroke-width=\'2\'%3E%3Ccircle cx=\'11\' cy=\'11\' r=\'8\'/%3E%3Cpath d=\'m21 21-4.35-4.35\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: '12px center' }} />
+          </div>
         </div>
-        <div>
-          <label style={LABEL}>Section</label>
-          <select value={filterSec} onChange={e => setFilterSec(e.target.value)} disabled={!filterClass} style={{ ...IS, opacity: filterClass ? 1 : 0.5 }}>
-            <option value="">All Sections</option>
-            {filteredSections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-        </div>
-        <div>
-          <label style={LABEL}>Search Student</label>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Type a student name…"
-            style={{ ...IS, paddingLeft: 36, backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'14\' height=\'14\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2394A3B8\' stroke-width=\'2\'%3E%3Ccircle cx=\'11\' cy=\'11\' r=\'8\'/%3E%3Cpath d=\'m21 21-4.35-4.35\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: '12px center' }} />
+
+        {/* Reminder button + result */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          {(() => {
+            const unpaidCount = visible.filter(r => r.status !== 'paid').length;
+            return (
+              <button
+                onClick={sendReminders}
+                disabled={reminderSending || loading || unpaidCount === 0}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '9px 18px', borderRadius: 9, border: 'none',
+                  background: unpaidCount === 0 || loading ? '#F1F5F9'
+                    : reminderSending ? '#FEF3C7'
+                    : 'linear-gradient(135deg,#D97706,#F59E0B)',
+                  color: unpaidCount === 0 || loading ? '#94A3B8'
+                    : reminderSending ? '#92400E' : 'white',
+                  fontSize: 13, fontWeight: 700,
+                  cursor: unpaidCount === 0 || loading || reminderSending ? 'not-allowed' : 'pointer',
+                  boxShadow: unpaidCount > 0 && !loading && !reminderSending ? '0 4px 12px rgba(217,119,6,0.3)' : 'none',
+                  transition: 'all 0.2s', whiteSpace: 'nowrap',
+                }}
+              >
+                {reminderSending ? '⏳ Sending…' : `🔔 Send Fee Reminders${unpaidCount > 0 ? ` (${unpaidCount} students)` : ''}`}
+              </button>
+            );
+          })()}
+
+          {reminderResult && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '8px 16px', borderRadius: 9,
+              background: reminderResult.sent > 0 ? '#FEF3C7' : '#F1F5F9',
+              border: `1px solid ${reminderResult.sent > 0 ? '#FDE68A' : '#E2E8F0'}`,
+              fontSize: 13, fontWeight: 600,
+              color: reminderResult.sent > 0 ? '#92400E' : '#64748B',
+            }}>
+              {reminderResult.sent > 0
+                ? `✅ Reminders sent to ${reminderResult.sent} parent(s)`
+                : '⚠️ No parent links found — no reminders sent'}
+              {reminderResult.skipped > 0 && reminderResult.sent > 0 && ` · ${reminderResult.skipped} had no linked parent`}
+            </div>
+          )}
         </div>
       </div>
 

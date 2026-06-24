@@ -118,11 +118,11 @@ export default function PrincipalSubjectsPage() {
     fetchAll(); setSaving(false);
   };
 
-  // Delete subject
+  // Delete subject — delegates to DB function (SECURITY DEFINER bypasses RLS)
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this subject? This will also remove teacher assignments.')) return;
-    await supabase.from('teacher_section_assignments').delete().eq('subject_id', id);
-    await supabase.from('subjects').delete().eq('id', id);
+    if (!confirm('Delete this subject? This will also remove related timetable slots and teacher assignments.')) return;
+    const { error } = await supabase.rpc('delete_subject_cascade', { p_subject_id: id });
+    if (error) { alert(`Cannot delete subject.\n(Error: ${error.message})`); return; }
     fetchAll();
   };
 

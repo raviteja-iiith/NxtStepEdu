@@ -5,6 +5,15 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useParent } from '@/context/ParentContext';
 
+interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  target_audience: string;
+  is_urgent: boolean;
+  created_at: string;
+}
+
 const P = { fontFamily: "'Inter', sans-serif" };
 
 export default function ParentDashboard() {
@@ -18,6 +27,35 @@ export default function ParentDashboard() {
     examsCount: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [schoolId, setSchoolId] = useState<string | null>(null);
+
+  // fetch school_id once
+  useEffect(() => {
+    const getSchool = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase.from('users').select('school_id').eq('id', user.id).single();
+      if (data?.school_id) setSchoolId(data.school_id);
+    };
+    getSchool();
+  }, []);
+
+  // fetch announcements whenever schoolId is ready
+  useEffect(() => {
+    if (!schoolId) return;
+    const fetchAnnouncements = async () => {
+      const { data } = await supabase
+        .from('announcements')
+        .select('id, title, content, target_audience, is_urgent, created_at')
+        .eq('school_id', schoolId)
+        .in('target_audience', ['all', 'parents'])
+        .order('created_at', { ascending: false })
+        .limit(5);
+      if (data) setAnnouncements(data as Announcement[]);
+    };
+    fetchAnnouncements();
+  }, [schoolId]);
 
   const fetchStats = useCallback(async () => {
     if (!selectedChild) return;
@@ -127,20 +165,40 @@ export default function ParentDashboard() {
       {/* Content Grid */}
       <div className="bottom-grid-container">
 
-        {/* Recent Activity */}
+        {/* Announcements from School */}
         <div style={{ background: 'white', borderRadius: 20, padding: '28px 32px', boxShadow: '0 2px 12px rgba(0,0,0,0.05)', border: '1px solid #E8ECF0' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
             <div>
-              <h3 style={{ fontSize: 17, fontWeight: 800, color: '#0F172A', margin: 0, letterSpacing: '-0.01em' }}>Recent Activity</h3>
-              <p style={{ fontSize: 12, color: '#94A3B8', marginTop: 3 }}>Latest updates from school</p>
+              <h3 style={{ fontSize: 17, fontWeight: 800, color: '#0F172A', margin: 0, letterSpacing: '-0.01em' }}>📢 School Announcements</h3>
+              <p style={{ fontSize: 12, color: '#94A3B8', marginTop: 3 }}>Latest broadcasts from your school</p>
             </div>
-            <Link href="/parent/academics" style={{ fontSize: 13, fontWeight: 700, color: '#7C3AED', textDecoration: 'none', padding: '6px 14px', background: '#F5F3FF', borderRadius: 8 }}>View All →</Link>
           </div>
-          <div style={{ padding: '48px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', background: '#FAFAFA', borderRadius: 14, border: '1.5px dashed #E2E8F0' }}>
-            <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'white', border: '1px solid #E2E8F0', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, marginBottom: 16 }}>📋</div>
-            <p style={{ fontWeight: 700, color: '#475569', fontSize: 15, margin: '0 0 6px' }}>No recent activity</p>
-            <p style={{ fontSize: 13, color: '#94A3B8', maxWidth: 300, lineHeight: 1.6, margin: 0 }}>Announcements, assignments, attendance, and grade updates will appear here.</p>
-          </div>
+
+          {announcements.length === 0 ? (
+            <div style={{ padding: '40px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', background: '#FAFAFA', borderRadius: 14, border: '1.5px dashed #E2E8F0' }}>
+              <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'white', border: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, marginBottom: 12 }}>🔕</div>
+              <p style={{ fontWeight: 700, color: '#475569', fontSize: 14, margin: '0 0 4px' }}>No announcements yet</p>
+              <p style={{ fontSize: 12, color: '#94A3B8', maxWidth: 260, lineHeight: 1.6, margin: 0 }}>When the principal posts a broadcast, it will show up here.</p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {announcements.map(a => (
+                <div key={a.id} style={{ padding: '14px 16px', borderRadius: 12, border: `1px solid ${a.is_urgent ? '#FECACA' : '#E8ECF0'}`, background: a.is_urgent ? '#FFF5F5' : '#FAFAFA', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                  <div style={{ width: 38, height: 38, borderRadius: 10, background: a.is_urgent ? '#FEF2F2' : '#EFF6FF', border: `1px solid ${a.is_urgent ? '#FEE2E2' : '#DBEAFE'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
+                    {a.is_urgent ? '🚨' : '📢'}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 2 }}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: '#0F172A', margin: 0 }}>{a.title}</p>
+                      {a.is_urgent && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 8px', borderRadius: 99, background: '#DC2626', color: 'white' }}>URGENT</span>}
+                    </div>
+                    <p style={{ fontSize: 12, color: '#64748B', margin: '0 0 4px', lineHeight: 1.5 }}>{a.content}</p>
+                    <p style={{ fontSize: 11, color: '#94A3B8', margin: 0 }}>{new Date(a.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Quick Links */}

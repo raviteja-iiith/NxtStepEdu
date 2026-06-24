@@ -34,6 +34,8 @@ export default function StudentsPage() {
   const [formError, setFormError] = useState('');
   const [form, setForm] = useState({ full_name:'', date_of_birth:'', gender:'', blood_group:'', class_id:'', section_id:'', roll_number:'', address:'', admission_number:'', admission_date:new Date().toISOString().split('T')[0] });
 
+  const [showInactive, setShowInactive] = useState(false);
+
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [bulkData, setBulkData] = useState<any[]>([]);
   const [bulkLoading, setBulkLoading] = useState(false);
@@ -45,13 +47,16 @@ export default function StudentsPage() {
     if (!userId) { setLoading(false); return; }
     const { data: cu } = await supabase.from('users').select('school_id').eq('id',userId).single();
     if (!cu?.school_id) { setLoading(false); return; }
-    let q=supabase.from('students').select('*,classes(name),sections(name)').eq('school_id',cu.school_id).eq('is_active',true).order('full_name');
+    let q=supabase.from('students').select('*,classes(name),sections(name)').eq('school_id',cu.school_id).order('full_name');
+    if (!showInactive) {
+      q = q.eq('is_active',true);
+    }
     if (filterClass) q=q.eq('class_id',filterClass);
     if (filterSection) q=q.eq('section_id',filterSection);
     const { data } = await q;
     if (data) setStudents(data.map((s:any)=>({...s,class_name:s.classes?.name,section_name:s.sections?.name})) as Student[]);
     setLoading(false);
-  }, [supabase, filterClass, filterSection]);
+  }, [supabase, filterClass, filterSection, showInactive]);
 
   const fetchStructure = useCallback(async () => {
     const userId=(await supabase.auth.getUser()).data.user?.id;
@@ -289,7 +294,7 @@ export default function StudentsPage() {
       </div>
 
       {/* Filters */}
-      <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+      <div style={{ display:'flex', gap:10, flexWrap:'wrap', marginBottom: 16 }}>
         <div style={{ position:'relative', flex:1, minWidth:220 }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)' }}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input type="text" placeholder="Search by name or admission number..." value={search} onChange={e=>setSearch(e.target.value)} style={{ ...IS, paddingLeft:36 }}/>
@@ -300,6 +305,10 @@ export default function StudentsPage() {
         <select value={filterSection} onChange={e=>setFilterSection(e.target.value)} style={{ ...IS, width:'auto', minWidth:130 }}>
           <option value="">All Sections</option>{filterSections2.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#475569', cursor: 'pointer', background: 'white', border: '1px solid #E2E8F0', padding: '0 14px', borderRadius: 10, fontWeight: 600 }}>
+          <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} style={{ cursor: 'pointer', accentColor: '#1E3A8A' }} />
+          Show Removed Students
+        </label>
       </div>
 
       {/* List */}
@@ -320,22 +329,35 @@ export default function StudentsPage() {
             <p style={{ fontSize:13, color:'#94A3B8', marginTop:6 }}>Click <strong>+ Admit Student</strong> to enroll the first student</p>
           </div>
         ) : searched.map((s,idx)=>(
-          <div key={s.id} className="student-list-grid" style={{ padding:'14px 20px', borderBottom:idx<searched.length-1?'1px solid #F8FAFC':'none', alignItems:'center' }}>
+          <div key={s.id} className="student-list-grid" style={{ padding:'14px 20px', borderBottom:idx<searched.length-1?'1px solid #F8FAFC':'none', alignItems:'center', opacity: s.is_active ? 1 : 0.6 }}>
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-              <div style={{ width:34, height:34, borderRadius:'50%', background:'linear-gradient(135deg, #1E3A8A, #60A5FA)', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:800, flexShrink:0 }}>
+              <div style={{ width:34, height:34, borderRadius:'50%', background:s.is_active?'linear-gradient(135deg, #1E3A8A, #60A5FA)':'#CBD5E1', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:800, flexShrink:0 }}>
                 {s.full_name.charAt(0).toUpperCase()}
               </div>
-              <p style={{ fontWeight:700, fontSize:13, color:'#0F172A', margin:0 }}>{s.full_name}</p>
+              <p style={{ fontWeight:700, fontSize:13, color:s.is_active?'#0F172A':'#64748B', margin:0, textDecoration:s.is_active?'none':'line-through' }}>
+                {s.full_name} {!s.is_active && <span style={{ fontSize: 10, background: '#FEE2E2', color: '#DC2626', padding: '2px 6px', borderRadius: 4, marginLeft: 6, textDecoration: 'none' }}>Removed</span>}
+              </p>
             </div>
             <code style={{ fontSize:11, padding:'3px 8px', background:'#F1F5F9', color:'#475569', borderRadius:6 }}>{s.admission_number||'—'}</code>
             <p style={{ fontSize:13, color:'#475569', margin:0 }}>{s.class_name} – {s.section_name}</p>
             <p style={{ fontSize:13, color:'#475569', margin:0 }}>{s.roll_number??'—'}</p>
             <span style={{ fontSize:11, fontWeight:600, padding:'3px 8px', borderRadius:6, background:s.gender?genderColors[s.gender]:'#F1F5F9', color:'#334155', textTransform:'capitalize' }}>{s.gender||'—'}</span>
             <div style={{ display:'flex', gap:6, justifyContent:'flex-end' }}>
-              <button onClick={()=>router.push(`/principal/students/${s.id}/analysis`)} style={{ fontSize:12, fontWeight:700, padding:'6px 12px', borderRadius:8, border:'1px solid #DDD6FE', background:'linear-gradient(135deg,#F5F3FF,#EDE9FE)', color:'#7C3AED', cursor:'pointer' }}>📊 Analysis</button>
+              {s.is_active && <button onClick={()=>router.push(`/principal/students/${s.id}/analysis`)} style={{ fontSize:12, fontWeight:700, padding:'6px 12px', borderRadius:8, border:'1px solid #DDD6FE', background:'linear-gradient(135deg,#F5F3FF,#EDE9FE)', color:'#7C3AED', cursor:'pointer' }}>📊 Analysis</button>}
               <button onClick={()=>openEdit(s)} style={{ fontSize:12, fontWeight:700, padding:'6px 12px', borderRadius:8, border:'1px solid #D1FAE5', background:'linear-gradient(135deg,#ECFDF5,#D1FAE5)', color:'#065F46', cursor:'pointer' }}>✏️ Edit</button>
               <button onClick={()=>setShowProfile(s)} style={{ fontSize:12, fontWeight:600, padding:'6px 12px', borderRadius:8, border:'1px solid #DBEAFE', background:'#EFF6FF', color:'#1D4ED8', cursor:'pointer' }}>View</button>
-              <button onClick={()=>toggleActive(s.id,s.is_active)} style={{ fontSize:12, fontWeight:600, padding:'6px 12px', borderRadius:8, border:'1px solid #FEE2E2', background:'#FEF2F2', color:'#DC2626', cursor:'pointer' }}>Remove</button>
+              <button onClick={()=>toggleActive(s.id,s.is_active)} style={{ fontSize:12, fontWeight:600, padding:'6px 12px', borderRadius:8, border:'1px solid #FEE2E2', background:'#FEF2F2', color:'#DC2626', cursor:'pointer' }}>{s.is_active ? 'Remove' : 'Restore'}</button>
+              {!s.is_active && (
+                <button onClick={async () => {
+                  if (confirm('Permanently delete this student from the database? This cannot be undone.')) {
+                    const { error } = await supabase.from('students').delete().eq('id', s.id);
+                    if (error) alert(`Failed to delete: ${error.message}`);
+                    fetchStudents();
+                  }
+                }} style={{ fontSize:12, fontWeight:600, padding:'6px 12px', borderRadius:8, border:'1px solid #EF4444', background:'#DC2626', color:'white', cursor:'pointer' }}>
+                  Delete DB
+                </button>
+              )}
             </div>
           </div>
         ))}
