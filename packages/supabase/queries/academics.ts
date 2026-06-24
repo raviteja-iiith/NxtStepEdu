@@ -1,27 +1,31 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 
 export async function getTeacherSections(supabase: SupabaseClient, teacherId: string) {
-  const { data, error } = await supabase
+  // Step 1: get all section IDs assigned to this teacher (may have duplicates across subjects)
+  const { data: assignments, error: aErr } = await supabase
     .from('teacher_section_assignments')
-    .select('sections(id, name, classes(name))')
+    .select('section_id')
     .eq('teacher_id', teacherId);
-    
-  if (error) throw error;
-  
-  const unique = new Map();
-  if (data) {
-    data.forEach((d: Record<string, unknown>) => {
-      const sec = d.sections as Record<string, unknown>;
-      if (sec) {
-        unique.set(sec.id as string, { 
-          id: sec.id as string, 
-          name: sec.name as string, 
-          class_name: (sec.classes as Record<string, string>)?.name || '' 
-        });
-      }
-    });
-  }
-  return Array.from(unique.values());
+
+  if (aErr) throw aErr;
+  if (!assignments || assignments.length === 0) return [];
+
+  // Deduplicate section IDs
+  const sectionIds = [...new Set(assignments.map((a: any) => a.section_id as string))];
+
+  // Step 2: fetch full section details for all IDs in one query
+  const { data: sections, error: sErr } = await supabase
+    .from('sections')
+    .select('id, name, classes(name)')
+    .in('id', sectionIds);
+
+  if (sErr) throw sErr;
+
+  return (sections || []).map((sec: any) => ({
+    id: sec.id as string,
+    name: sec.name as string,
+    class_name: sec.classes?.name || '',
+  }));
 }
 
 export async function getSectionStudents(supabase: SupabaseClient, sectionId: string) {
