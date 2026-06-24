@@ -21,8 +21,34 @@ export default function TeacherStudentsPage() {
     setLoading(true);
     const userId = (await supabase.auth.getUser()).data.user?.id;
     if (userId) {
-      const data = await getTeacherSections(supabase, userId);
-      setSections(data);
+      // Step 1: Get all section_ids for this teacher
+      const { data: asgn, error: aErr } = await supabase
+        .from('teacher_section_assignments')
+        .select('section_id')
+        .eq('teacher_id', userId);
+
+      console.log('[TeacherStudents] teacher_id:', userId);
+      console.log('[TeacherStudents] assignments:', asgn, 'error:', aErr);
+
+      if (asgn && asgn.length > 0) {
+        const sectionIds = [...new Set(asgn.map((a: any) => a.section_id as string))];
+        console.log('[TeacherStudents] unique sectionIds:', sectionIds);
+
+        // Step 2: Fetch section details
+        const { data: secs, error: sErr } = await supabase
+          .from('sections')
+          .select('id, name, classes(name)')
+          .in('id', sectionIds);
+
+        console.log('[TeacherStudents] sections:', secs, 'error:', sErr);
+
+        const formatted = (secs || []).map((s: any) => ({
+          id: s.id as string,
+          name: s.name as string,
+          class_name: (s.classes as any)?.name || '',
+        }));
+        setSections(formatted);
+      }
     }
     setLoading(false);
   }, [supabase]);
