@@ -843,7 +843,7 @@ body {
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.5);
-  z-index: 39;
+  z-index: 55;
   backdrop-filter: blur(2px);
 }
 @media (max-width: 768px) {
@@ -855,8 +855,9 @@ body {
   .portal-sidebar {
     transform: translateX(-100%);
     transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
-    z-index: 40 !important;
+    z-index: 60 !important;
     width: 280px !important;
+    padding-bottom: env(safe-area-inset-bottom);
   }
   .portal-sidebar.open {
     transform: translateX(0);
@@ -939,10 +940,6 @@ body {
     width: 22px;
     height: 22px;
   }
-  /* push main content above tab bar */
-  .parent-main-content {
-    padding-bottom: calc(72px + env(safe-area-inset-bottom)) !important;
-  }
 }
 
 /* ── Mobile topbar ── */
@@ -964,6 +961,10 @@ body {
   .content-page {
     padding: 16px !important;
     max-width: 100% !important;
+  }
+  /* push main content above tab bar - MUST be after .content-page to override */
+  .parent-main-content {
+    padding-bottom: calc(85px + env(safe-area-inset-bottom)) !important;
   }
 }
 
