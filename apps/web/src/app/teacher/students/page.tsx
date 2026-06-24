@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 interface Student { id: string; full_name: string; roll_number: number | null; }
 interface Section { id: string; name: string; class_name: string; }
@@ -19,6 +20,7 @@ const AVATAR_COLORS = [
 export default function TeacherStudentsPage() {
   const supabase = createClient();
   const router = useRouter();
+  const isMobile = useIsMobile();
   const [sections, setSections] = useState<Section[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [selectedSection, setSelectedSection] = useState('');
@@ -42,7 +44,6 @@ export default function TeacherStudentsPage() {
       }));
       setSections(formatted);
 
-      // Auto-select first section if only one
       if (formatted.length === 1) {
         handleSectionSelect(formatted[0].id);
       }
@@ -74,17 +75,17 @@ export default function TeacherStudentsPage() {
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
         <div>
-          <h2 style={{ fontSize: 22, fontWeight: 800, color: '#0F172A', margin: 0, letterSpacing: '-0.02em' }}>My Students</h2>
+          <h2 style={{ fontSize: isMobile ? 18 : 22, fontWeight: 800, color: '#0F172A', margin: 0, letterSpacing: '-0.02em' }}>My Students</h2>
           <p style={{ fontSize: 13, color: '#94A3B8', marginTop: 4 }}>Students in your class section(s)</p>
         </div>
         {selectedSection && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderRadius: 10, background: 'linear-gradient(135deg,#EFF6FF,#DBEAFE)', border: '1px solid #BFDBFE' }}>
-            <span style={{ fontSize: 18 }}>👨‍🎓</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 14px', borderRadius: 10, background: 'linear-gradient(135deg,#EFF6FF,#DBEAFE)', border: '1px solid #BFDBFE' }}>
+            <span style={{ fontSize: 16 }}>👨‍🎓</span>
             <span style={{ fontSize: 13, fontWeight: 700, color: '#1D4ED8' }}>{students.length} Student{students.length !== 1 ? 's' : ''}</span>
           </div>
         )}
@@ -92,7 +93,7 @@ export default function TeacherStudentsPage() {
 
       {/* Section Tabs */}
       {!loading && sections.length > 0 && (
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {sections.map((sec, i) => {
             const isActive = selectedSection === sec.id;
             return (
@@ -100,32 +101,31 @@ export default function TeacherStudentsPage() {
                 key={sec.id}
                 onClick={() => handleSectionSelect(sec.id)}
                 style={{
-                  padding: '10px 20px',
+                  padding: isMobile ? '9px 14px' : '10px 20px',
                   borderRadius: 12,
                   border: isActive ? 'none' : '1px solid #E2E8F0',
                   background: isActive ? 'linear-gradient(135deg,#1E3A8A,#3B82F6)' : 'white',
                   color: isActive ? 'white' : '#475569',
-                  fontSize: 13,
+                  fontSize: isMobile ? 12 : 13,
                   fontWeight: 700,
                   cursor: 'pointer',
                   boxShadow: isActive ? '0 4px 14px rgba(59,130,246,0.35)' : '0 1px 3px rgba(0,0,0,0.06)',
-                  transform: isActive ? 'translateY(-1px)' : 'none',
                   transition: 'all 0.18s ease',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 8,
+                  gap: 7,
                 }}
               >
                 <span style={{
-                  width: 26, height: 26, borderRadius: 7,
+                  width: 24, height: 24, borderRadius: 6,
                   background: isActive ? 'rgba(255,255,255,0.2)' : '#EFF6FF',
                   color: isActive ? 'white' : '#1D4ED8',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 12, fontWeight: 800,
+                  fontSize: 11, fontWeight: 800, flexShrink: 0,
                 }}>
                   {sec.class_name.replace(/[^0-9]/g, '') || i + 1}
                 </span>
-                Class {sec.class_name} — Section {sec.name}
+                Class {sec.class_name} — Sec {sec.name}
               </button>
             );
           })}
@@ -134,86 +134,116 @@ export default function TeacherStudentsPage() {
 
       {/* Loading skeletons */}
       {loading && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {[1,2,3].map(i => (
-            <div key={i} style={{ height: 56, borderRadius: 12, background: 'linear-gradient(90deg,#F1F5F9 25%,#E2E8F0 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s infinite' }} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {[1, 2, 3].map(i => (
+            <div key={i} style={{ height: 52, borderRadius: 12, background: '#F1F5F9' }} />
           ))}
         </div>
       )}
 
-      {/* No class teacher assigned */}
+      {/* No class assigned */}
       {!loading && sections.length === 0 && (
-        <div style={{ background: 'white', borderRadius: 20, border: '1px solid #E8ECF0', padding: '60px 24px', textAlign: 'center', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
-          <div style={{ width: 64, height: 64, borderRadius: 18, background: '#F8FAFC', border: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 28 }}>🏫</div>
+        <div style={{ background: 'white', borderRadius: 18, border: '1px solid #E8ECF0', padding: '50px 20px', textAlign: 'center' }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🏫</div>
           <p style={{ fontSize: 15, fontWeight: 700, color: '#1E293B', margin: 0 }}>No class assigned yet</p>
-          <p style={{ fontSize: 13, color: '#94A3B8', marginTop: 6 }}>Ask the principal to assign you as a class teacher in Classes &amp; Sections</p>
+          <p style={{ fontSize: 13, color: '#94A3B8', marginTop: 6 }}>Ask the principal to assign you as a class teacher</p>
         </div>
       )}
 
       {/* Prompt to select */}
       {!loading && sections.length > 0 && !selectedSection && (
-        <div style={{ background: 'white', borderRadius: 20, border: '1px solid #E8ECF0', padding: '60px 24px', textAlign: 'center', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
-          <div style={{ fontSize: 48, marginBottom: 12 }}>👆</div>
+        <div style={{ background: 'white', borderRadius: 18, border: '1px solid #E8ECF0', padding: '50px 20px', textAlign: 'center' }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>👆</div>
           <p style={{ fontSize: 15, fontWeight: 700, color: '#1E293B', margin: 0 }}>Select a class above</p>
-          <p style={{ fontSize: 13, color: '#94A3B8', marginTop: 6 }}>Click on a class tab to view its students</p>
+          <p style={{ fontSize: 13, color: '#94A3B8', marginTop: 6 }}>Tap a class tab to view its students</p>
         </div>
       )}
 
-      {/* Student list */}
+      {/* Student list card */}
       {selectedSection && !loadingStudents && (
-        <div style={{ background: 'white', borderRadius: 20, border: '1px solid #E8ECF0', overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
-          {/* Card header */}
-          <div style={{ padding: '18px 24px', background: 'linear-gradient(135deg,#F8FAFC,#EFF6FF)', borderBottom: '1px solid #E8ECF0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-            <div>
-              <p style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: 0 }}>
-                Class {selectedSec?.class_name} — Section {selectedSec?.name}
-              </p>
-              <p style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>{students.length} enrolled student{students.length !== 1 ? 's' : ''}</p>
+        <div style={{ background: 'white', borderRadius: 18, border: '1px solid #E8ECF0', overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
+
+          {/* Card header with search */}
+          <div style={{ padding: '16px 20px', background: 'linear-gradient(135deg,#F8FAFC,#EFF6FF)', borderBottom: '1px solid #E8ECF0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+              <div>
+                <p style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: 0 }}>
+                  Class {selectedSec?.class_name} — Section {selectedSec?.name}
+                </p>
+                <p style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>{students.length} enrolled student{students.length !== 1 ? 's' : ''}</p>
+              </div>
             </div>
-            {/* Search */}
+            {/* Full-width search on mobile */}
             <div style={{ position: 'relative' }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }}>
                 <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
               </svg>
               <input
                 type="text"
-                placeholder="Search students..."
+                placeholder="Search by name or roll no..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                style={{ paddingLeft: 32, paddingRight: 14, paddingTop: 8, paddingBottom: 8, border: '1px solid #E2E8F0', borderRadius: 10, fontSize: 13, outline: 'none', background: 'white', width: 200, fontFamily: 'inherit' }}
+                style={{ paddingLeft: 36, paddingRight: 14, paddingTop: 9, paddingBottom: 9, border: '1px solid #E2E8F0', borderRadius: 10, fontSize: 13, outline: 'none', background: 'white', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit' }}
               />
             </div>
           </div>
 
-          {/* Table */}
+          {/* Mobile: Card list */}
           {filtered.length === 0 ? (
-            <div style={{ padding: '40px 24px', textAlign: 'center', color: '#94A3B8', fontSize: 14 }}>
+            <div style={{ padding: '36px 20px', textAlign: 'center', color: '#94A3B8', fontSize: 14 }}>
               No students match your search
             </div>
+          ) : isMobile ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {filtered.map((s, i) => {
+                const ac = AVATAR_COLORS[i % AVATAR_COLORS.length];
+                return (
+                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderBottom: i < filtered.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
+                    {/* Avatar */}
+                    <div style={{ width: 42, height: 42, borderRadius: 12, background: ac.bg, color: ac.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, flexShrink: 0 }}>
+                      {s.full_name.charAt(0).toUpperCase()}
+                    </div>
+                    {/* Info */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 14, fontWeight: 700, color: '#0F172A', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.full_name}</p>
+                      <p style={{ fontSize: 11, color: '#94A3B8', margin: '2px 0 0' }}>Roll: <strong style={{ color: '#475569' }}>{s.roll_number ?? '—'}</strong></p>
+                    </div>
+                    {/* Action button — icon only on mobile */}
+                    <button
+                      onClick={() => router.push(`/teacher/students/${s.id}/analysis`)}
+                      style={{ width: 38, height: 38, borderRadius: 10, border: '1px solid #DDD6FE', background: 'linear-gradient(135deg,#F5F3FF,#EDE9FE)', color: '#7C3AED', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           ) : (
+            /* Desktop: Table */
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: '#F8FAFC' }}>
-                  <th style={{ textAlign: 'left', padding: '12px 24px', fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>#</th>
-                  <th style={{ textAlign: 'left', padding: '12px 24px', fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Student</th>
-                  <th style={{ textAlign: 'left', padding: '12px 24px', fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Roll No.</th>
-                  <th style={{ textAlign: 'right', padding: '12px 24px', fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Actions</th>
+                  <th style={{ textAlign: 'left', padding: '11px 20px', fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>#</th>
+                  <th style={{ textAlign: 'left', padding: '11px 20px', fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Student</th>
+                  <th style={{ textAlign: 'left', padding: '11px 20px', fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Roll No.</th>
+                  <th style={{ textAlign: 'right', padding: '11px 20px', fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((s, i) => {
                   const ac = AVATAR_COLORS[i % AVATAR_COLORS.length];
                   return (
-                    <tr key={s.id} style={{ borderTop: '1px solid #F1F5F9', transition: 'background 0.15s' }}
+                    <tr key={s.id} style={{ borderTop: '1px solid #F1F5F9' }}
                       onMouseEnter={e => (e.currentTarget.style.background = '#FAFBFF')}
                       onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                     >
-                      <td style={{ padding: '14px 24px', fontSize: 12, color: '#CBD5E1', fontWeight: 600 }}>
+                      <td style={{ padding: '13px 20px', fontSize: 12, color: '#CBD5E1', fontWeight: 600 }}>
                         {String(i + 1).padStart(2, '0')}
                       </td>
-                      <td style={{ padding: '14px 24px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                          <div style={{ width: 38, height: 38, borderRadius: 11, background: ac.bg, color: ac.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, flexShrink: 0 }}>
+                      <td style={{ padding: '13px 20px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+                          <div style={{ width: 36, height: 36, borderRadius: 10, background: ac.bg, color: ac.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, flexShrink: 0 }}>
                             {s.full_name.charAt(0).toUpperCase()}
                           </div>
                           <div>
@@ -222,17 +252,17 @@ export default function TeacherStudentsPage() {
                           </div>
                         </div>
                       </td>
-                      <td style={{ padding: '14px 24px' }}>
+                      <td style={{ padding: '13px 20px' }}>
                         <span style={{ fontSize: 13, fontWeight: 700, color: '#475569', background: '#F1F5F9', padding: '4px 10px', borderRadius: 7, fontFamily: 'monospace' }}>
                           {s.roll_number ?? '—'}
                         </span>
                       </td>
-                      <td style={{ padding: '14px 24px', textAlign: 'right' }}>
+                      <td style={{ padding: '13px 20px', textAlign: 'right' }}>
                         <button
                           onClick={() => router.push(`/teacher/students/${s.id}/analysis`)}
-                          style={{ padding: '7px 16px', borderRadius: 9, border: '1px solid #DDD6FE', background: 'linear-gradient(135deg,#F5F3FF,#EDE9FE)', color: '#7C3AED', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'all 0.15s' }}
-                          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 4px 12px rgba(124,58,237,0.25)'; (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; }}
-                          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = 'none'; (e.currentTarget as HTMLButtonElement).style.transform = 'none'; }}
+                          style={{ padding: '7px 16px', borderRadius: 9, border: '1px solid #DDD6FE', background: 'linear-gradient(135deg,#F5F3FF,#EDE9FE)', color: '#7C3AED', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 4px 12px rgba(124,58,237,0.25)'; }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = 'none'; }}
                         >
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
                           Analysis
@@ -250,8 +280,8 @@ export default function TeacherStudentsPage() {
       {/* Loading students skeleton */}
       {loadingStudents && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {[1,2,3,4,5].map(i => (
-            <div key={i} style={{ height: 64, borderRadius: 12, background: 'linear-gradient(90deg,#F1F5F9 25%,#E2E8F0 50%,#F1F5F9 75%)', backgroundSize: '200% 100%' }} />
+          {[1, 2, 3, 4, 5].map(i => (
+            <div key={i} style={{ height: 62, borderRadius: 12, background: '#F1F5F9' }} />
           ))}
         </div>
       )}
