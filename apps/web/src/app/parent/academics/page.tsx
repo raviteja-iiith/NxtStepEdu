@@ -49,6 +49,10 @@ export default function AcademicsPage() {
     const today = new Date().toISOString().split('T')[0];
     const { section_id, student_id } = selectedChild;
 
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0];
+
     const [examRes, markRes, asgRes] = await Promise.all([
       section_id ? supabase.from('exams')
         .select('id, name, exam_type, exam_date, total_marks, is_published, subjects(name)')
@@ -56,9 +60,12 @@ export default function AcademicsPage() {
       supabase.from('marks')
         .select('id, marks_obtained, is_absent, remarks, exams(id,name,exam_type,exam_date,total_marks,is_published,subjects(name))')
         .eq('student_id', student_id).order('entered_at', { ascending: false }),
+      // Only show assignments within the last 7 days of their deadline (auto-archive after 1 week overdue)
       section_id ? supabase.from('assignments')
         .select('id, title, description, deadline, max_marks, subjects(name)')
-        .eq('section_id', section_id).eq('is_published', true).order('deadline', { ascending: false }).limit(20) : Promise.resolve({ data: null }),
+        .eq('section_id', section_id).eq('is_published', true)
+        .gte('deadline', sevenDaysAgoStr)
+        .order('deadline', { ascending: false }).limit(20) : Promise.resolve({ data: null }),
     ]);
 
     if (examRes.data) setExams(examRes.data.map((e: any) => ({ ...e, subject_name: e.subjects?.name })));

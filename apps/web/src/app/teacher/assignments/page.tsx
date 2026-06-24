@@ -8,6 +8,12 @@ import { getUserProfile } from '@school-erp/supabase/queries';
 
 interface Assignment { id: string; title: string; description: string | null; deadline: string; max_marks: number | null; is_published: boolean; subject_name?: string; section_name?: string; }
 
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+function isArchived(deadline: string) {
+  return Date.now() - new Date(deadline).getTime() > SEVEN_DAYS_MS;
+}
+
 export default function AssignmentsPage() {
   const supabase = createClient();
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -16,6 +22,7 @@ export default function AssignmentsPage() {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const [form, setForm] = useState({ title: '', description: '', subject_id: '', section_id: '', deadline: '', max_marks: '', is_published: true });
 
   const fetchAll = useCallback(async () => {
@@ -62,37 +69,79 @@ export default function AssignmentsPage() {
     fetchAll(); setSaving(false);
   };
 
+  // Separate active vs archived
+  const active   = assignments.filter(a => !isArchived(a.deadline));
+  const archived = assignments.filter(a => isArchived(a.deadline));
+  const visible  = showArchived ? assignments : active;
+
   const inputCls = "w-full px-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div><h2 className="text-2xl font-bold text-gray-900">Assignments</h2><p className="text-gray-500 text-sm mt-1">Create and grade assignments</p></div>
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Assignments</h2>
+          <p className="text-gray-500 text-sm mt-1">Create and manage assignments for your sections</p>
+        </div>
         <button onClick={() => setShowAdd(true)} className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white hover:shadow-lg" style={{ background: '#0F766E' }}>+ Create Assignment</button>
       </div>
+
+      {/* Archive toggle */}
+      {!loading && archived.length > 0 && (
+        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', background: showArchived ? '#FFF7ED' : '#F8FAFC', border:`1px solid ${showArchived ? '#FED7AA' : '#E2E8F0'}`, borderRadius:12 }}>
+          <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, fontWeight:600, color: showArchived ? '#C2410C' : '#475569' }}>
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={e => setShowArchived(e.target.checked)}
+              style={{ width:16, height:16, accentColor:'#C2410C', cursor:'pointer' }}
+            />
+            Show archived ({archived.length} assignment{archived.length !== 1 ? 's' : ''} — overdue &gt;7 days)
+          </label>
+          {!showArchived && (
+            <span style={{ fontSize:12, color:'#94A3B8' }}>These are hidden from parent view</span>
+          )}
+        </div>
+      )}
+
       <div className="space-y-4">
         {loading ? [1,2,3].map(i => <div key={i} className="skeleton h-20 rounded-2xl" />) :
-          assignments.length === 0 ? <div className="bg-white rounded-2xl border p-12 text-center" style={{ borderColor: '#E2E8F0' }}><p className="text-3xl mb-2">📝</p><p className="text-gray-400">No assignments yet</p></div> :
-          assignments.map(a => (
-            <div key={a.id} className="bg-white rounded-2xl border p-5 hover:shadow-md transition-all" style={{ borderColor: '#E2E8F0' }}>
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ background: a.is_published ? '#F0FDF4' : '#FFFBEB', color: a.is_published ? '#16A34A' : '#D97706' }}>{a.is_published ? 'Published' : 'Draft'}</span>
-                    <span className="text-xs text-gray-400">{a.subject_name} • {a.section_name}</span>
+          visible.length === 0 ? (
+            <div className="bg-white rounded-2xl border p-12 text-center" style={{ borderColor: '#E2E8F0' }}>
+              <p className="text-3xl mb-2">📝</p>
+              <p className="text-gray-400">{showArchived ? 'No assignments yet' : 'No active assignments'}</p>
+              {active.length === 0 && archived.length > 0 && !showArchived && (
+                <p className="text-xs text-gray-400 mt-2">All assignments are archived (overdue &gt;7 days). Enable "Show archived" above to view them.</p>
+              )}
+            </div>
+          ) :
+          visible.map(a => {
+            const archived = isArchived(a.deadline);
+            return (
+              <div key={a.id} className="bg-white rounded-2xl border p-5 hover:shadow-md transition-all" style={{ borderColor: archived ? '#FED7AA' : '#E2E8F0', opacity: archived ? 0.85 : 1 }}>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ background: a.is_published ? '#F0FDF4' : '#FFFBEB', color: a.is_published ? '#16A34A' : '#D97706' }}>{a.is_published ? 'Published' : 'Draft'}</span>
+                      {archived && <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background:'#FFF7ED', color:'#C2410C' }}>🗂 Archived</span>}
+                      <span className="text-xs text-gray-400">{a.subject_name} • {a.section_name}</span>
+                    </div>
+                    <h3 className="font-bold text-gray-900">{a.title}</h3>
+                    {a.description && <p className="text-sm text-gray-500 mt-1 line-clamp-2">{a.description}</p>}
+                    {archived && <p className="text-xs mt-1" style={{ color:'#C2410C' }}>⚠ This assignment is over 7 days past its deadline and is hidden from parents.</p>}
                   </div>
-                  <h3 className="font-bold text-gray-900">{a.title}</h3>
-                  {a.description && <p className="text-sm text-gray-500 mt-1 line-clamp-2">{a.description}</p>}
-                </div>
-                <div className="text-right shrink-0 ml-4">
-                  <p className="text-xs text-gray-400">Deadline</p>
-                  <p className="text-sm font-bold" style={{ color: new Date(a.deadline) < new Date() ? '#DC2626' : '#1E40AF' }}>{new Date(a.deadline).toLocaleDateString('en-IN')}</p>
-                  {a.max_marks && <p className="text-xs text-gray-400 mt-1">{a.max_marks} marks</p>}
+                  <div className="text-right shrink-0 ml-4">
+                    <p className="text-xs text-gray-400">Deadline</p>
+                    <p className="text-sm font-bold" style={{ color: new Date(a.deadline) < new Date() ? '#DC2626' : '#1E40AF' }}>{new Date(a.deadline).toLocaleDateString('en-IN')}</p>
+                    {a.max_marks && <p className="text-xs text-gray-400 mt-1">{a.max_marks} marks</p>}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })
+        }
       </div>
+
       {showAdd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
           <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 animate-scale-in max-h-[90vh] overflow-y-auto">

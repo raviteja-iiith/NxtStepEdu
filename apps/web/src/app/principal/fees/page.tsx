@@ -5,6 +5,114 @@ import { createClient } from '@/lib/supabase/client';
 import { createNotification } from '@/components/NotificationBell';
 import * as XLSX from 'xlsx';
 
+// ─── Fee Receipt Modal ────────────────────────────────────────────────────────
+interface ReceiptInfo {
+  feeId: string;
+  feeAmount: number;
+  feePaid: number;
+  feeDue: number;
+  feeStatus: string;
+  studentName: string;
+  className: string;
+  sectionName: string;
+  schoolName: string;
+  payments: { id: string; amount_paid: number; payment_mode: string; payment_date: string; notes: string | null }[];
+}
+
+function PrincipalFeeReceiptModal({ data, onClose }: { data: ReceiptInfo; onClose: () => void }) {
+  const printRef = useRef<HTMLDivElement>(null);
+  const receiptNo = `RCP-${data.feeId.slice(-8).toUpperCase()}`;
+  const printDate = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+  const isPaid = data.feeStatus === 'paid';
+  const fmt2 = (n: number) => `₹${n.toLocaleString('en-IN')}`;
+  const statusMap: Record<string, { bg: string; color: string; label: string }> = {
+    paid:           { bg: '#DCFCE7', color: '#15803D', label: 'Paid' },
+    partially_paid: { bg: '#FEF9C3', color: '#A16207', label: 'Partially Paid' },
+    pending:        { bg: '#FEF2F2', color: '#DC2626', label: 'Pending' },
+    overdue:        { bg: '#FEE2E2', color: '#991B1B', label: 'Overdue' },
+  };
+  const sc = statusMap[data.feeStatus] ?? { bg: '#F1F5F9', color: '#64748B', label: data.feeStatus };
+
+  const handlePrint = () => {
+    const contents = printRef.current?.innerHTML;
+    if (!contents) return;
+    const win = window.open('', '_blank', 'width=700,height=900');
+    if (!win) return;
+    win.document.write(`<!DOCTYPE html><html><head><title>Fee Receipt — ${receiptNo}</title><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet"><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'Inter',sans-serif;background:white;padding:32px;}@media print{body{padding:0;}@page{margin:20mm;}}</style></head><body>${contents}</body></html>`);
+    win.document.close(); win.focus();
+    setTimeout(() => { win.print(); win.close(); }, 400);
+  };
+
+  return (
+    <div style={{ position:'fixed', inset:0, zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:16, background:'rgba(15,23,42,0.7)', backdropFilter:'blur(6px)' }}>
+      <div style={{ width:'100%', maxWidth:580, background:'white', borderRadius:20, boxShadow:'0 32px 80px rgba(0,0,0,0.3)', overflow:'hidden', maxHeight:'90vh', display:'flex', flexDirection:'column' }}>
+        <div style={{ padding:'14px 18px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid #E8ECF0', background:'#F8FAFC' }}>
+          <p style={{ fontWeight:800, color:'#0F172A', fontSize:15, margin:0 }}>🧾 Fee Receipt</p>
+          <div style={{ display:'flex', gap:8 }}>
+            <button onClick={handlePrint} style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', borderRadius:9, border:'none', background:'linear-gradient(135deg,#1E3A8A,#3B82F6)', color:'white', fontSize:12, fontWeight:700, cursor:'pointer' }}>🖨️ Print</button>
+            <button onClick={onClose} style={{ width:30, height:30, borderRadius:'50%', border:'1px solid #E2E8F0', background:'white', cursor:'pointer', color:'#64748B', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
+          </div>
+        </div>
+        <div style={{ overflowY:'auto', padding:20 }}>
+          <div ref={printRef}>
+            <div style={{ fontFamily:"'Inter',sans-serif", background:'white', border:'1px solid #E2E8F0', borderRadius:14, overflow:'hidden' }}>
+              <div style={{ background:'linear-gradient(135deg,#1E3A8A,#3B82F6)', padding:'20px 24px', color:'white', position:'relative', overflow:'hidden' }}>
+                <div style={{ position:'absolute', top:-20, right:-20, width:110, height:110, borderRadius:'50%', background:'rgba(255,255,255,0.07)' }} />
+                <p style={{ fontSize:18, fontWeight:900, margin:'0 0 2px' }}>🏫 {data.schoolName}</p>
+                <p style={{ fontSize:11, opacity:0.7, margin:0 }}>Official Fee Receipt</p>
+                <div style={{ marginTop:14, display:'flex', justifyContent:'space-between', alignItems:'flex-end' }}>
+                  <div>
+                    <p style={{ fontSize:10, opacity:0.65, margin:'0 0 2px', textTransform:'uppercase', letterSpacing:'0.06em' }}>Student</p>
+                    <p style={{ fontSize:14, fontWeight:800, margin:0 }}>{data.studentName}</p>
+                    <p style={{ fontSize:11, opacity:0.8, margin:'2px 0 0' }}>{data.className} — {data.sectionName}</p>
+                  </div>
+                  <div style={{ textAlign:'right' }}>
+                    <p style={{ fontSize:10, opacity:0.65, margin:'0 0 2px', textTransform:'uppercase', letterSpacing:'0.06em' }}>Receipt No.</p>
+                    <p style={{ fontSize:12, fontWeight:800, fontFamily:'monospace', margin:0 }}>{receiptNo}</p>
+                    <p style={{ fontSize:10, opacity:0.75, margin:'2px 0 0' }}>Printed: {printDate}</p>
+                  </div>
+                </div>
+              </div>
+              <div style={{ position:'relative', padding:'18px 24px', borderBottom:'1px dashed #E2E8F0' }}>
+                <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%) rotate(-30deg)', fontSize:68, fontWeight:900, color:isPaid?'rgba(22,163,74,0.08)':'rgba(37,99,235,0.08)', pointerEvents:'none', userSelect:'none', whiteSpace:'nowrap' }}>{isPaid?'PAID':'PARTIAL'}</div>
+                <p style={{ fontSize:11, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', letterSpacing:'0.07em', margin:'0 0 12px' }}>Fee Summary</p>
+                {[['Fee Amount', fmt2(data.feeAmount)], ['Total Paid', fmt2(data.feePaid)], ['Balance Due', fmt2(data.feeDue)]].map(([l,v]) => (
+                  <div key={l} style={{ display:'flex', justifyContent:'space-between', marginBottom:7 }}>
+                    <span style={{ fontSize:13, color:'#64748B' }}>{l}</span>
+                    <span style={{ fontSize:13, fontWeight:700, color: l==='Balance Due' && data.feeDue>0 ? '#DC2626' : l==='Total Paid' ? '#16A34A' : '#0F172A' }}>{v}</span>
+                  </div>
+                ))}
+              </div>
+              {data.payments.length > 0 && (
+                <div style={{ padding:'16px 24px', borderBottom:'1px dashed #E2E8F0' }}>
+                  <p style={{ fontSize:11, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', letterSpacing:'0.07em', margin:'0 0 10px' }}>Payment History</p>
+                  {data.payments.map((p, i) => (
+                    <div key={p.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'7px 10px', background:'#F8FAFC', borderRadius:7, marginBottom:5, border:'1px solid #F1F5F9' }}>
+                      <div>
+                        <p style={{ fontSize:12, fontWeight:700, color:'#0F172A', margin:0 }}>Payment #{i+1}</p>
+                        <p style={{ fontSize:11, color:'#94A3B8', margin:'1px 0 0', textTransform:'capitalize' }}>{p.payment_mode.replace('_',' ')} · {new Date(p.payment_date).toLocaleDateString('en-IN')}</p>
+                        {p.notes && <p style={{ fontSize:10, color:'#CBD5E1', margin:'1px 0 0' }}>{p.notes}</p>}
+                      </div>
+                      <p style={{ fontSize:13, fontWeight:800, color:'#16A34A', margin:0 }}>{fmt2(p.amount_paid)}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ padding:'14px 24px', background:'#F8FAFC', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                <span style={{ fontSize:13, fontWeight:700, color:'#0F172A' }}>Status</span>
+                <span style={{ padding:'4px 12px', borderRadius:99, fontSize:12, fontWeight:800, background:sc.bg, color:sc.color }}>{sc.label}</span>
+              </div>
+              <div style={{ padding:'10px 24px', borderTop:'1px solid #E2E8F0', textAlign:'center' }}>
+                <p style={{ fontSize:10, color:'#CBD5E1', margin:0 }}>Computer-generated receipt — NxtStepEdu School Management System</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface ClassItem    { id: string; name: string; }
 interface SectionItem  { id: string; name: string; class_id: string; }
@@ -592,6 +700,34 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
 
   const filteredSections = sections.filter(s => s.class_id === filterClass);
 
+  // Receipt modal
+  const [receiptData, setReceiptData] = useState<ReceiptInfo | null>(null);
+  const [schoolName,  setSchoolName]  = useState('School');
+
+  // Fetch school name once
+  useEffect(() => {
+    if (!schoolId) return;
+    supabase.from('schools').select('name').eq('id', schoolId).single()
+      .then(({ data }) => { if (data?.name) setSchoolName(data.name); });
+  }, [supabase, schoolId]);
+
+  function openReceipt(row: OverviewRow, detail: FeeDetail) {
+    setReceiptData({
+      feeId:       detail.fee_id,
+      feeAmount:   detail.amount,
+      feePaid:     detail.paid,
+      feeDue:      detail.due,
+      feeStatus:   detail.status,
+      studentName: row.student_name,
+      className:   row.class_name,
+      sectionName: row.section_name,
+      schoolName,
+      payments:    detail.payments
+        .filter(p => !p.is_voided)
+        .map(p => ({ id: p.id, amount_paid: p.amount_paid, payment_mode: p.payment_mode, payment_date: p.payment_date, notes: p.notes })),
+    });
+  }
+
   // Void modal state
   const [voidModal,  setVoidModal]  = useState<{ payment: PaymentRecord; feeId: string; studentName: string } | null>(null);
   const [voidReason, setVoidReason] = useState('');
@@ -1062,6 +1198,12 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
                           <p style={{ fontSize: 12, color: '#15803D', fontWeight: 600, margin: 0 }}>Paid {fmt(d.paid)}</p>
                           <p style={{ fontSize: 12, color: d.due > 0 ? '#DC2626' : '#15803D', fontWeight: 700, margin: 0 }}>Due {fmt(d.due)}</p>
                           <div>{statusBadge(d.status)}</div>
+                          {(d.status === 'paid' || d.status === 'partially_paid') && (
+                            <button
+                              onClick={() => openReceipt(row, d)}
+                              style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 7, border: '1px solid #DBEAFE', background: '#EFF6FF', color: '#1D4ED8', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                            >🖨️ Print Receipt</button>
+                          )}
                           <button
                             onClick={() => { setEditFeeModal({ feeId: d.fee_id, currentAmount: d.amount, studentName: row.student_name }); setEditFeeVal(String(d.amount)); setEditFeeError(''); }}
                             style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 7, border: '1px solid #DBEAFE', background: '#EFF6FF', color: '#1D4ED8', cursor: 'pointer', whiteSpace: 'nowrap' }}
@@ -1257,6 +1399,8 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
           </div>
         </div>
       )}
+      {/* Fee Receipt Modal */}
+      {receiptData && <PrincipalFeeReceiptModal data={receiptData} onClose={() => setReceiptData(null)} />}
     </div>
   );
 }
