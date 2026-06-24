@@ -28,100 +28,79 @@ export default function TeacherParentsPage() {
     const userId = (await supabase.auth.getUser()).data.user?.id;
     if (!userId) { setLoading(false); return; }
 
-    // Get the teacher's school_id
-    const { data: userRow } = await supabase.from('users').select('school_id').eq('id', userId).single();
-    const schoolId = userRow?.school_id;
-    if (!schoolId) { setLoading(false); return; }
+    // Step 1: Get teacher's sections (class_teacher_id first, then subject assignments)
+    const { data: classSecs } = await supabase
+      .from('sections')
+      .select('id')
+      .eq('class_teacher_id', userId);
 
-    // Get sections this teacher is assigned to
-    const { data: assignments } = await supabase
+    const { data: subjectAsgn } = await supabase
       .from('teacher_section_assignments')
       .select('section_id')
       .eq('teacher_id', userId);
 
-    const sectionIds = [...new Set((assignments || []).map((a: any) => a.section_id))];
+    const allSectionIds = [
+      ...new Set([
+        ...(classSecs || []).map((s: any) => s.id as string),
+        ...(subjectAsgn || []).map((a: any) => a.section_id as string),
+      ])
+    ];
 
-    // Fetch students: from assigned sections if available, else all active students in school
-    let studentData: any[] | null = null;
-    if (sectionIds.length > 0) {
-      const { data } = await supabase
-        .from('students')
-        .select('id, full_name, sections(name)')
-        .in('section_id', sectionIds)
-        .eq('is_active', true)
-        .order('full_name');
-      studentData = data;
-    }
-    // Fallback: no section assignments or no students found in sections
-    if (!studentData || studentData.length === 0) {
-      const { data } = await supabase
-        .from('students')
-        .select('id, full_name, sections(name)')
-        .eq('school_id', schoolId)
-        .eq('is_active', true)
-        .order('full_name');
-      studentData = data;
+    if (allSectionIds.length === 0) {
+      setStudents([]);
+      setParents([]);
+      setLoading(false);
+      return;
     }
 
-    if (studentData) {
-      setStudents(studentData.map((s: any) => ({ id: s.id, full_name: s.full_name, section_name: s.sections?.name || '' })));
+    // Step 2: Get ONLY students in those sections
+    const { data: studentData } = await supabase
+      .from('students')
+      .select('id, full_name, sections(name)')
+      .in('section_id', allSectionIds)
+      .neq('is_active', false)
+      .order('full_name');
+
+    const myStudents = studentData || [];
+    setStudents(myStudents.map((s: any) => ({
+      id: s.id,
+      full_name: s.full_name,
+      section_name: s.sections?.name || '',
+    })));
+
+    const studentIds = myStudents.map((s: any) => s.id as string);
+    if (studentIds.length === 0) {
+      setParents([]);
+      setLoading(false);
+      return;
     }
 
-    const studentIds = (studentData || []).map((s: any) => s.id);
-    if (studentIds.length === 0) { setLoading(false); return; }
-
-    // Get parents linked to those students
+    // Step 3: Get ONLY parents linked to those students — nothing more
     const { data: links } = await supabase
       .from('student_parent_links')
-      .select('parent_id, students(full_name, sections(name)), users(id, full_name, phone, is_active)')
+      .select('parent_id, student_id, students(full_name, sections(name)), users(id, full_name, phone, is_active)')
       .in('student_id', studentIds);
-
-    // Also fetch any parents directly in this school not yet linked (to show all)
-    const { data: allParents } = await supabase
-      .from('users')
-      .select('id, full_name, phone, is_active')
-      .eq('school_id', schoolId)
-      .eq('role', 'parent')
-      .order('full_name');
 
     const seen = new Set<string>();
     const list: ParentRecord[] = [];
 
-    // First add linked parents (they have student info)
-    if (links) {
-      links.forEach((l: any) => {
-        if (!l.parent_id || seen.has(l.parent_id)) return;
-        seen.add(l.parent_id);
-        list.push({
-          id: l.parent_id,
-          full_name: l.users?.full_name || 'Unknown',
-          phone: l.users?.phone || null,
-          is_active: l.users?.is_active ?? true,
-          student_name: l.students?.full_name || '',
-          section_name: l.students?.sections?.name || '',
-        });
+    (links || []).forEach((l: any) => {
+      if (!l.parent_id || seen.has(l.parent_id)) return;
+      seen.add(l.parent_id);
+      list.push({
+        id: l.parent_id,
+        full_name: l.users?.full_name || 'Unknown',
+        phone: l.users?.phone || null,
+        is_active: l.users?.is_active ?? true,
+        student_name: l.students?.full_name || '',
+        section_name: l.students?.sections?.name || '',
       });
-    }
-
-    // Then add any unlinked parents in this school
-    if (allParents) {
-      allParents.forEach((p: any) => {
-        if (seen.has(p.id)) return;
-        seen.add(p.id);
-        list.push({
-          id: p.id,
-          full_name: p.full_name || 'Unknown',
-          phone: p.phone || null,
-          is_active: p.is_active ?? true,
-          student_name: '',
-          section_name: '',
-        });
-      });
-    }
+    });
 
     setParents(list);
     setLoading(false);
   }, [supabase]);
+
 
   useEffect(() => { fetchParentsAndStudents(); }, [fetchParentsAndStudents]);
 
