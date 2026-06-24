@@ -708,7 +708,7 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
   useEffect(() => {
     if (!schoolId) return;
     supabase.from('schools').select('name').eq('id', schoolId).single()
-      .then((res) => { if (res.data?.name) setSchoolName(res.data.name); });
+      .then((res: any) => { if (res.data?.name) setSchoolName(res.data.name); });
   }, [supabase, schoolId]);
 
   function openReceipt(row: OverviewRow, detail: FeeDetail) {
