@@ -21,34 +21,14 @@ export default function TeacherStudentsPage() {
     setLoading(true);
     const userId = (await supabase.auth.getUser()).data.user?.id;
     if (userId) {
-      // Primary: sections where this teacher is class teacher (set via Classes page)
+      // "My Students" = sections where this teacher is the CLASS TEACHER
+      // (assigned via Principal → Classes & Sections page)
       const { data: classSecs } = await supabase
         .from('sections')
         .select('id, name, classes(name)')
         .eq('class_teacher_id', userId);
 
-      const classSectionIds = new Set((classSecs || []).map((s: any) => s.id as string));
-
-      // Secondary: subject-based assignments — only sections NOT already in class_teacher_id
-      const { data: asgn } = await supabase
-        .from('teacher_section_assignments')
-        .select('section_id')
-        .eq('teacher_id', userId);
-
-      const subjectOnlyIds = [...new Set((asgn || []).map((a: any) => a.section_id as string))]
-        .filter(id => !classSectionIds.has(id));
-
-      let subjectOnlySecs: any[] = [];
-      if (subjectOnlyIds.length > 0) {
-        const { data: secs } = await supabase
-          .from('sections')
-          .select('id, name, classes(name)')
-          .in('id', subjectOnlyIds);
-        subjectOnlySecs = secs || [];
-      }
-
-      const all = [...(classSecs || []), ...subjectOnlySecs];
-      setSections(all.map((s: any) => ({
+      setSections((classSecs || []).map((s: any) => ({
         id: s.id as string,
         name: s.name as string,
         class_name: (s.classes as any)?.name || '',
@@ -56,6 +36,7 @@ export default function TeacherStudentsPage() {
     }
     setLoading(false);
   }, [supabase]);
+
 
   useEffect(() => { fetchSections(); }, [fetchSections]);
 
