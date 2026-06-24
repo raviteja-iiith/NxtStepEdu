@@ -75,41 +75,54 @@ export default function TeacherParentsPage() {
       return;
     }
 
-    // Step 3: Get parent links for those students
-    const { data: links } = await supabase
-      .from('student_parent_links')
-      .select('parent_id, student_id, students(id, full_name, sections(name)), users(id, full_name, phone, is_active)')
-      .in('student_id', studentIds);
+    // Step 3: Use admin API route to get parent links (bypasses RLS on student_parent_links)
+    const res = await fetch(`/api/teacher/parent-links?studentIds=${studentIds.join(',')}`);
+    const { links } = res.ok ? await res.json() : { links: [] };
+
+    // Also fetch user details for each parent_id
+    const parentIds = [...new Set((links || []).map((l: any) => l.parent_id).filter(Boolean))];
+    let parentUsers: any[] = [];
+    if (parentIds.length > 0) {
+      const { data } = await supabase
+        .from('users')
+        .select('id, full_name, phone, is_active')
+        .in('id', parentIds);
+      parentUsers = data || [];
+    }
+    const userMap = new Map(parentUsers.map((u: any) => [u.id, u]));
 
     // Build a map: student_id → parent record
     const parentByStudent = new Map<string, ParentRecord>();
     (links || []).forEach((l: any) => {
       if (!l.parent_id) return;
+      const u = userMap.get(l.parent_id) || (l.users as any) || {};
       parentByStudent.set(l.student_id, {
         id: l.parent_id,
-        full_name: l.users?.full_name || 'Unknown',
-        phone: l.users?.phone || null,
-        is_active: l.users?.is_active ?? true,
-        student_name: l.students?.full_name || '',
-        section_name: (l.students?.sections as any)?.name || '',
+        full_name: u.full_name || 'Unknown',
+        phone: u.phone || null,
+        is_active: u.is_active ?? true,
+        student_name: '',  // filled below from myStudents
+        section_name: '',
       });
     });
 
-    // Show one entry per student: either their linked parent or "No parent" placeholder
+    // Show one entry per student: linked parent info, or "No parent" placeholder
     const list: ParentRecord[] = [];
     myStudents.forEach((s: any) => {
       const linked = parentByStudent.get(s.id);
+      const secName = (s.sections as any)?.name || s.section_name || '';
       if (linked) {
-        list.push(linked);
+        // Fill student info from myStudents (API only returns parent user data)
+        list.push({ ...linked, student_name: s.full_name, section_name: secName });
       } else {
-        // Student has no parent — show them so teacher knows to add one
+        // Student has no parent — show placeholder so teacher can add one
         list.push({
-          id: `no-parent-${s.id}`,   // synthetic id to avoid key collision
+          id: `no-parent-${s.id}`,
           full_name: '',
           phone: null,
           is_active: true,
           student_name: s.full_name,
-          section_name: (s.sections as any)?.name || '',
+          section_name: secName,
         });
       }
     });
