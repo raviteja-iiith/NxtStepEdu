@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createServerSupabaseAdmin } from '@/lib/supabase/server';
-import { createClient } from '@/lib/supabase/server';
+import { createServerSupabaseAdmin, createServerSupabaseClient } from '@/lib/supabase/server';
 
 // GET /api/teacher/parent-links?studentIds=id1,id2,id3
 // Returns parent links for the given student IDs using admin (service role) client.
@@ -9,7 +8,7 @@ import { createClient } from '@/lib/supabase/server';
 export async function GET(request: Request) {
   try {
     // Verify the caller is authenticated
-    const supabase = await createClient();
+    const supabase = await createServerSupabaseClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
