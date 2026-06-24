@@ -21,34 +21,47 @@ export default function TeacherStudentsPage() {
     setLoading(true);
     const userId = (await supabase.auth.getUser()).data.user?.id;
     if (userId) {
-      // Step 1: Get all section_ids for this teacher
-      const { data: asgn, error: aErr } = await supabase
+      // Source 1: sections assigned via subject assignments
+      const { data: asgn } = await supabase
         .from('teacher_section_assignments')
         .select('section_id')
         .eq('teacher_id', userId);
 
-      console.log('[TeacherStudents] teacher_id:', userId);
-      console.log('[TeacherStudents] assignments:', asgn, 'error:', aErr);
+      // Source 2: sections where this teacher is the "class teacher"
+      const { data: classSections } = await supabase
+        .from('sections')
+        .select('id, name, classes(name)')
+        .eq('class_teacher_id', userId);
 
-      if (asgn && asgn.length > 0) {
-        const sectionIds = [...new Set(asgn.map((a: any) => a.section_id as string))];
-        console.log('[TeacherStudents] unique sectionIds:', sectionIds);
+      // Collect all unique section IDs from source 1
+      const subjectSectionIds = [...new Set((asgn || []).map((a: any) => a.section_id as string))];
 
-        // Step 2: Fetch section details
-        const { data: secs, error: sErr } = await supabase
+      // Fetch details for source 1 sections
+      let subjectSectionDetails: any[] = [];
+      if (subjectSectionIds.length > 0) {
+        const { data: secs } = await supabase
           .from('sections')
           .select('id, name, classes(name)')
-          .in('id', sectionIds);
-
-        console.log('[TeacherStudents] sections:', secs, 'error:', sErr);
-
-        const formatted = (secs || []).map((s: any) => ({
-          id: s.id as string,
-          name: s.name as string,
-          class_name: (s.classes as any)?.name || '',
-        }));
-        setSections(formatted);
+          .in('id', subjectSectionIds);
+        subjectSectionDetails = secs || [];
       }
+
+      // Merge both sources, deduplicate by section id
+      const allSections = [...subjectSectionDetails, ...(classSections || [])];
+      const seen = new Set<string>();
+      const unique = allSections.filter((s: any) => {
+        if (seen.has(s.id)) return false;
+        seen.add(s.id);
+        return true;
+      });
+
+      const formatted = unique.map((s: any) => ({
+        id: s.id as string,
+        name: s.name as string,
+        class_name: (s.classes as any)?.name || '',
+      }));
+
+      setSections(formatted);
     }
     setLoading(false);
   }, [supabase]);

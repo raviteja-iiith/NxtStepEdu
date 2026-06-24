@@ -1,31 +1,43 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 
 export async function getTeacherSections(supabase: SupabaseClient, teacherId: string) {
-  // Step 1: get all section IDs assigned to this teacher (may have duplicates across subjects)
-  const { data: assignments, error: aErr } = await supabase
+  // Source 1: sections assigned via subject-level assignments
+  const { data: asgn } = await supabase
     .from('teacher_section_assignments')
     .select('section_id')
     .eq('teacher_id', teacherId);
 
-  if (aErr) throw aErr;
-  if (!assignments || assignments.length === 0) return [];
-
-  // Deduplicate section IDs
-  const sectionIds = [...new Set(assignments.map((a: any) => a.section_id as string))];
-
-  // Step 2: fetch full section details for all IDs in one query
-  const { data: sections, error: sErr } = await supabase
+  // Source 2: sections where this teacher is set as the class teacher
+  const { data: classSecs } = await supabase
     .from('sections')
     .select('id, name, classes(name)')
-    .in('id', sectionIds);
+    .eq('class_teacher_id', teacherId);
 
-  if (sErr) throw sErr;
+  // Fetch full details for source 1 section IDs
+  const subjectSectionIds = [...new Set((asgn || []).map((a: any) => a.section_id as string))];
+  let subjectSectionDetails: any[] = [];
+  if (subjectSectionIds.length > 0) {
+    const { data: secs } = await supabase
+      .from('sections')
+      .select('id, name, classes(name)')
+      .in('id', subjectSectionIds);
+    subjectSectionDetails = secs || [];
+  }
 
-  return (sections || []).map((sec: any) => ({
-    id: sec.id as string,
-    name: sec.name as string,
-    class_name: sec.classes?.name || '',
-  }));
+  // Merge and deduplicate both sources
+  const all = [...subjectSectionDetails, ...(classSecs || [])];
+  const seen = new Set<string>();
+  return all
+    .filter((s: any) => {
+      if (seen.has(s.id)) return false;
+      seen.add(s.id);
+      return true;
+    })
+    .map((s: any) => ({
+      id: s.id as string,
+      name: s.name as string,
+      class_name: (s.classes as any)?.name || '',
+    }));
 }
 
 export async function getSectionStudents(supabase: SupabaseClient, sectionId: string) {

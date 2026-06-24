@@ -26,8 +26,41 @@ export default function AttendancePage() {
     setLoading(true);
     const userId = (await supabase.auth.getUser()).data.user?.id;
     if (userId) {
-      const data = await getTeacherSections(supabase, userId);
-      setSections(data);
+      // Source 1: subject-based assignments
+      const { data: asgn } = await supabase
+        .from('teacher_section_assignments')
+        .select('section_id')
+        .eq('teacher_id', userId);
+
+      // Source 2: class teacher assignments
+      const { data: classSecs } = await supabase
+        .from('sections')
+        .select('id, name, classes(name)')
+        .eq('class_teacher_id', userId);
+
+      const subjectSectionIds = [...new Set((asgn || []).map((a: any) => a.section_id as string))];
+      let subjectSectionDetails: any[] = [];
+      if (subjectSectionIds.length > 0) {
+        const { data: secs } = await supabase
+          .from('sections')
+          .select('id, name, classes(name)')
+          .in('id', subjectSectionIds);
+        subjectSectionDetails = secs || [];
+      }
+
+      const allSections = [...subjectSectionDetails, ...(classSecs || [])];
+      const seen = new Set<string>();
+      const unique = allSections.filter((s: any) => {
+        if (seen.has(s.id)) return false;
+        seen.add(s.id);
+        return true;
+      });
+
+      setSections(unique.map((s: any) => ({
+        id: s.id as string,
+        name: s.name as string,
+        class_name: (s.classes as any)?.name || '',
+      })));
     }
     setLoading(false);
   }, [supabase]);
