@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { getMessageContacts, getMessages, sendMessage } from '@school-erp/supabase/queries';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 export default function TeacherMessagesPage() {
   const supabase = createClient();
@@ -13,6 +14,7 @@ export default function TeacherMessagesPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [newMessage, setNewMessage] = useState('');
+  const isMobile = useIsMobile();
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -111,9 +113,10 @@ export default function TeacherMessagesPage() {
     <div className="space-y-6">
       <div><h2 className="text-2xl font-bold text-gray-900">Messages</h2><p className="text-gray-500 text-sm mt-1">Chat with parents in real-time</p></div>
       
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[600px]">
+      <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-3'} gap-6`} style={{ height: isMobile ? 'calc(100vh - 240px)' : 600 }}>
         {/* Contacts Sidebar */}
-        <div className="bg-white rounded-2xl border flex flex-col overflow-hidden" style={{ borderColor: '#E2E8F0' }}>
+        {(!isMobile || !selectedContact) && (
+        <div className="bg-white rounded-2xl border flex flex-col overflow-hidden" style={{ borderColor: '#E2E8F0', height: '100%' }}>
           <div className="px-5 py-4 border-b" style={{ background: '#F8FAFC', borderColor: '#E2E8F0' }}>
             <p className="font-bold text-sm text-gray-700">Parents</p>
           </div>
@@ -140,9 +143,11 @@ export default function TeacherMessagesPage() {
             }
           </div>
         </div>
+        )}
         
         {/* Chat Area */}
-        <div className="lg:col-span-2 bg-white rounded-2xl border flex flex-col overflow-hidden relative" style={{ borderColor: '#E2E8F0' }}>
+        {(!isMobile || selectedContact) && (
+        <div className="lg:col-span-2 bg-white rounded-2xl border flex flex-col overflow-hidden relative" style={{ borderColor: '#E2E8F0', height: '100%' }}>
           {!selectedContact ? (
             <div className="flex-1 flex flex-col items-center justify-center text-center text-gray-400">
               <p className="text-5xl mb-3">💬</p>
@@ -152,6 +157,11 @@ export default function TeacherMessagesPage() {
             <>
               {/* Chat Header */}
               <div className="px-6 py-4 border-b flex items-center gap-3 bg-white z-10" style={{ borderColor: '#E2E8F0' }}>
+                {isMobile && (
+                  <button onClick={() => setSelectedContact(null)} className="text-gray-500 hover:text-gray-700 text-2xl mr-2 flex items-center" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                    ←
+                  </button>
+                )}
                 <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
                   {selectedContact.full_name.charAt(0)}
                 </div>
@@ -207,6 +217,7 @@ export default function TeacherMessagesPage() {
             </>
           )}
         </div>
+        )}
       </div>
     </div>
   );

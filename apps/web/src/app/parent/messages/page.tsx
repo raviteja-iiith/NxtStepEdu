@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { getMessageContacts, getMessages, sendMessage } from '@school-erp/supabase/queries';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 export default function ParentMessagesPage() {
   const supabase = createClient();
@@ -13,6 +14,7 @@ export default function ParentMessagesPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [newMessage, setNewMessage] = useState('');
+  const isMobile = useIsMobile();
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -123,9 +125,10 @@ export default function ParentMessagesPage() {
         <p style={{ fontSize: 14, color: '#64748B', marginTop: 6 }}>Chat with your child's teachers directly</p>
       </div>
 
-      <div className="bottom-grid-container" style={{ height: 620 }}>
+      <div className="bottom-grid-container" style={{ height: isMobile ? 'calc(100vh - 240px)' : 620, display: isMobile ? 'block' : 'grid' }}>
         {/* Contacts Sidebar */}
-        <div style={{ background: 'white', borderRadius: 20, border: '1px solid #E8ECF0', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
+        {(!isMobile || !selectedContact) && (
+        <div style={{ background: 'white', borderRadius: 20, border: '1px solid #E8ECF0', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 2px 12px rgba(0,0,0,0.05)', height: '100%' }}>
           <div style={{ padding: '18px 20px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
             <p style={{ fontSize: 13, fontWeight: 800, color: '#475569', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Teachers</p>
           </div>
@@ -147,9 +150,11 @@ export default function ParentMessagesPage() {
             }
           </div>
         </div>
+        )}
 
         {/* Chat Area */}
-        <div style={{ background: 'white', borderRadius: 20, border: '1px solid #E8ECF0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
+        {(!isMobile || selectedContact) && (
+        <div style={{ background: 'white', borderRadius: 20, border: '1px solid #E8ECF0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.05)', height: '100%' }}>
           {!selectedContact ? (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', color: '#94A3B8', gap: 10 }}>
               <p style={{ fontSize: 48, margin: 0 }}>💬</p>
@@ -160,6 +165,11 @@ export default function ParentMessagesPage() {
             <>
               {/* Chat Header */}
               <div style={{ padding: '16px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: 14, background: 'white' }}>
+                {isMobile && (
+                  <button onClick={() => setSelectedContact(null)} style={{ background: 'transparent', border: 'none', fontSize: 24, cursor: 'pointer', padding: '0 10px 0 0', color: '#64748B', display: 'flex', alignItems: 'center' }}>
+                    ←
+                  </button>
+                )}
                 <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(135deg,#1D4ED8,#3B82F6)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 17, flexShrink: 0 }}>{selectedContact.full_name.charAt(0)}</div>
                 <div>
                   <p style={{ fontSize: 15, fontWeight: 800, color: '#0F172A', margin: 0 }}>{selectedContact.full_name}</p>
@@ -210,6 +220,7 @@ export default function ParentMessagesPage() {
             </>
           )}
         </div>
+        )}
       </div>
     </div>
   );
