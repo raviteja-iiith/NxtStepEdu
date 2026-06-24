@@ -1,43 +1,39 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 
 export async function getTeacherSections(supabase: SupabaseClient, teacherId: string) {
-  // Source 1: sections assigned via subject-level assignments
-  const { data: asgn } = await supabase
-    .from('teacher_section_assignments')
-    .select('section_id')
-    .eq('teacher_id', teacherId);
-
-  // Source 2: sections where this teacher is set as the class teacher
+  // Primary source: class teacher assignments (set via the Classes page)
   const { data: classSecs } = await supabase
     .from('sections')
     .select('id, name, classes(name)')
     .eq('class_teacher_id', teacherId);
 
-  // Fetch full details for source 1 section IDs
-  const subjectSectionIds = [...new Set((asgn || []).map((a: any) => a.section_id as string))];
-  let subjectSectionDetails: any[] = [];
-  if (subjectSectionIds.length > 0) {
+  // Secondary source: subject-based assignments (set via Subjects/Teachers pages)
+  // Only include sections NOT already covered by class_teacher_id
+  const classSectionIds = new Set((classSecs || []).map((s: any) => s.id as string));
+
+  const { data: asgn } = await supabase
+    .from('teacher_section_assignments')
+    .select('section_id')
+    .eq('teacher_id', teacherId);
+
+  const subjectOnlyIds = [...new Set((asgn || []).map((a: any) => a.section_id as string))]
+    .filter(id => !classSectionIds.has(id));
+
+  let subjectOnlySecs: any[] = [];
+  if (subjectOnlyIds.length > 0) {
     const { data: secs } = await supabase
       .from('sections')
       .select('id, name, classes(name)')
-      .in('id', subjectSectionIds);
-    subjectSectionDetails = secs || [];
+      .in('id', subjectOnlyIds);
+    subjectOnlySecs = secs || [];
   }
 
-  // Merge and deduplicate both sources
-  const all = [...subjectSectionDetails, ...(classSecs || [])];
-  const seen = new Set<string>();
-  return all
-    .filter((s: any) => {
-      if (seen.has(s.id)) return false;
-      seen.add(s.id);
-      return true;
-    })
-    .map((s: any) => ({
-      id: s.id as string,
-      name: s.name as string,
-      class_name: (s.classes as any)?.name || '',
-    }));
+  const all = [...(classSecs || []), ...subjectOnlySecs];
+  return all.map((s: any) => ({
+    id: s.id as string,
+    name: s.name as string,
+    class_name: (s.classes as any)?.name || '',
+  }));
 }
 
 export async function getSectionStudents(supabase: SupabaseClient, sectionId: string) {
@@ -45,7 +41,7 @@ export async function getSectionStudents(supabase: SupabaseClient, sectionId: st
     .from('students')
     .select('id, full_name, roll_number')
     .eq('section_id', sectionId)
-    .eq('is_active', true)
+    .neq('is_active', false)  // includes null (unset) and true
     .order('roll_number');
     
   if (error) throw error;

@@ -21,47 +21,38 @@ export default function TeacherStudentsPage() {
     setLoading(true);
     const userId = (await supabase.auth.getUser()).data.user?.id;
     if (userId) {
-      // Source 1: sections assigned via subject assignments
+      // Primary: sections where this teacher is class teacher (set via Classes page)
+      const { data: classSecs } = await supabase
+        .from('sections')
+        .select('id, name, classes(name)')
+        .eq('class_teacher_id', userId);
+
+      const classSectionIds = new Set((classSecs || []).map((s: any) => s.id as string));
+
+      // Secondary: subject-based assignments — only sections NOT already in class_teacher_id
       const { data: asgn } = await supabase
         .from('teacher_section_assignments')
         .select('section_id')
         .eq('teacher_id', userId);
 
-      // Source 2: sections where this teacher is the "class teacher"
-      const { data: classSections } = await supabase
-        .from('sections')
-        .select('id, name, classes(name)')
-        .eq('class_teacher_id', userId);
+      const subjectOnlyIds = [...new Set((asgn || []).map((a: any) => a.section_id as string))]
+        .filter(id => !classSectionIds.has(id));
 
-      // Collect all unique section IDs from source 1
-      const subjectSectionIds = [...new Set((asgn || []).map((a: any) => a.section_id as string))];
-
-      // Fetch details for source 1 sections
-      let subjectSectionDetails: any[] = [];
-      if (subjectSectionIds.length > 0) {
+      let subjectOnlySecs: any[] = [];
+      if (subjectOnlyIds.length > 0) {
         const { data: secs } = await supabase
           .from('sections')
           .select('id, name, classes(name)')
-          .in('id', subjectSectionIds);
-        subjectSectionDetails = secs || [];
+          .in('id', subjectOnlyIds);
+        subjectOnlySecs = secs || [];
       }
 
-      // Merge both sources, deduplicate by section id
-      const allSections = [...subjectSectionDetails, ...(classSections || [])];
-      const seen = new Set<string>();
-      const unique = allSections.filter((s: any) => {
-        if (seen.has(s.id)) return false;
-        seen.add(s.id);
-        return true;
-      });
-
-      const formatted = unique.map((s: any) => ({
+      const all = [...(classSecs || []), ...subjectOnlySecs];
+      setSections(all.map((s: any) => ({
         id: s.id as string,
         name: s.name as string,
         class_name: (s.classes as any)?.name || '',
-      }));
-
-      setSections(formatted);
+      })));
     }
     setLoading(false);
   }, [supabase]);
@@ -72,8 +63,14 @@ export default function TeacherStudentsPage() {
     setSelectedSection(sectionId);
     if (!sectionId) { setStudents([]); return; }
     setLoadingStudents(true);
-    const data = await getSectionStudents(supabase, sectionId);
-    setStudents(data);
+    // Use neq false to catch students where is_active is null or true
+    const { data } = await supabase
+      .from('students')
+      .select('id, full_name, roll_number')
+      .eq('section_id', sectionId)
+      .neq('is_active', false)
+      .order('roll_number');
+    setStudents(data || []);
     setLoadingStudents(false);
   };
 
