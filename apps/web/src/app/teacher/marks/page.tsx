@@ -41,23 +41,47 @@ export default function MarksPage() {
     setLoading(true);
     const userId = (await supabase.auth.getUser()).data.user?.id;
     if (!userId) { setLoading(false); return; }
+
+    // Source 1: explicit section assignments (teacher_id → section_id + subject_id)
     const { data: assignments } = await supabase
-      .from('teacher_section_assignments').select('subject_id, section_id').eq('teacher_id', userId);
-    const subjectIds = [...new Set((assignments || []).map((a: any) => a.subject_id).filter(Boolean))];
-    const sectionIds = [...new Set((assignments || []).map((a: any) => a.section_id).filter(Boolean))];
-    if (subjectIds.length > 0) {
+      .from('teacher_section_assignments')
+      .select('subject_id, section_id')
+      .eq('teacher_id', userId);
+
+    const assignedSubjectIds = [...new Set((assignments || []).map((a: any) => a.subject_id).filter(Boolean))] as string[];
+    const assignedSectionIds = [...new Set((assignments || []).map((a: any) => a.section_id).filter(Boolean))] as string[];
+
+    // Source 2: subjects where this teacher is directly set as the subject teacher
+    // (covers teachers assigned before the section-assignments fix, or subjects with null class_id)
+    const { data: ownedSubjects } = await supabase
+      .from('subjects')
+      .select('id')
+      .eq('teacher_id', userId);
+    const ownedSubjectIds = (ownedSubjects || []).map((s: any) => s.id as string);
+
+    // Merge both sources
+    const allSubjectIds = [...new Set([...assignedSubjectIds, ...ownedSubjectIds])];
+
+    if (allSubjectIds.length > 0) {
       const { data } = await supabase.from('exams')
-        .select('*, subjects(name), classes(name)').in('subject_id', subjectIds)
+        .select('*, subjects(name), classes(name)')
+        .in('subject_id', allSubjectIds)
         .order('exam_date', { ascending: false });
-      const filtered = (data || []).filter((e: any) => !e.section_id || sectionIds.includes(e.section_id));
+
+      // Show exam if:
+      // - exam has no section restriction (class-wide exam), OR
+      // - exam's section is one the teacher is assigned to, OR
+      // - teacher is the direct subject teacher (ownedSubjectIds covers this)
+      const filtered = (data || []).filter((e: any) => {
+        if (!e.section_id) return true; // class-wide exam — always show
+        if (assignedSectionIds.includes(e.section_id)) return true; // teacher is in that section
+        if (ownedSubjectIds.includes(e.subject_id)) return true; // teacher owns the subject
+        return false;
+      });
+
       setExams(filtered.map((e: any) => ({ ...e, subject_name: e.subjects?.name, class_name: e.classes?.name })));
     } else {
-      const { data: ur } = await supabase.from('users').select('school_id').eq('id', userId).single();
-      if (ur?.school_id) {
-        const { data } = await supabase.from('exams').select('*, subjects(name), classes(name)')
-          .eq('school_id', ur.school_id).order('exam_date', { ascending: false });
-        setExams((data || []).map((e: any) => ({ ...e, subject_name: e.subjects?.name, class_name: e.classes?.name })));
-      }
+      setExams([]);
     }
     setLoading(false);
   }, [supabase]);
@@ -120,9 +144,15 @@ export default function MarksPage() {
     const invalid = students.find(s => {
       const entry = marks[s.id];
       if (!entry || entry.absent || !entry.marks) return false;
-      return parseFloat(entry.marks) > (exam?.total_marks || Infinity);
+      const val = parseFloat(entry.marks);
+      return isNaN(val) || val < 0 || val > (exam?.total_marks || Infinity);
     });
-    if (invalid) { setSaveError(`Marks for "${invalid.full_name}" exceed total (${exam?.total_marks})`); setSaving(false); return; }
+    if (invalid) {
+      const val = parseFloat(marks[invalid.id]?.marks || '');
+      if (val < 0) setSaveError(`Marks for "${invalid.full_name}" cannot be negative.`);
+      else setSaveError(`Marks for "${invalid.full_name}" exceed total (${exam?.total_marks})`);
+      setSaving(false); return;
+    }
     const records = students.map(s => {
       const entry = marks[s.id] || { marks: '', absent: false, remarks: '' };
       return { exam_id: selectedExam, student_id: s.id, school_id: userData?.school_id,

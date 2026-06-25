@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { getTeacherSections, getSectionStudents, getStudentAttendance, getUserProfile } from '@school-erp/supabase/queries';
+import { getSectionStudents, getStudentAttendance, getUserProfile } from '@school-erp/supabase/queries';
 import { createNotification } from '@/components/NotificationBell';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 interface Student { id: string; full_name: string; roll_number: number | null; }
 interface Section { id: string; name: string; class_name: string; }
@@ -12,66 +13,56 @@ type Status = 'present' | 'absent' | 'late' | 'excused';
 
 export default function AttendancePage() {
   const supabase = createClient();
+  const isMobile = useIsMobile();
+  
   const [sections, setSections] = useState<Section[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [selectedSection, setSelectedSection] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [attendance, setAttendance] = useState<Record<string, Status>>({});
   const [loading, setLoading] = useState(true);
+  const [loadingStudents, setLoadingStudents] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [alreadyMarked, setAlreadyMarked] = useState(false);
+  // Ref to ensure we only auto-select the first section once on initial load
+  const hasAutoSelected = useRef(false);
 
   const fetchSections = useCallback(async () => {
     setLoading(true);
     const userId = (await supabase.auth.getUser()).data.user?.id;
     if (userId) {
-      // Source 1: subject-based assignments
-      const { data: asgn } = await supabase
-        .from('teacher_section_assignments')
-        .select('section_id')
-        .eq('teacher_id', userId);
-
-      // Source 2: class teacher assignments
       const { data: classSecs } = await supabase
         .from('sections')
         .select('id, name, classes(name)')
         .eq('class_teacher_id', userId);
 
-      const subjectSectionIds = [...new Set((asgn || []).map((a: any) => a.section_id as string))];
-      let subjectSectionDetails: any[] = [];
-      if (subjectSectionIds.length > 0) {
-        const { data: secs } = await supabase
-          .from('sections')
-          .select('id, name, classes(name)')
-          .in('id', subjectSectionIds);
-        subjectSectionDetails = secs || [];
-      }
-
-      const allSections = [...subjectSectionDetails, ...(classSecs || [])];
-      const seen = new Set<string>();
-      const unique = allSections.filter((s: any) => {
-        if (seen.has(s.id)) return false;
-        seen.add(s.id);
-        return true;
-      });
-
-      setSections(unique.map((s: any) => ({
+      const allSections = [...(classSecs || [])];
+      
+      setSections(allSections.map((s: any) => ({
         id: s.id as string,
         name: s.name as string,
-        class_name: (s.classes as any)?.name || '',
+        class_name: s.classes?.name as string
       })));
+      
+      // Auto-select the first section only on initial mount (not on re-fetches)
+      if (allSections.length > 0 && !hasAutoSelected.current) {
+        hasAutoSelected.current = true;
+        setSelectedSection(allSections[0].id as string);
+      }
     }
     setLoading(false);
+  // Intentionally omit selectedSection — we use a ref to guard auto-selection
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabase]);
 
   const fetchStudents = useCallback(async () => {
     if (!selectedSection) return;
+    setLoadingStudents(true);
     const data = await getSectionStudents(supabase, selectedSection);
     
     if (data) {
       setStudents(data);
-      // Check if already marked
       const existing = await getStudentAttendance(supabase, selectedSection, date);
       if (existing && existing.length > 0) {
         setAlreadyMarked(true);
@@ -81,10 +72,11 @@ export default function AttendancePage() {
       } else {
         setAlreadyMarked(false);
         const map: Record<string, Status> = {};
-        data.forEach((s: Student) => { map[s.id] = 'present'; });
+        data.forEach((s: Student) => { map[s.id] = 'present'; }); 
         setAttendance(map);
       }
     }
+    setLoadingStudents(false);
   }, [supabase, selectedSection, date]);
 
   useEffect(() => { fetchSections(); }, [fetchSections]);
@@ -97,6 +89,7 @@ export default function AttendancePage() {
   };
 
   const handleSubmit = async () => {
+    if (Object.keys(attendance).length === 0) return;
     setSaving(true); setSaved(false);
     const userId = (await supabase.auth.getUser()).data.user?.id;
     if (!userId) return;
@@ -112,7 +105,6 @@ export default function AttendancePage() {
       const { markAttendanceBulk } = await import('@school-erp/supabase/queries');
       await markAttendanceBulk(supabase, records);
 
-      // ── Notify parents of absent students ──────────────────────────
       const absentStudentIds = students
         .filter(s => attendance[s.id] === 'absent')
         .map(s => s.id);
@@ -130,15 +122,15 @@ export default function AttendancePage() {
               school_id:    userData?.school_id || '',
               type:         'absent_alert',
               title:        `${l.students?.full_name || 'Your child'} was marked Absent`,
-              body:         `Absent on ${date}. Please contact the school if this is incorrect.`,
+              body:         `Absent on ${new Date(date).toLocaleDateString()}. Please contact the school if this is incorrect.`,
               link:         '/parent/attendance',
             })
           ));
         }
       }
-      // ──────────────────────────────────────────────────────────────
 
       setSaved(true);
+      setAlreadyMarked(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (e) {
       console.error(e);
@@ -147,81 +139,181 @@ export default function AttendancePage() {
     }
   };
 
-  const statusConfig: Record<Status, { label: string; bg: string; color: string }> = {
-    present: { label: 'P', bg: '#F0FDF4', color: '#16A34A' },
-    absent: { label: 'A', bg: '#FEF2F2', color: '#DC2626' },
-    late: { label: 'L', bg: '#FFFBEB', color: '#D97706' },
-    excused: { label: 'E', bg: '#EFF6FF', color: '#1E40AF' },
+  const statusConfig: Record<Status, { label: string; fullLabel: string; bg: string; color: string; border: string }> = {
+    present: { label: 'P', fullLabel: 'Present', bg: '#F0FDF4', color: '#16A34A', border: '#DCFCE7' },
+    late: { label: 'L', fullLabel: 'Late', bg: '#FFFBEB', color: '#D97706', border: '#FEF3C7' },
+    excused: { label: 'E', fullLabel: 'Excused', bg: '#EFF6FF', color: '#1D4ED8', border: '#DBEAFE' },
+    absent: { label: 'A', fullLabel: 'Absent', bg: '#FEF2F2', color: '#DC2626', border: '#FECACA' },
   };
 
-  const counts = { present: 0, absent: 0, late: 0, excused: 0 };
-  Object.values(attendance).forEach(s => { counts[s]++; });
+  const counts = { present: 0, late: 0, excused: 0, absent: 0 };
+  Object.values(attendance).forEach(s => { if (counts[s] !== undefined) counts[s]++; });
 
   return (
-    <div className="space-y-6">
-      <div><h2 className="text-2xl font-bold text-gray-900">Mark Attendance</h2><p className="text-gray-500 text-sm mt-1">Daily attendance for your assigned sections</p></div>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <select value={selectedSection} onChange={e => setSelectedSection(e.target.value)} className="px-4 py-2.5 border rounded-xl text-sm font-medium" style={{ borderColor: '#E2E8F0' }}>
-          <option value="">Select Section...</option>{sections.map(s => <option key={s.id} value={s.id}>{s.class_name} - {s.name}</option>)}
-        </select>
-        <input type="date" value={date} onChange={e => setDate(e.target.value)} className="px-4 py-2.5 border rounded-xl text-sm" style={{ borderColor: '#E2E8F0' }} />
-        {alreadyMarked && <span className="text-xs font-medium px-3 py-1 rounded-full" style={{ background: '#FFFBEB', color: '#D97706' }}>⚠️ Already marked — editing mode</span>}
+    <div style={{ paddingBottom: isMobile ? 100 : 24, maxWidth: 1200, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+      {/* Header Area */}
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'flex-end', justifyContent: 'space-between', gap: 16, background: 'white', padding: 24, borderRadius: 16, border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+        <div>
+          <h2 style={{ fontSize: 24, fontWeight: 800, color: '#0F172A', margin: 0, letterSpacing: '-0.02em' }}>Mark Attendance</h2>
+          <p style={{ fontSize: 14, color: '#64748B', margin: '4px 0 0 0' }}>Daily attendance for your assigned class</p>
+        </div>
+        
+        {/* Controls */}
+        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', gap: 12, marginTop: isMobile ? 16 : 0 }}>
+          <div style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+            <select value={selectedSection} onChange={e => setSelectedSection(e.target.value)} 
+              style={{ width: '100%', appearance: 'none', padding: '12px 40px 12px 16px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, fontSize: 14, fontWeight: 700, color: '#0F172A', outline: 'none', cursor: 'pointer', minWidth: 180 }}>
+              <option value="" disabled>Select Section...</option>
+              {sections.map(s => <option key={s.id} value={s.id}>{s.class_name} - {s.name}</option>)}
+            </select>
+            <div style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#64748B' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+          </div>
+          
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} 
+            max={new Date().toISOString().split('T')[0]}
+            style={{ width: isMobile ? '100%' : 'auto', padding: '12px 16px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, fontSize: 14, fontWeight: 700, color: '#0F172A', outline: 'none' }} />
+        </div>
       </div>
 
       {!selectedSection ? (
-        <div className="bg-white rounded-2xl border p-12 text-center" style={{ borderColor: '#E2E8F0' }}><p className="text-4xl mb-3">✅</p><p className="text-gray-400">Select a section to mark attendance</p></div>
-      ) : loading ? <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="skeleton h-14 rounded-xl" />)}</div> : (
-        <>
-          {/* Quick Actions */}
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-500">Quick:</span>
-            <button onClick={() => markAll('present')} className="text-xs font-medium px-3 py-1.5 rounded-lg" style={{ background: '#F0FDF4', color: '#16A34A' }}>All Present</button>
-            <button onClick={() => markAll('absent')} className="text-xs font-medium px-3 py-1.5 rounded-lg" style={{ background: '#FEF2F2', color: '#DC2626' }}>All Absent</button>
-            <div className="ml-auto flex gap-3 text-xs">
-              {Object.entries(counts).map(([k, v]) => <span key={k} className="font-medium" style={{ color: statusConfig[k as Status].color }}>{statusConfig[k as Status].label}: {v}</span>)}
+        <div style={{ background: 'white', borderRadius: 16, border: '1px solid #E2E8F0', padding: 48, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', minHeight: 400 }}>
+          <div style={{ width: 80, height: 80, background: '#F8FAFC', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16, border: '1px solid #E2E8F0', fontSize: 32 }}>📋</div>
+          <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0F172A', margin: '0 0 4px 0' }}>Select a section</h3>
+          <p style={{ fontSize: 14, color: '#64748B', maxWidth: 320, margin: 0 }}>Choose a section from the dropdown above to start marking daily attendance.</p>
+        </div>
+      ) : loading || loadingStudents ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {[1,2,3,4,5].map(i => (
+            <div key={i} style={{ background: 'white', borderRadius: 16, border: '1px solid #E2E8F0', padding: 20, display: 'flex', alignItems: 'center', gap: 16, opacity: 0.7 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: '#F1F5F9 flex-shrink-0' }}></div>
+              <div style={{ flex: 1, height: 16, background: '#F1F5F9', borderRadius: 4, maxWidth: 200 }}></div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {[1,2,3,4].map(j => <div key={j} style={{ width: 40, height: 40, borderRadius: 12, background: '#F1F5F9' }}></div>)}
+              </div>
             </div>
-          </div>
+          ))}
+        </div>
+      ) : students.length === 0 ? (
+        <div style={{ background: 'white', borderRadius: 16, border: '1px solid #E2E8F0', padding: 48, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
+          <span style={{ fontSize: 40, marginBottom: 12 }}>📭</span>
+          <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0F172A', margin: '0 0 4px 0' }}>No students found</h3>
+          <p style={{ fontSize: 14, color: '#64748B', margin: 0 }}>There are no active students in this section.</p>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          {/* Quick Actions & Status Banner */}
+          <div style={{ background: 'white', borderRadius: 16, border: '1px solid #E2E8F0', padding: 16, display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center', justifyContent: 'space-between', gap: 16, boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: 12 }}>
+              <span style={{ fontSize: 12, fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: 0.5 }}>Quick Mark</span>
+              <div style={{ display: 'flex', gap: 8, width: isMobile ? '100%' : 'auto' }}>
+                <button onClick={() => markAll('present')} style={{ flex: isMobile ? 1 : 'none', padding: '8px 16px', borderRadius: 10, background: '#F0FDF4', color: '#16A34A', border: '1px solid #DCFCE7', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>All Present</button>
+                <button onClick={() => markAll('absent')} style={{ flex: isMobile ? 1 : 'none', padding: '8px 16px', borderRadius: 10, background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>All Absent</button>
+              </div>
+            </div>
 
-          {/* Student List */}
-          <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: '#E2E8F0' }}>
-            <div className="divide-y" style={{ borderColor: '#F1F5F9' }}>
-              {students.map((s, i) => (
-                <div key={s.id} className="px-6 py-3 flex items-center justify-between hover:bg-gray-50">
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs font-mono text-gray-400 w-6">{s.roll_number || i + 1}</span>
-                    <span className="text-sm font-medium text-gray-900">{s.full_name}</span>
-                  </div>
-                  <div className="flex gap-1.5">
-                    {(Object.keys(statusConfig) as Status[]).map(status => (
-                      <button key={status} onClick={() => setAttendance(a => ({ ...a, [s.id]: status }))}
-                        className="w-9 h-9 rounded-lg text-xs font-bold transition-all"
-                        style={{
-                          background: attendance[s.id] === status ? statusConfig[status].color : statusConfig[status].bg,
-                          color: attendance[s.id] === status ? 'white' : statusConfig[status].color,
-                          boxShadow: attendance[s.id] === status ? '0 2px 8px rgba(0,0,0,0.15)' : 'none',
-                          transform: attendance[s.id] === status ? 'scale(1.1)' : 'scale(1)',
-                        }}>
-                        {statusConfig[status].label}
-                      </button>
-                    ))}
-                  </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16, padding: '10px 16px', background: '#F8FAFC', borderRadius: 12, border: '1px solid #E2E8F0' }}>
+              {(Object.keys(counts) as Status[]).map((k) => (
+                <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 60 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: statusConfig[k].color }}></span>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5 }}>{k}: <span style={{ color: statusConfig[k].color }}>{counts[k]}</span></span>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Submit */}
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500">{students.length} students • {date}</p>
-            <div className="flex items-center gap-3">
-              {saved && <span className="text-sm font-medium" style={{ color: '#16A34A' }}>✅ Saved successfully!</span>}
-              <button onClick={handleSubmit} disabled={saving} className="px-8 py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-50 hover:shadow-lg transition-all" style={{ background: '#1E40AF' }}>
-                {saving ? 'Submitting...' : alreadyMarked ? 'Update Attendance' : 'Submit Attendance'}
-              </button>
+          {alreadyMarked && (
+            <div style={{ padding: 16, borderRadius: 16, border: '1px solid #FEF3C7', background: '#FFFBEB', color: '#92400E', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#FEF3C7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 18 }}>⚠️</div>
+              <div>
+                <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Attendance Already Marked</h4>
+                <p style={{ margin: '2px 0 0 0', fontSize: 12, opacity: 0.8 }}>You are currently editing the saved attendance for {new Date(date).toLocaleDateString()}.</p>
+              </div>
+            </div>
+          )}
+
+          {/* Student List View */}
+          <div style={{ background: 'white', borderRadius: 16, border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+            {!isMobile && (
+              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr auto', padding: '14px 24px', background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', fontSize: 12, fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                <div>Roll No</div>
+                <div>Student Name</div>
+                <div style={{ textAlign: 'right', paddingRight: 8 }}>Status</div>
+              </div>
+            )}
+            
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {students.map((s, i) => {
+                const currentStatus = attendance[s.id] || 'present';
+                return (
+                  <div key={s.id} style={{ display: isMobile ? 'flex' : 'grid', flexDirection: isMobile ? 'column' : 'row', gridTemplateColumns: isMobile ? 'none' : '80px 1fr auto', gap: isMobile ? 12 : 0, padding: isMobile ? 20 : '14px 24px', alignItems: 'center', borderBottom: '1px solid #F1F5F9' }}>
+                    
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: isMobile ? '100%' : 'auto' }}>
+                      <div style={{ width: 32, height: 32, borderRadius: 8, background: '#F8FAFC', color: '#64748B', fontFamily: 'monospace', fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1px solid #E2E8F0' }}>
+                        {s.roll_number || i + 1}
+                      </div>
+                      {isMobile && <span style={{ fontSize: 15, fontWeight: 700, color: '#0F172A' }}>{s.full_name}</span>}
+                    </div>
+                    
+                    {!isMobile && <span style={{ fontSize: 14, fontWeight: 700, color: '#0F172A' }}>{s.full_name}</span>}
+                    
+                    <div style={{ display: 'flex', gap: 8, width: isMobile ? '100%' : 'auto', justifyContent: isMobile ? 'space-between' : 'flex-end', marginTop: isMobile ? 4 : 0 }}>
+                      {(Object.keys(statusConfig) as Status[]).map(status => {
+                        const isSelected = currentStatus === status;
+                        const config = statusConfig[status];
+                        return (
+                          <button key={status} onClick={() => setAttendance(a => ({ ...a, [s.id]: status }))}
+                            style={{
+                              flex: isMobile ? 1 : 'none',
+                              width: isMobile ? 'auto' : 44,
+                              height: isMobile ? 40 : 44,
+                              borderRadius: 12,
+                              fontSize: isMobile ? 12 : 14,
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              background: isSelected ? config.color : 'white',
+                              color: isSelected ? 'white' : '#64748B',
+                              border: `2px solid ${isSelected ? config.color : '#E2E8F0'}`,
+                              boxShadow: isSelected ? `0 4px 12px ${config.color}40` : '0 1px 2px rgba(0,0,0,0.05)',
+                              transform: isSelected ? 'scale(1.05)' : 'scale(1)',
+                              zIndex: isSelected ? 10 : 1,
+                              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                            }}>
+                            <span style={{ display: isMobile ? 'none' : 'block' }}>{config.label}</span>
+                            <span style={{ display: isMobile ? 'block' : 'none' }}>{config.fullLabel}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
-        </>
+
+          {/* Submit Bar */}
+          <div style={{ position: isMobile ? 'fixed' : 'static', bottom: isMobile ? 0 : 'auto', left: 0, right: 0, padding: isMobile ? 16 : 0, background: isMobile ? 'white' : 'transparent', borderTop: isMobile ? '1px solid #E2E8F0' : 'none', zIndex: 40, boxShadow: isMobile ? '0 -4px 20px rgba(0,0,0,0.05)' : 'none' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: isMobile ? 'center' : 'space-between', gap: 16 }}>
+              {!isMobile && (
+                <p style={{ fontSize: 14, fontWeight: 700, color: '#64748B', margin: 0 }}>{students.length} students <span style={{ margin: '0 8px', opacity: 0.5 }}>•</span> {new Date(date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, width: isMobile ? '100%' : 'auto' }}>
+                {saved && !isMobile && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 700, padding: '8px 16px', background: '#F0FDF4', color: '#15803D', borderRadius: 12, border: '1px solid #DCFCE7' }}>
+                    <span>✅</span> Saved successfully!
+                  </div>
+                )}
+                <button onClick={handleSubmit} disabled={saving} style={{ width: isMobile ? '100%' : 'auto', padding: '14px 32px', borderRadius: 12, fontSize: 14, fontWeight: 800, color: 'white', background: 'linear-gradient(135deg, #0F766E 0%, #0D9488 100%)', border: 'none', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1, boxShadow: '0 4px 12px rgba(15, 118, 110, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                  {saving ? 'Submitting...' : alreadyMarked ? 'Update Attendance' : 'Submit Attendance'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

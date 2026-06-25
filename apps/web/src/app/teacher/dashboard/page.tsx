@@ -39,19 +39,24 @@ export default function TeacherDashboard() {
       const { count: mCount } = await supabase.from('messages').select('*', { count: 'exact', head: true }).eq('receiver_id', user.id).eq('is_read', false);
       setUnreadMessages(mCount || 0);
       const today = new Date().toISOString().split('T')[0];
-      const { data: teacherSections } = await supabase.from('teacher_section_assignments').select('section_id').eq('teacher_id', user.id);
-      if (teacherSections && teacherSections.length > 0) {
-        const sectionIds = [...new Set(teacherSections.map((t: any) => t.section_id).filter(Boolean))];
-        const { data: markedSections } = await supabase.from('attendance').select('section_id').in('section_id', sectionIds as string[]).eq('date', today).limit(sectionIds.length);
+      // Attendance is marked only by class teachers — check sections where this teacher is class_teacher_id
+      const { data: classSections } = await supabase.from('sections').select('id').eq('class_teacher_id', user.id);
+      if (classSections && classSections.length > 0) {
+        const sectionIds = classSections.map((s: any) => s.id as string);
+        const { data: markedSections } = await supabase.from('attendance').select('section_id').in('section_id', sectionIds).eq('date', today).limit(sectionIds.length);
         const markedSet = new Set((markedSections || []).map((a: any) => a.section_id));
-        setAttendancePending(sectionIds.filter(id => !markedSet.has(id)).length);
+        setAttendancePending(sectionIds.filter((id: string) => !markedSet.has(id)).length);
+      } else {
+        setAttendancePending(0);
       }
-      const todayDow = new Date().getDay();
-      const dbDow = todayDow === 0 ? 1 : todayDow;
-      if (dbDow >= 1 && dbDow <= 6) {
-        const { data: slots } = await supabase.from('timetable').select('id, period_number, start_time, end_time, room, subjects(name), sections(name)').eq('teacher_id', user.id).eq('day_of_week', dbDow).order('period_number');
+      const todayDow = new Date().getDay(); // 0=Sun, 1=Mon...6=Sat
+      // School days are Mon(1)–Sat(6). Sunday has no schedule — show empty.
+      if (todayDow >= 1 && todayDow <= 6) {
+        const { data: slots } = await supabase.from('timetable').select('id, period_number, start_time, end_time, room, subjects(name), sections(name)').eq('teacher_id', user.id).eq('day_of_week', todayDow).order('period_number');
         if (slots) setTodaySlots(slots.map((s: any) => ({ id: s.id, period: s.period_number, start_time: s.start_time, end_time: s.end_time, room: s.room, subject_name: s.subjects?.name || 'Subject', section_name: s.sections?.name || 'Section' })));
       }
+      // todayDow === 0 (Sunday): leave todaySlots as [] → "No classes today" is shown
+
     }
     setLoading(false);
   }, []);

@@ -32,12 +32,32 @@ export default function TeacherStudentsPage() {
     setLoading(true);
     const userId = (await supabase.auth.getUser()).data.user?.id;
     if (userId) {
+      // Get sections where this teacher is class teacher
       const { data: classSecs } = await supabase
         .from('sections')
         .select('id, name, classes(name)')
         .eq('class_teacher_id', userId);
 
-      const formatted = (classSecs || []).map((s: any) => ({
+      const classSectionIds = new Set((classSecs || []).map((s: any) => s.id as string));
+
+      // Also get subject-assigned sections (a subject teacher needs to see their students too)
+      const { data: asgn } = await supabase
+        .from('teacher_section_assignments')
+        .select('section_id')
+        .eq('teacher_id', userId);
+
+      const subjectOnlyIds = [...new Set((asgn || []).map((a: any) => a.section_id as string))]
+        .filter(id => !classSectionIds.has(id));
+
+      let subjectOnlySecs: any[] = [];
+      if (subjectOnlyIds.length > 0) {
+        const { data: secs } = await supabase
+          .from('sections').select('id, name, classes(name)').in('id', subjectOnlyIds);
+        subjectOnlySecs = secs || [];
+      }
+
+      const allSections = [...(classSecs || []), ...subjectOnlySecs];
+      const formatted = allSections.map((s: any) => ({
         id: s.id as string,
         name: s.name as string,
         class_name: (s.classes as any)?.name || '',
@@ -45,7 +65,7 @@ export default function TeacherStudentsPage() {
       setSections(formatted);
 
       if (formatted.length === 1) {
-        handleSectionSelect(formatted[0].id);
+        setSelectedSection(formatted[0].id);
       }
     }
     setLoading(false);
@@ -53,19 +73,25 @@ export default function TeacherStudentsPage() {
 
   useEffect(() => { fetchSections(); }, [fetchSections]);
 
-  const handleSectionSelect = async (sectionId: string) => {
-    setSelectedSection(sectionId);
-    setSearch('');
-    if (!sectionId) { setStudents([]); return; }
+  // When selectedSection changes, fetch the students for that section
+  useEffect(() => {
+    if (!selectedSection) { setStudents([]); return; }
     setLoadingStudents(true);
-    const { data } = await supabase
+    setSearch('');
+    supabase
       .from('students')
       .select('id, full_name, roll_number')
-      .eq('section_id', sectionId)
+      .eq('section_id', selectedSection)
       .neq('is_active', false)
-      .order('roll_number');
-    setStudents(data || []);
-    setLoadingStudents(false);
+      .order('roll_number')
+      .then(({ data }: { data: { id: string; full_name: string; roll_number: number | null }[] | null }) => {
+        setStudents(data || []);
+        setLoadingStudents(false);
+      });
+  }, [supabase, selectedSection]);
+
+  const handleSectionSelect = (sectionId: string) => {
+    setSelectedSection(sectionId);
   };
 
   const selectedSec = sections.find(s => s.id === selectedSection);

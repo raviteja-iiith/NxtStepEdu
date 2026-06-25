@@ -48,15 +48,27 @@ export default function ResourcesPage() {
       })));
     }
 
-    // Fetch teacher's sections & subjects
+    // Fetch teacher's sections & subjects — combine class teacher role + subject assignments
+    const { data: classSecs } = await supabase
+      .from('sections')
+      .select('id, name, classes(name)')
+      .eq('class_teacher_id', userId);
+
     const { data: assgn } = await supabase.from('teacher_section_assignments')
       .select('sections(id, name, classes(name)), subjects(id, name)')
       .eq('teacher_id', userId);
 
-    if (assgn) {
+    if (assgn || classSecs) {
       const secMap = new Map<string, { id: string; name: string; class_name: string }>();
       const subMap = new Map<string, { id: string; name: string }>();
-      assgn.forEach((a: any) => {
+
+      // Add class teacher sections (no subject association)
+      (classSecs || []).forEach((s: any) => {
+        secMap.set(s.id, { id: s.id, name: s.name, class_name: s.classes?.name || '' });
+      });
+
+      // Add subject-assigned sections and their subjects
+      (assgn || []).forEach((a: any) => {
         if (a.sections) secMap.set(a.sections.id, { id: a.sections.id, name: a.sections.name, class_name: a.sections?.classes?.name || '' });
         if (a.subjects) subMap.set(a.subjects.id, { id: a.subjects.id, name: a.subjects.name });
       });

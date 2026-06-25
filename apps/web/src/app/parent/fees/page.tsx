@@ -211,6 +211,14 @@ export default function ParentFeesPage() {
     setLoading(true);
     const studentId = selectedChild.student_id;
 
+    // Auto-flip pending→overdue for this student's fees where due_date has passed
+    const today = new Date().toISOString().split('T')[0];
+    await supabase.from('fees')
+      .update({ status: 'overdue' })
+      .eq('student_id', studentId)
+      .eq('status', 'pending')
+      .lt('due_date', today);
+
     // Fetch school name
     const { data: userData } = await supabase.auth.getUser();
     if (userData.user) {

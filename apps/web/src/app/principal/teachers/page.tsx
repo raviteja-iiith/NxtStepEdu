@@ -82,10 +82,23 @@ export default function TeachersPage() {
     const { data: tu } = await supabase.from('users').select('school_id').eq('id',showAssign).single();
     const { data: yr } = await supabase.from('academic_years').select('id').eq('is_current',true).maybeSingle();
     await supabase.from('teacher_section_assignments').insert({ teacher_id:showAssign, section_id:selectedSection, subject_id:selectedSubject, academic_year_id:yr?.id, school_id:tu?.school_id||null });
+    // Keep subjects.teacher_id in sync — ensures marks-page fallback and Subjects page both show correct teacher
+    await supabase.from('subjects').update({ teacher_id: showAssign }).eq('id', selectedSubject);
     openAssign(showAssign); setSelectedSection(''); setSelectedSubject('');
   };
 
-  const removeAssignment = async (id:string) => { await supabase.from('teacher_section_assignments').delete().eq('id',id); if(showAssign) openAssign(showAssign); };
+  const removeAssignment = async (id: string, subjectId: string) => {
+    await supabase.from('teacher_section_assignments').delete().eq('id',id);
+    // Check if any other assignment exists for this subject — if not, clear the teacher
+    if (subjectId) {
+      const { count } = await supabase.from('teacher_section_assignments')
+        .select('id', { count: 'exact', head: true }).eq('subject_id', subjectId);
+      if ((count ?? 0) === 0) {
+        await supabase.from('subjects').update({ teacher_id: null }).eq('id', subjectId);
+      }
+    }
+    if(showAssign) openAssign(showAssign);
+  };
   const filtered = teachers.filter(t=>t.full_name.toLowerCase().includes(search.toLowerCase())||t.username?.toLowerCase().includes(search.toLowerCase()));
   const activeCount = teachers.filter(t=>t.is_active).length;
 
@@ -247,7 +260,7 @@ export default function TeachersPage() {
                 return (
                   <div key={a.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 14px', borderRadius:9, background:'#F8FAFC', border:'1px solid #F1F5F9', marginBottom:6 }}>
                     <span style={{ fontSize:13, color:'#334155' }}><strong>{sec?.class_name} – {sec?.name}</strong> → {sub?.name}</span>
-                    <button onClick={()=>removeAssignment(a.id)} style={{ fontSize:12, fontWeight:600, padding:'4px 10px', borderRadius:7, border:'1px solid #FEE2E2', background:'#FEF2F2', color:'#DC2626', cursor:'pointer' }}>Remove</button>
+                    <button onClick={()=>removeAssignment(a.id, a.subject_id)} style={{ fontSize:12, fontWeight:600, padding:'4px 10px', borderRadius:7, border:'1px solid #FEE2E2', background:'#FEF2F2', color:'#DC2626', cursor:'pointer' }}>Remove</button>
                   </div>
                 );
               })}

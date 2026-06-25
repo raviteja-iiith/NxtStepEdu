@@ -2,11 +2,22 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 interface ParentRecord { id: string; full_name: string; phone: string | null; is_active: boolean; student_name: string; section_name: string; }
 
+const AVATAR_COLORS = [
+  { bg: '#EFF6FF', color: '#1D4ED8' },
+  { bg: '#F0FDF4', color: '#16A34A' },
+  { bg: '#F5F3FF', color: '#7C3AED' },
+  { bg: '#FFFBEB', color: '#D97706' },
+  { bg: '#FDF2F8', color: '#BE185D' },
+];
+
 export default function TeacherParentsPage() {
   const supabase = createClient();
+  const isMobile = useIsMobile();
+  
   const [parents, setParents] = useState<ParentRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -28,109 +39,59 @@ export default function TeacherParentsPage() {
     const userId = (await supabase.auth.getUser()).data.user?.id;
     if (!userId) { setLoading(false); return; }
 
-    // Step 1: Get teacher's sections
-    const { data: classSecs } = await supabase
-      .from('sections')
-      .select('id')
-      .eq('class_teacher_id', userId);
+    const { data: classSecs } = await supabase.from('sections').select('id').eq('class_teacher_id', userId);
+    const { data: subjectAsgn } = await supabase.from('teacher_section_assignments').select('section_id').eq('teacher_id', userId);
 
-    const { data: subjectAsgn } = await supabase
-      .from('teacher_section_assignments')
-      .select('section_id')
-      .eq('teacher_id', userId);
-
-    const allSectionIds = [
-      ...new Set([
-        ...(classSecs || []).map((s: any) => s.id as string),
-        ...(subjectAsgn || []).map((a: any) => a.section_id as string),
-      ])
-    ];
+    const allSectionIds = [...new Set([...(classSecs || []).map((s: any) => s.id as string), ...(subjectAsgn || []).map((a: any) => a.section_id as string)])];
 
     if (allSectionIds.length === 0) {
-      setStudents([]);
-      setParents([]);
-      setLoading(false);
-      return;
+      setStudents([]); setParents([]); setLoading(false); return;
     }
 
-    // Step 2: Get all students in teacher's sections
-    const { data: studentData } = await supabase
-      .from('students')
-      .select('id, full_name, sections(name)')
-      .in('section_id', allSectionIds)
-      .neq('is_active', false)
-      .order('full_name');
-
+    const { data: studentData } = await supabase.from('students').select('id, full_name, sections(name)').in('section_id', allSectionIds).neq('is_active', false).order('full_name');
     const myStudents = studentData || [];
-    setStudents(myStudents.map((s: any) => ({
-      id: s.id,
-      full_name: s.full_name,
-      section_name: (s.sections as any)?.name || '',
-    })));
+    setStudents(myStudents.map((s: any) => ({ id: s.id, full_name: s.full_name, section_name: (s.sections as any)?.name || '' })));
 
     const studentIds = myStudents.map((s: any) => s.id as string);
-    if (studentIds.length === 0) {
-      setParents([]);
-      setLoading(false);
-      return;
-    }
+    if (studentIds.length === 0) { setParents([]); setLoading(false); return; }
 
-    // Step 3: Use admin API route to get parent links (bypasses RLS on student_parent_links)
     const res = await fetch(`/api/teacher/parent-links?studentIds=${studentIds.join(',')}`);
     const { links } = res.ok ? await res.json() : { links: [] };
 
-    // Also fetch user details for each parent_id
     const parentIds = [...new Set((links || []).map((l: any) => l.parent_id).filter(Boolean))];
     let parentUsers: any[] = [];
     if (parentIds.length > 0) {
-      const { data } = await supabase
-        .from('users')
-        .select('id, full_name, phone, is_active')
-        .in('id', parentIds);
+      const { data } = await supabase.from('users').select('id, full_name, phone, is_active').in('id', parentIds);
       parentUsers = data || [];
     }
     const userMap = new Map(parentUsers.map((u: any) => [u.id, u]));
 
-    // Build a map: student_id → parent record
-    const parentByStudent = new Map<string, ParentRecord>();
+    const parentByStudent = new Map<string, ParentRecord[]>();
     (links || []).forEach((l: any) => {
       if (!l.parent_id) return;
       const u = userMap.get(l.parent_id) || (l.users as any) || {};
-      parentByStudent.set(l.student_id, {
-        id: l.parent_id,
-        full_name: u.full_name || 'Unknown',
-        phone: u.phone || null,
-        is_active: u.is_active ?? true,
-        student_name: '',  // filled below from myStudents
-        section_name: '',
-      });
+      const record: ParentRecord = {
+        id: l.parent_id, full_name: u.full_name || 'Unknown', phone: u.phone || null, is_active: u.is_active ?? true, student_name: '', section_name: '',
+      };
+      if (!parentByStudent.has(l.student_id)) parentByStudent.set(l.student_id, []);
+      parentByStudent.get(l.student_id)!.push(record);
     });
 
-    // Show one entry per student: linked parent info, or "No parent" placeholder
     const list: ParentRecord[] = [];
     myStudents.forEach((s: any) => {
-      const linked = parentByStudent.get(s.id);
+      const linkedParents = parentByStudent.get(s.id);
       const secName = (s.sections as any)?.name || s.section_name || '';
-      if (linked) {
-        // Fill student info from myStudents (API only returns parent user data)
-        list.push({ ...linked, student_name: s.full_name, section_name: secName });
+      if (linkedParents && linkedParents.length > 0) {
+        // Add a row for each parent linked to this student
+        linkedParents.forEach(p => list.push({ ...p, student_name: s.full_name, section_name: secName }));
       } else {
-        // Student has no parent — show placeholder so teacher can add one
-        list.push({
-          id: `no-parent-${s.id}`,
-          full_name: '',
-          phone: null,
-          is_active: true,
-          student_name: s.full_name,
-          section_name: secName,
-        });
+        list.push({ id: `no-parent-${s.id}`, full_name: '', phone: null, is_active: true, student_name: s.full_name, section_name: secName });
       }
     });
 
     setParents(list);
     setLoading(false);
   }, [supabase]);
-
 
   useEffect(() => { fetchParentsAndStudents(); }, [fetchParentsAndStudents]);
 
@@ -144,19 +105,9 @@ export default function TeacherParentsPage() {
     const { data: userData } = await supabase.from('users').select('school_id').eq('id', userId).single();
 
     try {
-      // Step 1: Create the auth user + users row
       const res = await fetch('/api/auth/create-user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: `${form.phone}@parent.schoolerp.local`,
-          password: pin,
-          role: 'parent',
-          full_name: form.full_name,
-          phone: form.phone,
-          username: form.phone,
-          school_id: userData?.school_id,
-        }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: `${form.phone}@parent.schoolerp.local`, password: pin, role: 'parent', full_name: form.full_name, phone: form.phone, username: form.phone, school_id: userData?.school_id }),
       });
       const result = await res.json();
       if (!res.ok) { setFormError(result.error || 'Failed to create parent account'); setSaving(false); return; }
@@ -164,30 +115,17 @@ export default function TeacherParentsPage() {
       const newParentId: string = result.userId;
       if (!newParentId) { setFormError('Parent created but no userId returned — contact admin.'); setSaving(false); return; }
 
-      // Step 2: Link parent to student
-      // Note: student_parent_links has NO school_id column.
-      // relationship must be one of: 'father','mother','guardian','other'
       const { error: linkError } = await supabase.from('student_parent_links').insert({
-        parent_id: newParentId,
-        student_id: selectedStudentId,
-        relationship: form.relationship || 'guardian',
-        is_primary_contact: true,
-        created_by: userId,
+        parent_id: newParentId, student_id: selectedStudentId, relationship: form.relationship || 'guardian', is_primary_contact: true, created_by: userId,
       });
 
       if (linkError) {
-        // Parent account was created, but linking failed — show a clear error
         setFormError(`Parent account created but linking failed: ${linkError.message}. Please link manually from the student profile.`);
-        setSaving(false);
-        fetchParentsAndStudents();
-        return;
+        setSaving(false); fetchParentsAndStudents(); return;
       }
 
-      setShowAddModal(false);
-      setShowCreds({ phone: form.phone, pin, name: form.full_name });
-      setForm({ full_name: '', phone: '', relationship: 'guardian' });
-      setSelectedStudentId('');
-      fetchParentsAndStudents();
+      setShowAddModal(false); setShowCreds({ phone: form.phone, pin, name: form.full_name });
+      setForm({ full_name: '', phone: '', relationship: 'guardian' }); setSelectedStudentId(''); fetchParentsAndStudents();
     } catch (err: any) { setFormError(`Network error: ${err?.message || 'Please try again.'}`); }
     setSaving(false);
   };
@@ -197,142 +135,237 @@ export default function TeacherParentsPage() {
     setLinking(true); setLinkError('');
     const userId = (await supabase.auth.getUser()).data.user?.id || '';
     const { error } = await supabase.from('student_parent_links').insert({
-      parent_id: showLinkModal.parentId,
-      student_id: linkStudentId,
-      relationship: linkRelationship || 'guardian',
-      is_primary_contact: true,
-      created_by: userId,
+      parent_id: showLinkModal.parentId, student_id: linkStudentId, relationship: linkRelationship || 'guardian', is_primary_contact: true, created_by: userId,
     });
     if (error) { setLinkError(error.message); setLinking(false); return; }
-    setShowLinkModal(null); setLinkStudentId(''); setLinkRelationship('guardian');
-    fetchParentsAndStudents();
-    setLinking(false);
+    setShowLinkModal(null); setLinkStudentId(''); setLinkRelationship('guardian'); fetchParentsAndStudents(); setLinking(false);
   };
 
-  const filtered = parents.filter(p =>
-    p.full_name.toLowerCase().includes(search.toLowerCase()) ||
-    (p.phone || '').includes(search) ||
-    p.student_name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = parents.filter(p => p.full_name.toLowerCase().includes(search.toLowerCase()) || (p.phone || '').includes(search) || p.student_name.toLowerCase().includes(search.toLowerCase()));
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div style={{ paddingBottom: isMobile ? 80 : 24, maxWidth: 1400, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+      {/* Header Area */}
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center', justifyContent: 'space-between', gap: 16, background: 'white', padding: 24, borderRadius: 16, border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Parent Management</h2>
-          <p className="text-gray-500 text-sm mt-1">Parents of your students ({parents.length} total)</p>
+          <h2 style={{ fontSize: 24, fontWeight: 800, color: '#0F172A', margin: 0, letterSpacing: '-0.02em' }}>Parent Management</h2>
+          <p style={{ fontSize: 14, color: '#64748B', margin: '4px 0 0 0' }}>Manage parents and link them to students in your classes ({parents.length} total)</p>
         </div>
-        <button onClick={() => { setShowAddModal(true); setFormError(''); }} className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white hover:shadow-lg transition-all" style={{ background: '#0F766E' }}>
-          + Add Parent
+        <button onClick={() => { setShowAddModal(true); setFormError(''); }} 
+          style={{ width: isMobile ? '100%' : 'auto', padding: '12px 24px', borderRadius: 12, fontSize: 14, fontWeight: 700, color: 'white', background: 'linear-gradient(135deg, #0F766E 0%, #0D9488 100%)', border: 'none', cursor: 'pointer', boxShadow: '0 4px 12px rgba(15, 118, 110, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add New Parent
         </button>
       </div>
 
-      <div className="flex-1 relative">
-        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
-        <input type="text" placeholder="Search by name, phone or student..." value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="w-full pl-11 pr-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-          style={{ borderColor: '#E2E8F0' }} />
+      {/* Search Bar */}
+      <div style={{ position: 'relative' }}>
+        <div style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </div>
+        <input type="text" placeholder="Search by parent name, phone, or child's name..." value={search} onChange={e => setSearch(e.target.value)}
+          style={{ width: '100%', padding: '14px 16px 14px 48px', background: 'white', border: '1px solid #E2E8F0', borderRadius: 16, fontSize: 14, fontWeight: 500, color: '#0F172A', outline: 'none', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }} />
       </div>
 
-      <div className="bg-white rounded-2xl border" style={{ borderColor: '#E2E8F0' }}>
-        {loading ? (
-          <div className="p-8 space-y-3">{[1,2,3].map(i => <div key={i} className="skeleton h-14 rounded-lg" />)}</div>
-        ) : (
-          <div className="flex flex-col">
-            {/* Header */}
-            <div className="hidden md:grid grid-cols-[2fr_110px_1.5fr_80px_120px] px-6 py-3 text-xs font-semibold text-gray-500 uppercase border-b" style={{ background: '#F8FAFC', borderColor: '#F1F5F9' }}>
-              <div>Parent</div>
-              <div>Phone (Login)</div>
-              <div>Child</div>
-              <div>Status</div>
-              <div className="text-right">Actions</div>
+      {/* Main Content Area */}
+      {loading ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {[1,2,3,4].map(i => (
+            <div key={i} style={{ background: 'white', borderRadius: 16, border: '1px solid #E2E8F0', padding: 20, display: 'flex', alignItems: 'center', gap: 16, opacity: 0.7 }}>
+              <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#F1F5F9 flex-shrink-0' }}></div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ height: 16, background: '#F1F5F9', borderRadius: 4, width: '30%' }}></div>
+                <div style={{ height: 12, background: '#F1F5F9', borderRadius: 4, width: '20%' }}></div>
+              </div>
             </div>
-
-            {/* Body */}
-            <div className="flex flex-col divide-y" style={{ borderColor: '#F1F5F9' }}>
-              {filtered.length === 0 ? (
-                <div className="px-6 py-12 text-center text-gray-400">
-                  <p className="text-3xl mb-2">👨‍👩‍👧</p>
-                  <p className="text-sm">No parents found for your sections.</p>
-                </div>
-              ) : filtered.map(p => {
-                const hasParent = !!p.full_name;
-                return (
-                  <div key={p.id} className="grid grid-cols-1 md:grid-cols-[2fr_110px_1.5fr_80px_120px] gap-3 md:gap-0 px-6 py-4 items-center hover:bg-gray-50">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-                        style={{ background: hasParent ? '#F5F3FF' : '#F8FAFC', color: hasParent ? '#7C3AED' : '#94A3B8' }}>
-                        {hasParent ? p.full_name.charAt(0) : '?'}
-                      </div>
-                      {hasParent
-                        ? <p className="text-sm font-semibold text-gray-900">{p.full_name}</p>
-                        : <p className="text-sm text-gray-400 italic">No parent yet</p>
-                      }
-                    </div>
-                    <div className="font-mono text-sm text-gray-600">{p.phone || '—'}</div>
-                    <div className="text-sm">
-                      {p.student_name
-                        ? <span className="text-gray-700 font-medium">{p.student_name} {p.section_name && <span className="text-xs text-gray-400">(Sec {p.section_name})</span>}</span>
-                        : <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ background: '#FFFBEB', color: '#D97706' }}>⚠️ Not linked</span>
-                      }
-                    </div>
-                    <div>
-                      {hasParent
-                        ? <span className="text-xs font-medium px-2.5 py-1 rounded-full w-fit" style={{ background: p.is_active ? '#F0FDF4' : '#FEF2F2', color: p.is_active ? '#16A34A' : '#DC2626' }}>{p.is_active ? 'Active' : 'Inactive'}</span>
-                        : <span className="text-xs font-medium px-2.5 py-1 rounded-full w-fit" style={{ background: '#FEF9C3', color: '#854D0E' }}>Unlinked</span>
-                      }
-                    </div>
-                    <div className="flex justify-start md:justify-end">
-                      {!hasParent && (
-                        <button
-                          onClick={() => { setShowAddModal(true); setFormError(''); setSelectedStudentId(p.id.replace('no-parent-', '')); }}
-                          className="text-xs font-semibold px-3 py-1.5 rounded-lg w-fit"
-                          style={{ background: '#F0FDF4', color: '#16A34A', border: '1px solid #DCFCE7' }}>
-                          + Add Parent
-                        </button>
-                      )}
-                    </div>
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
+        <div style={{ background: 'white', borderRadius: 16, border: '1px solid #E2E8F0', padding: 48, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', minHeight: 300 }}>
+          <div style={{ width: 80, height: 80, background: '#F8FAFC', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16, border: '1px solid #E2E8F0', fontSize: 32 }}>👨‍👩‍👧</div>
+          <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0F172A', margin: '0 0 4px 0' }}>{search ? 'No matches found' : 'No parents yet'}</h3>
+          <p style={{ fontSize: 14, color: '#64748B', maxWidth: 320, margin: 0 }}>
+            {search ? `We couldn't find any parents matching "${search}".` : 'None of the students in your assigned sections have a parent linked yet.'}
+          </p>
+        </div>
+      ) : isMobile ? (
+        /* Mobile Card View */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {filtered.map((p, i) => {
+            const hasParent = !!p.full_name;
+            const ac = AVATAR_COLORS[i % AVATAR_COLORS.length];
+            return (
+              <div key={p.id} style={{ background: 'white', borderRadius: 16, border: '1px solid #E2E8F0', padding: 20, display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                {!hasParent && <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: 4, background: '#FBBF24' }} />}
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                  <div style={{ width: 48, height: 48, borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 800, flexShrink: 0, background: hasParent ? ac.bg : '#F8FAFC', color: hasParent ? ac.color : '#94A3B8', border: hasParent ? 'none' : '1px solid #E2E8F0' }}>
+                    {hasParent ? p.full_name.charAt(0).toUpperCase() : '?'}
                   </div>
-                );
-              })}
-            </div>
+                  <div>
+                    {hasParent ? (
+                      <>
+                        <h3 style={{ fontSize: 16, fontWeight: 800, color: '#0F172A', margin: 0 }}>{p.full_name}</h3>
+                        <p style={{ fontSize: 12, fontFamily: 'monospace', color: '#64748B', margin: '4px 0 0 0' }}>{p.phone || 'No phone'}</p>
+                      </>
+                    ) : (
+                      <h3 style={{ fontSize: 16, fontWeight: 800, color: '#94A3B8', fontStyle: 'italic', margin: 0 }}>No parent linked</h3>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ background: '#F8FAFC', borderRadius: 12, padding: 12, marginBottom: 16, border: '1px solid #F1F5F9' }}>
+                  <p style={{ fontSize: 11, fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5, margin: '0 0 4px 0' }}>Student Details</p>
+                  <p style={{ fontSize: 14, fontWeight: 700, color: '#0F172A', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {p.student_name}
+                    {p.section_name && <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 6, background: 'white', border: '1px solid #E2E8F0', color: '#475569' }}>Sec {p.section_name}</span>}
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto' }}>
+                  <div>
+                    {hasParent ? (
+                      <span style={{ fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 20, background: p.is_active ? '#F0FDF4' : '#FEF2F2', color: p.is_active ? '#16A34A' : '#DC2626', border: `1px solid ${p.is_active ? '#DCFCE7' : '#FEE2E2'}` }}>
+                        {p.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 20, background: '#FFFBEB', color: '#B45309', border: '1px solid #FEF3C7' }}>Needs Parent</span>
+                    )}
+                  </div>
+                  {!hasParent && (
+                    <button onClick={() => { setShowAddModal(true); setFormError(''); setSelectedStudentId(p.id.replace('no-parent-', '')); }}
+                      style={{ padding: '8px 16px', borderRadius: 10, background: '#F0FDF4', color: '#16A34A', border: '1px solid #DCFCE7', fontSize: 12, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                      Add Parent
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        /* Desktop Table View */
+        <div style={{ background: 'white', borderRadius: 16, border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.5fr 2fr 100px 140px', padding: '16px 24px', background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', fontSize: 12, fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            <div>Parent Details</div>
+            <div>Login Phone</div>
+            <div>Linked Student</div>
+            <div>Status</div>
+            <div style={{ textAlign: 'right' }}>Action</div>
           </div>
-        )}
-      </div>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {filtered.map((p, i) => {
+              const hasParent = !!p.full_name;
+              const ac = AVATAR_COLORS[i % AVATAR_COLORS.length];
+              return (
+                <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.5fr 2fr 100px 140px', padding: '16px 24px', alignItems: 'center', borderBottom: '1px solid #F1F5F9', transition: 'background 0.2s' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#F8FAFC'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, flexShrink: 0, background: hasParent ? ac.bg : '#F8FAFC', color: hasParent ? ac.color : '#94A3B8', border: hasParent ? 'none' : '1px solid #E2E8F0' }}>
+                      {hasParent ? p.full_name.charAt(0).toUpperCase() : '?'}
+                    </div>
+                    {hasParent ? (
+                      <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#0F172A' }}>{p.full_name}</p>
+                    ) : (
+                      <p style={{ margin: 0, fontSize: 14, fontStyle: 'italic', fontWeight: 600, color: '#94A3B8' }}>No parent linked yet</p>
+                    )}
+                  </div>
+                  <div style={{ fontFamily: 'monospace', fontSize: 14, color: '#475569' }}>{p.phone || <span style={{ color: '#CBD5E1' }}>—</span>}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#1E293B' }}>{p.student_name}</p>
+                    {p.section_name && <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 6px', borderRadius: 4, border: '1px solid #E2E8F0', background: 'white', color: '#64748B', textTransform: 'uppercase' }}>Sec {p.section_name}</span>}
+                  </div>
+                  <div>
+                    {hasParent ? (
+                      <span style={{ fontSize: 11, fontWeight: 800, padding: '4px 10px', borderRadius: 20, background: p.is_active ? '#F0FDF4' : '#FEF2F2', color: p.is_active ? '#16A34A' : '#DC2626', border: `1px solid ${p.is_active ? '#DCFCE7' : '#FEE2E2'}` }}>
+                        {p.is_active ? 'ACTIVE' : 'INACTIVE'}
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 11, fontWeight: 800, padding: '4px 10px', borderRadius: 20, background: '#FFFBEB', color: '#B45309', border: '1px solid #FEF3C7' }}>UNLINKED</span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    {!hasParent && (
+                      <button onClick={() => { setShowAddModal(true); setFormError(''); setSelectedStudentId(p.id.replace('no-parent-', '')); }}
+                        style={{ padding: '8px 12px', borderRadius: 8, background: '#F0FDF4', color: '#16A34A', border: '1px solid #DCFCE7', fontSize: 12, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.2s' }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        Add Parent
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Add Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 animate-scale-in">
-            <div className="flex items-center justify-between mb-6"><h3 className="text-xl font-bold text-gray-900">Add Parent Account</h3><button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button></div>
-            {formError && <div className="mb-4 p-3 rounded-lg text-sm" style={{ background: '#FEF2F2', color: '#DC2626' }}>{formError}</div>}
-            <div className="space-y-4">
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Select Student *</label>
-                <select value={selectedStudentId} onChange={e => setSelectedStudentId(e.target.value)} className="w-full px-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" style={{ borderColor: '#E2E8F0' }}>
-                  <option value="">Choose student...</option>
-                  {students.map(s => <option key={s.id} value={s.id}>{s.full_name} (Sec {s.section_name})</option>)}
-                </select>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: 'rgba(15, 23, 42, 0.4)', backdropFilter: 'blur(4px)' }}>
+          <div style={{ width: '100%', maxWidth: 440, background: 'white', borderRadius: 24, boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', overflow: 'hidden' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #E2E8F0', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#0F172A' }}>Add Parent Account</h3>
+                <p style={{ margin: '4px 0 0 0', fontSize: 12, color: '#64748B' }}>Create and link a new parent</p>
               </div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Parent Name *</label>
-                <input value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} className="w-full px-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" style={{ borderColor: '#E2E8F0' }} placeholder="Full name" />
-              </div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Phone Number * <span className="text-gray-400">(10 digits — used as login)</span></label>
-                <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))} maxLength={10} className="w-full px-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono" style={{ borderColor: '#E2E8F0' }} placeholder="9876543210" />
-              </div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Relationship to Child *</label>
-                <select value={form.relationship} onChange={e => setForm(f => ({ ...f, relationship: e.target.value }))} className="w-full px-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" style={{ borderColor: '#E2E8F0' }}>
-                  <option value="father">Father</option>
-                  <option value="mother">Mother</option>
-                  <option value="guardian">Guardian</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-              <div className="p-3 rounded-lg text-xs text-teal-700" style={{ background: '#F0FDF4' }}>✅ A 6-digit PIN will be auto-generated. The parent will be automatically linked to the selected student.</div>
+              <button onClick={() => setShowAddModal(false)} style={{ width: 32, height: 32, borderRadius: '50%', background: 'white', border: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', cursor: 'pointer' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
             </div>
-            <div className="flex gap-3 pt-6">
-              <button onClick={() => setShowAddModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-medium border text-gray-700 hover:bg-gray-50" style={{ borderColor: '#E2E8F0' }}>Cancel</button>
-              <button onClick={handleAddParent} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 hover:shadow-lg" style={{ background: '#0F766E' }}>{saving ? 'Creating...' : 'Create Parent'}</button>
+            
+            <div style={{ padding: 24 }}>
+              {formError && (
+                <div style={{ marginBottom: 20, padding: 14, borderRadius: 12, background: '#FEF2F2', color: '#B91C1C', border: '1px solid #FECACA', fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  <svg style={{ flexShrink: 0, marginTop: 2 }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  {formError}
+                </div>
+              )}
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Student Details *</label>
+                  <select value={selectedStudentId} onChange={e => setSelectedStudentId(e.target.value)} style={{ width: '100%', padding: '12px 16px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, fontSize: 14, fontWeight: 600, color: '#0F172A', outline: 'none' }}>
+                    <option value="">Select a student...</option>
+                    {students.map(s => <option key={s.id} value={s.id}>{s.full_name} (Sec {s.section_name})</option>)}
+                  </select>
+                </div>
+                
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Parent Full Name *</label>
+                  <input value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} placeholder="e.g. Ramesh Sharma" style={{ width: '100%', padding: '12px 16px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, fontSize: 14, fontWeight: 600, color: '#0F172A', outline: 'none' }} />
+                </div>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Mobile Number *</label>
+                    <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))} maxLength={10} placeholder="10 digits" style={{ width: '100%', padding: '12px 16px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, fontSize: 14, fontWeight: 600, color: '#0F172A', outline: 'none', fontFamily: 'monospace' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Relationship *</label>
+                    <select value={form.relationship} onChange={e => setForm(f => ({ ...f, relationship: e.target.value }))} style={{ width: '100%', padding: '12px 16px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, fontSize: 14, fontWeight: 600, color: '#0F172A', outline: 'none' }}>
+                      <option value="father">Father</option>
+                      <option value="mother">Mother</option>
+                      <option value="guardian">Guardian</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                </div>
+                
+                <div style={{ padding: 14, marginTop: 8, borderRadius: 12, border: '1px solid #CCFBF1', background: '#F0FDFA', color: '#115E59', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  <svg style={{ flexShrink: 0, marginTop: 2, color: '#0D9488' }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                  <p style={{ margin: 0, fontSize: 12, fontWeight: 600, lineHeight: 1.5 }}>A secure 6-digit PIN will be generated automatically and the parent will be linked to this student instantly.</p>
+                </div>
+              </div>
+              
+              <div style={{ display: 'flex', gap: 12, marginTop: 32 }}>
+                <button onClick={() => setShowAddModal(false)} style={{ flex: 1, padding: 14, borderRadius: 12, fontSize: 14, fontWeight: 800, border: '1px solid #E2E8F0', color: '#475569', background: 'white', cursor: 'pointer' }}>Cancel</button>
+                <button onClick={handleAddParent} disabled={saving} style={{ flex: 1, padding: 14, borderRadius: 12, fontSize: 14, fontWeight: 800, color: 'white', background: 'linear-gradient(135deg, #0F766E 0%, #0D9488 100%)', border: 'none', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: '0 4px 12px rgba(15, 118, 110, 0.2)' }}>
+                  {saving ? 'Creating...' : 'Create & Link'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -340,56 +373,39 @@ export default function TeacherParentsPage() {
 
       {/* Credentials Modal */}
       {showCreds && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
-          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-8 animate-scale-in text-center">
-            <div className="text-4xl mb-4">🎉</div>
-            <h3 className="text-xl font-bold text-gray-900 mb-1">Parent Account Created!</h3>
-            <p className="text-gray-500 text-sm mb-2">{showCreds.name} has been created and <strong>linked to the student</strong>.</p>
-            <div className="p-4 rounded-xl space-y-3 mb-4" style={{ background: '#F1F5F9' }}>
-              <div><p className="text-xs text-gray-500">Phone (Login)</p><p className="font-mono font-bold text-gray-900">{showCreds.phone}</p></div>
-              <div><p className="text-xs text-gray-500">6-digit PIN</p><p className="font-mono font-bold text-gray-900 text-xl tracking-widest">{showCreds.pin}</p></div>
-            </div>
-            <p className="text-xs text-gray-400 mb-4">Share these credentials with the parent. They will be asked to change PIN on first login.</p>
-            <button onClick={() => setShowCreds(null)} className="w-full py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: '#0F766E' }}>Done</button>
-          </div>
-        </div>
-      )}
-
-      {/* Link to Child Modal */}
-      {showLinkModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 animate-scale-in">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h3 className="text-xl font-bold text-gray-900">Link Parent to Child</h3>
-                <p className="text-sm text-gray-500 mt-1">{showLinkModal.parentName}</p>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: 'rgba(15, 23, 42, 0.4)', backdropFilter: 'blur(4px)' }}>
+          <div style={{ width: '100%', maxWidth: 380, background: 'white', borderRadius: 24, boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', overflow: 'hidden', textAlign: 'center', position: 'relative' }}>
+            <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: 6, background: 'linear-gradient(to right, #14B8A6, #10B981)' }}></div>
+            
+            <div style={{ padding: 32 }}>
+              <div style={{ width: 80, height: 80, margin: '0 auto 24px', background: '#F0FDFA', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #CCFBF1', fontSize: 36 }}>🎉</div>
+              
+              <h3 style={{ margin: '0 0 8px 0', fontSize: 20, fontWeight: 800, color: '#0F172A' }}>Success!</h3>
+              <p style={{ margin: '0 0 24px 0', fontSize: 14, color: '#475569', lineHeight: 1.5 }}>
+                <strong style={{ color: '#0F172A' }}>{showCreds.name}</strong> has been successfully created and linked.
+              </p>
+              
+              <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 16, padding: 20, textAlign: 'left', marginBottom: 24 }}>
+                <div style={{ marginBottom: 16 }}>
+                  <p style={{ margin: '0 0 6px 0', fontSize: 11, fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5 }}>Login Mobile Number</p>
+                  <div style={{ background: 'white', border: '1px solid #E2E8F0', borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <svg color="#94A3B8" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+                    <p style={{ margin: 0, fontFamily: 'monospace', fontSize: 14, fontWeight: 800, color: '#0F172A' }}>{showCreds.phone}</p>
+                  </div>
+                </div>
+                <div>
+                  <p style={{ margin: '0 0 6px 0', fontSize: 11, fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5 }}>Generated PIN</p>
+                  <div style={{ background: 'white', border: '1px solid #E2E8F0', borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <svg color="#94A3B8" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    <p style={{ margin: 0, fontFamily: 'monospace', fontSize: 20, fontWeight: 800, color: '#0F766E', letterSpacing: 6 }}>{showCreds.pin}</p>
+                  </div>
+                </div>
               </div>
-              <button onClick={() => setShowLinkModal(null)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
-            </div>
-            {linkError && <div className="mb-4 p-3 rounded-lg text-sm" style={{ background: '#FEF2F2', color: '#DC2626' }}>{linkError}</div>}
-            <div className="space-y-4">
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Select Student *</label>
-                <select value={linkStudentId} onChange={e => setLinkStudentId(e.target.value)}
-                  className="w-full px-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" style={{ borderColor: '#E2E8F0' }}>
-                  <option value="">Choose student...</option>
-                  {students.map(s => <option key={s.id} value={s.id}>{s.full_name} (Sec {s.section_name})</option>)}
-                </select>
-              </div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Relationship *</label>
-                <select value={linkRelationship} onChange={e => setLinkRelationship(e.target.value)}
-                  className="w-full px-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" style={{ borderColor: '#E2E8F0' }}>
-                  <option value="father">Father</option>
-                  <option value="mother">Mother</option>
-                  <option value="guardian">Guardian</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-            </div>
-            <div className="flex gap-3 pt-6">
-              <button onClick={() => setShowLinkModal(null)} className="flex-1 py-2.5 rounded-xl text-sm font-medium border text-gray-700 hover:bg-gray-50" style={{ borderColor: '#E2E8F0' }}>Cancel</button>
-              <button onClick={handleLinkExisting} disabled={linking}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 hover:shadow-lg" style={{ background: '#1E40AF' }}>
-                {linking ? 'Linking...' : '🔗 Link Now'}
+              
+              <p style={{ margin: '0 0 24px 0', fontSize: 12, color: '#64748B', fontWeight: 600 }}>Please share these credentials with the parent. They will be prompted to change their PIN on their first login.</p>
+              
+              <button onClick={() => setShowCreds(null)} style={{ width: '100%', padding: 14, borderRadius: 12, fontSize: 14, fontWeight: 800, color: 'white', background: 'linear-gradient(135deg, #0F766E 0%, #0D9488 100%)', border: 'none', cursor: 'pointer', boxShadow: '0 4px 12px rgba(15, 118, 110, 0.2)' }}>
+                Awesome, I'll share it!
               </button>
             </div>
           </div>
@@ -398,4 +414,3 @@ export default function TeacherParentsPage() {
     </div>
   );
 }
-

@@ -70,7 +70,10 @@ export default function ExamsPage() {
     const yid = yr?.id;
     const [{ data:c },{ data:s },{ data:sec }] = await Promise.all([
       yid ? supabase.from('classes').select('id,name').eq('academic_year_id',yid).order('numeric_order') : supabase.from('classes').select('id,name').eq('school_id',u.school_id).order('numeric_order'),
-      yid ? supabase.from('subjects').select('id,name,class_id').eq('academic_year_id',yid) : supabase.from('subjects').select('id,name,class_id').eq('school_id',u.school_id),
+      // Fetch ALL subjects for this school — do NOT filter by academic_year_id.
+      // Some subjects may have been created without an academic_year_id (or before one existed)
+      // and that filter would silently hide them, making the Subject dropdown appear empty.
+      supabase.from('subjects').select('id,name,class_id').eq('school_id',u.school_id).order('name'),
       yid ? supabase.from('sections').select('id,name,class_id').eq('academic_year_id',yid) : supabase.from('sections').select('id,name,class_id').eq('school_id',u.school_id),
     ]);
     if (c) setClasses(c);
@@ -81,7 +84,9 @@ export default function ExamsPage() {
   useEffect(() => { fetchStructure(); }, [fetchStructure]);
   useEffect(() => { fetchExams(); }, [fetchExams]);
 
-  const filtSubs = subjects.filter(s => !form.class_id || s.class_id === form.class_id);
+  // Show subjects that match the selected class OR have no class restriction (null = school-wide).
+  // Strict equality (===) was silently hiding subjects created without a class_id.
+  const filtSubs = subjects.filter(s => !form.class_id || !s.class_id || s.class_id === form.class_id);
   const filtSecs = sections.filter(s => !form.class_id || s.class_id === form.class_id);
 
   const handleCreate = async () => {
@@ -104,10 +109,11 @@ export default function ExamsPage() {
     try {
       const selectedClassName = classes.find(c => c.id === form.class_id)?.name || '';
       const examDateFmt = form.exam_date ? new Date(form.exam_date).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }) : '';
-      const { data: teacherLinks } = await supabase
-        .from('teacher_section_assignments')
-        .select('teacher_id')
-        .eq('class_id', form.class_id);
+      // Get all section_ids for this class first, then find teachers for those sections
+      const classSectionIds = sections.filter(s => s.class_id === form.class_id).map(s => s.id);
+      const { data: teacherLinks } = classSectionIds.length > 0
+        ? await supabase.from('teacher_section_assignments').select('teacher_id').in('section_id', classSectionIds)
+        : { data: null };
       if (teacherLinks && teacherLinks.length > 0) {
         const uniqueTeachers = [...new Set(teacherLinks.map((t:any) => t.teacher_id))];
         await Promise.all(uniqueTeachers.map(tid => createNotification(supabase, {
@@ -319,8 +325,8 @@ export default function ExamsPage() {
                   <div>
                     <label style={LS}>Subject *</label>
                     <select value={form.subject_id} onChange={e => setForm(f => ({ ...f, subject_id:e.target.value }))} style={IS}>
-                      <option value="">Select subject...</option>
-                      {filtSubs.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      <option value="">{!form.class_id ? 'Select a class first...' : filtSubs.length === 0 ? 'No subjects found — add them in Subjects page' : 'Select subject...'}</option>
+                      {filtSubs.map(s => <option key={s.id} value={s.id}>{s.name}{s.class_id ? '' : ' (all classes)'}</option>)}
                     </select>
                   </div>
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12 }}>
@@ -344,7 +350,7 @@ export default function ExamsPage() {
                   {multiRows.map((row,i) => (
                     <div key={i} style={{ display:'grid', gridTemplateColumns:'2fr 100px 100px 36px', gap:8, alignItems:'center' }}>
                       <select value={row.subject_id} onChange={e => updateMultiRow(i,'subject_id',e.target.value)} style={IS}>
-                        <option value="">Select subject...</option>
+                        <option value="">{filtSubs.length === 0 ? 'No subjects — select a class first' : 'Select subject...'}</option>
                         {filtSubs.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                       </select>
                       <input type="number" value={row.total_marks} onChange={e => updateMultiRow(i,'total_marks',e.target.value)} style={IS} placeholder="100"/>

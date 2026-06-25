@@ -6,6 +6,8 @@ import { createClient } from '@/lib/supabase/client';
 export default function PrincipalAttendancePage() {
   const supabase = createClient();
   const [stats, setStats] = useState<{ present: number; absent: number; late: number; total: number }>({ present: 0, absent: 0, late: 0, total: 0 });
+  const [totalSections, setTotalSections] = useState(0);
+  const [reportedSections, setReportedSections] = useState(0);
   const [loading, setLoading] = useState(true);
   const today = new Date().toISOString().split('T')[0];
 
@@ -15,13 +17,20 @@ export default function PrincipalAttendancePage() {
     if (userId) {
       const { data: u } = await supabase.from('users').select('school_id').eq('id', userId).single();
       if (u?.school_id) {
-        const { data } = await supabase.from('attendance').select('status').eq('school_id', u.school_id).eq('date', today);
-        if (data) {
-          const present = data.filter((a: { status: string }) => a.status === 'present').length;
-          const absent = data.filter((a: { status: string }) => a.status === 'absent').length;
-          const late = data.filter((a: { status: string }) => a.status === 'late').length;
-          setStats({ present, absent, late, total: data.length });
+        const [attResult, secResult] = await Promise.all([
+          supabase.from('attendance').select('status, section_id').eq('school_id', u.school_id).eq('date', today),
+          supabase.from('sections').select('id', { count: 'exact', head: true }).eq('school_id', u.school_id),
+        ]);
+
+        if (attResult.data) {
+          const present = attResult.data.filter((a: { status: string }) => a.status === 'present').length;
+          const absent = attResult.data.filter((a: { status: string }) => a.status === 'absent').length;
+          const late = attResult.data.filter((a: { status: string }) => a.status === 'late').length;
+          const uniqueSections = new Set(attResult.data.map((a: any) => a.section_id as string)).size;
+          setStats({ present, absent, late, total: attResult.data.length });
+          setReportedSections(uniqueSections);
         }
+        setTotalSections(secResult.count || 0);
       }
     }
     setLoading(false);
@@ -38,9 +47,24 @@ export default function PrincipalAttendancePage() {
         <p className="text-slate-500 text-sm mt-1">School-wide attendance for {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
       </div>
 
+      {/* Section Coverage Banner */}
+      {!loading && (
+        <div className={`rounded-2xl p-4 flex items-center gap-4 ${reportedSections === totalSections && totalSections > 0 ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-200'}`}>
+          <span className="text-2xl">{reportedSections === totalSections && totalSections > 0 ? '✅' : '⚠️'}</span>
+          <div>
+            <p className={`font-bold text-sm ${reportedSections === totalSections && totalSections > 0 ? 'text-green-800' : 'text-amber-800'}`}>
+              {reportedSections} of {totalSections} sections have reported attendance today
+            </p>
+            <p className={`text-xs mt-0.5 ${reportedSections === totalSections && totalSections > 0 ? 'text-green-600' : 'text-amber-600'}`}>
+              {totalSections - reportedSections > 0 ? `${totalSections - reportedSections} section(s) yet to mark today's attendance` : 'All sections have marked attendance for today'}
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
-          { label: 'Total Marked', value: stats.total, color: 'bg-slate-100 text-slate-700', icon: '👥' },
+          { label: 'Students Marked', value: stats.total, color: 'bg-slate-100 text-slate-700', icon: '👥' },
           { label: 'Present', value: stats.present, color: 'bg-green-100 text-green-700', icon: '✅' },
           { label: 'Absent', value: stats.absent, color: 'bg-red-100 text-red-700', icon: '❌' },
           { label: 'Late', value: stats.late, color: 'bg-amber-100 text-amber-700', icon: '🕐' },
@@ -53,7 +77,7 @@ export default function PrincipalAttendancePage() {
             <p className="text-4xl font-black">
               {loading ? <span className="inline-block w-16 h-10 bg-current opacity-10 rounded animate-pulse" /> : card.value}
             </p>
-            {!loading && stats.total > 0 && i > 0 && <p className="text-xs opacity-60 mt-1">{pct(card.value)}% of total</p>}
+            {!loading && stats.total > 0 && i > 0 && <p className="text-xs opacity-60 mt-1">{pct(card.value)}% of marked students</p>}
           </div>
         ))}
       </div>

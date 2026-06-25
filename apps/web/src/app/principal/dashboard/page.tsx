@@ -87,13 +87,37 @@ export default function PrincipalDashboard() {
   const handleBroadcast = async () => {
     if (!broadcastForm.title || !broadcastForm.content) return;
     setBroadcastSaving(true);
-    await supabase.from('announcements').insert({
+    const { data: annData } = await supabase.from('announcements').insert({
       ...broadcastForm,
       school_id:  schoolId,
       created_by: userId,
-    });
+    }).select('id').single();
     setBroadcastSaving(false);
     setBroadcastDone(true);
+
+    // Notify target users via the notifications table
+    if (schoolId && annData?.id) {
+      const { createNotification } = await import('@/components/NotificationBell');
+      let roleFilter: string[] = [];
+      if (broadcastForm.target_audience === 'all') roleFilter = ['teacher', 'parent', 'principal'];
+      else if (broadcastForm.target_audience === 'teachers') roleFilter = ['teacher'];
+      else if (broadcastForm.target_audience === 'parents') roleFilter = ['parent'];
+
+      const { data: recipients } = await supabase
+        .from('users').select('id').eq('school_id', schoolId).in('role', roleFilter).eq('is_active', true).neq('id', userId!);
+
+      if (recipients && recipients.length > 0) {
+        await Promise.all(recipients.map((r: any) => createNotification(supabase, {
+          recipient_id: r.id,
+          school_id:    schoolId,
+          type:         broadcastForm.is_urgent ? 'urgent_announcement' : 'announcement',
+          title:        broadcastForm.title,
+          body:         broadcastForm.content.slice(0, 160),
+          link:         broadcastForm.target_audience === 'parents' ? '/parent/messages' : '/teacher/dashboard',
+        })));
+      }
+    }
+
     setBroadcastForm({ title: '', content: '', target_audience: 'all', is_urgent: false });
     setTimeout(() => { setShowBroadcast(false); setBroadcastDone(false); }, 1800);
     // refresh recent announcements

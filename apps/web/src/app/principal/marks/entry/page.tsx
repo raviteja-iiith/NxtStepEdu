@@ -113,6 +113,20 @@ export default function MultiMarksEntry() {
     if (!activeGroup) return;
     setSaving(true); setError(''); setSaved(false);
     const uid = (await supabase.auth.getUser()).data.user?.id;
+
+    // Validate: no mark should exceed that exam's total_marks
+    for (const ex of activeGroup) {
+      for (const s of students) {
+        const cell = marks[s.id]?.[ex.id];
+        if (!cell || cell.absent || cell.marks === '') continue;
+        const val = parseFloat(cell.marks);
+        if (isNaN(val) || val < 0 || val > ex.total_marks) {
+          setError(`Invalid marks for "${s.full_name}" in "${ex.subject_name}": must be 0–${ex.total_marks}.`);
+          setSaving(false); return;
+        }
+      }
+    }
+
     const upserts: any[] = [];
     for (const s of students) {
       for (const ex of activeGroup) {

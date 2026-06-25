@@ -239,6 +239,7 @@ export default function StudentsPage() {
         class_id: r.class_id,
         section_id: r.section_id,
         admission_number: r.admission_number || `STU-${year}-${String(currentCount).padStart(4,'0')}`,
+        pen_number: r.pen_number || null,
         roll_number: r.roll_number ?? null,
         address: r.address ?? null,
         admission_date: r.admission_date || new Date().toISOString().split('T')[0],

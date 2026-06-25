@@ -591,7 +591,7 @@ export default function TimetablePage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {Array.from({ length: 8 }, (_, p) => p + 1).map(period => (
+                      {Array.from({ length: periods }, (_, p) => p + 1).map(period => (
                         <tr key={period} style={{ borderTop: '1px solid #F1F5F9' }}>
                           <td style={{ padding: '8px 16px', fontSize: '0.8rem', fontWeight: 700, color: '#94A3B8' }}>P{period}</td>
                           {Array.from({ length: 6 }, (_, di) => di + 1).map(day => {

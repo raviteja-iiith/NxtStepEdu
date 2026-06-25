@@ -6,11 +6,12 @@ import { createClient } from '@/lib/supabase/client';
 interface LeaveRequest {
   id: string;
   leave_type: string;
-  start_date: string;
-  end_date: string;
+  from_date: string;
+  to_date: string;
   reason: string;
   status: string;
   created_at: string;
+  requester_id?: string;
   requester?: { full_name: string; role: string };
 }
 
@@ -52,7 +53,7 @@ export default function HRPage() {
 
     // Fetch leave requests for school staff
     const { data: leaves } = await supabase.from('leave_requests')
-      .select('id, leave_type, start_date, end_date, reason, status, created_at, users!leave_requests_requester_id_fkey(full_name, role)')
+      .select('id, leave_type, from_date, to_date, reason, status, created_at, requester_id, users!leave_requests_requester_id_fkey(full_name, role)')
       .eq('school_id', u.school_id)
       .order('created_at', { ascending: false });
 
@@ -71,6 +72,19 @@ export default function HRPage() {
   const updateLeaveStatus = async (id: string, status: 'approved' | 'rejected') => {
     setUpdating(id);
     await supabase.from('leave_requests').update({ status }).eq('id', id);
+    // Notify the teacher about the decision
+    const leave = leaveRequests.find(l => l.id === id);
+    if (leave?.requester_id) {
+      const { createNotification } = await import('@/components/NotificationBell');
+      await createNotification(supabase, {
+        recipient_id: leave.requester_id,
+        school_id: schoolId,
+        type: 'leave_update',
+        title: `Leave Request ${status === 'approved' ? 'Approved ✅' : 'Rejected ❌'}`,
+        body: `Your ${leave.leave_type} leave from ${new Date(leave.from_date).toLocaleDateString('en-IN')} to ${new Date(leave.to_date).toLocaleDateString('en-IN')} has been ${status}.`,
+        link: '/teacher/leave',
+      });
+    }
     fetchData();
     setUpdating(null);
   };
@@ -179,7 +193,7 @@ export default function HRPage() {
                   </tr></thead>
                   <tbody className="divide-y" style={{ borderColor: '#F1F5F9' }}>
                     {leaveRequests.map(l => {
-                      const days = Math.ceil((new Date(l.end_date).getTime() - new Date(l.start_date).getTime()) / 86400000) + 1;
+                      const days = Math.ceil((new Date(l.to_date).getTime() - new Date(l.from_date).getTime()) / 86400000) + 1;
                       return (
                         <tr key={l.id} className="hover:bg-gray-50">
                           <td className="px-6 py-4">
@@ -188,7 +202,7 @@ export default function HRPage() {
                           </td>
                           <td className="px-6 py-4 text-sm capitalize text-gray-700">{l.leave_type?.replace(/_/g, ' ')}</td>
                           <td className="px-6 py-4 text-sm text-gray-600">
-                            <p>{new Date(l.start_date).toLocaleDateString('en-IN')}</p>
+                            <p>{new Date(l.from_date).toLocaleDateString('en-IN')}</p>
                             <p className="text-xs text-gray-400">{days} day{days !== 1 ? 's' : ''}</p>
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-600 max-w-[180px]">

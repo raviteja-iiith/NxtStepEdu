@@ -34,6 +34,8 @@ export default function LeavePage() {
 
   const handleSubmit = async () => {
     if (!form.from_date || !form.to_date || !form.reason) { setFormError('All fields are required.'); return; }
+    const today = new Date().toISOString().split('T')[0];
+    if (form.from_date < today) { setFormError('Leave cannot be applied for past dates.'); return; }
     if (form.to_date < form.from_date) { setFormError('End date cannot be before start date.'); return; }
     setSaving(true); setFormError('');
     const userId = (await supabase.auth.getUser()).data.user?.id;
@@ -128,8 +130,8 @@ export default function LeavePage() {
             <div className="space-y-4">
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Leave Type</label><select value={form.leave_type} onChange={e => setForm(f => ({ ...f, leave_type: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }}>{LEAVE_TYPES.map(t => <option key={t} value={t} className="capitalize">{t}</option>)}</select></div>
               <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">From Date *</label><input type="date" value={form.from_date} onChange={e => setForm(f => ({ ...f, from_date: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">To Date *</label><input type="date" value={form.to_date} onChange={e => setForm(f => ({ ...f, to_date: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">From Date *</label><input type="date" value={form.from_date} min={new Date().toISOString().split('T')[0]} onChange={e => setForm(f => ({ ...f, from_date: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">To Date *</label><input type="date" value={form.to_date} min={form.from_date || new Date().toISOString().split('T')[0]} onChange={e => setForm(f => ({ ...f, to_date: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
               </div>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Reason *</label><textarea value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} className={inputCls + ' resize-none'} rows={3} style={{ borderColor: '#E2E8F0' }} placeholder="Briefly explain the reason..." /></div>
               {form.from_date && form.to_date && form.to_date >= form.from_date && (

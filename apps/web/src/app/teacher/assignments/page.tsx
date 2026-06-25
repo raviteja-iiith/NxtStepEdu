@@ -154,7 +154,7 @@ export default function AssignmentsPage() {
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Section *</label><select value={form.section_id} onChange={e => setForm(f => ({ ...f, section_id: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }}><option value="">Select...</option>{sections.map(s => <option key={s.id} value={s.id}>{s.class_name} - {s.name}</option>)}</select></div>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Deadline *</label><input type="date" value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Deadline *</label><input type="date" value={form.deadline} min={new Date().toISOString().split('T')[0]} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Max Marks</label><input type="number" value={form.max_marks} onChange={e => setForm(f => ({ ...f, max_marks: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
               </div>
               <div className="flex items-center gap-2"><input type="checkbox" id="pub" checked={form.is_published} onChange={e => setForm(f => ({ ...f, is_published: e.target.checked }))} /><label htmlFor="pub" className="text-sm text-gray-700">Publish immediately</label></div>

@@ -831,6 +831,14 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
     if (!schoolId) return;
     setLoading(true);
 
+    // Auto-flip pending→overdue for all school fees where due_date has passed
+    const today = new Date().toISOString().split('T')[0];
+    await supabase.from('fees')
+      .update({ status: 'overdue' })
+      .eq('school_id', schoolId)
+      .eq('status', 'pending')
+      .lt('due_date', today);
+
     const cMap = new Map(classes.map((c: ClassItem)   => [c.id, c.name]));
     const sMap = new Map(sections.map((s: SectionItem) => [s.id, s.name]));
 

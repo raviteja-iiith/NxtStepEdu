@@ -63,15 +63,21 @@ export default function ParentDashboard() {
 
     const today = new Date().toISOString().split('T')[0];
     const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
-    const { student_id, section_id } = selectedChild;
+    const { student_id, section_id, class_id } = selectedChild;
+
+    // Build exam count query — include section-specific AND class-wide (section_id = null on exam)
+    const buildExamCountQ = () => {
+      if (!section_id) return Promise.resolve({ count: 0 });
+      let q = supabase.from('exams').select('*', { count: 'exact', head: true }).eq('is_published', true).gte('exam_date', today);
+      if (class_id) return q.or(`section_id.eq.${section_id},and(section_id.is.null,class_id.eq.${class_id})`);
+      return q.eq('section_id', section_id);
+    };
 
     const [todayAtt, monthlyAtt, fees, examsRes] = await Promise.all([
       supabase.from('attendance').select('status').eq('student_id', student_id).eq('date', today).maybeSingle(),
       supabase.from('attendance').select('status').eq('student_id', student_id).gte('date', firstOfMonth).lte('date', today),
       supabase.from('fees').select('amount, discount_amount').eq('student_id', student_id).in('status', ['pending', 'overdue']),
-      section_id
-        ? supabase.from('exams').select('*', { count: 'exact', head: true }).eq('section_id', section_id).eq('is_published', true).gte('exam_date', today)
-        : Promise.resolve({ count: 0 }),
+      buildExamCountQ(),
     ]);
 
     let monthlyAttendance = '—%';

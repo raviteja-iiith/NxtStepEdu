@@ -47,16 +47,25 @@ export default function AcademicsPage() {
     if (!selectedChild) return;
     setLoading(true);
     const today = new Date().toISOString().split('T')[0];
-    const { section_id, student_id } = selectedChild;
+    const { section_id, student_id, class_id } = selectedChild;
 
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0];
 
-    const [examRes, markRes, asgRes] = await Promise.all([
-      section_id ? supabase.from('exams')
+    // Build exam query: section-specific OR class-wide (section_id=null on exam)
+    const buildExamQ = () => {
+      let q = supabase.from('exams')
         .select('id, name, exam_type, exam_date, total_marks, is_published, subjects(name)')
-        .eq('section_id', section_id).eq('is_published', true).gte('exam_date', today).order('exam_date') : Promise.resolve({ data: null }),
+        .eq('is_published', true).gte('exam_date', today).order('exam_date');
+      if (section_id && class_id) return q.or(`section_id.eq.${section_id},and(section_id.is.null,class_id.eq.${class_id})`);
+      if (section_id) return q.eq('section_id', section_id);
+      return null;
+    };
+    const examQ = buildExamQ();
+
+    const [examRes, markRes, asgRes] = await Promise.all([
+      examQ ? examQ : Promise.resolve({ data: null }),
       supabase.from('marks')
         .select('id, marks_obtained, is_absent, remarks, exams(id,name,exam_type,exam_date,total_marks,is_published,subjects(name))')
         .eq('student_id', student_id).order('entered_at', { ascending: false }),

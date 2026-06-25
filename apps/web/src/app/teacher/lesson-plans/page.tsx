@@ -26,11 +26,24 @@ export default function LessonPlansPage() {
     const data = await getTeacherLessonPlans(supabase, userId);
     setPlans(data);
 
+    // Combine class teacher sections + subject-assigned sections for full access
+    const { data: classSecs } = await supabase
+      .from('sections')
+      .select('id, name, classes(name)')
+      .eq('class_teacher_id', userId);
+
     const assgn = await getTeacherSubjectsAndSections(supabase, userId);
-    if (assgn) {
+    if (assgn || classSecs) {
       const secMap = new Map<string, { id: string; name: string; class_name: string }>();
       const subMap = new Map<string, { id: string; name: string }>();
-      assgn.forEach((a: Record<string, unknown>) => {
+
+      // Add class teacher sections first
+      (classSecs || []).forEach((s: any) => {
+        secMap.set(s.id as string, { id: s.id as string, name: s.name as string, class_name: (s.classes as any)?.name || '' });
+      });
+
+      // Add subject-assigned sections and subjects
+      (assgn || []).forEach((a: Record<string, unknown>) => {
         const sec = a.sections as Record<string, unknown>;
         const sub = a.subjects as Record<string, string>;
         if (sec) secMap.set(sec.id as string, { id: sec.id as string, name: sec.name as string, class_name: (sec.classes as Record<string, string>)?.name || '' });

@@ -12,7 +12,9 @@ export default function ParentAttendancePage() {
   const supabase = createClient();
   const { selectedChild, loading: childLoading } = useParent();
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
-  const [selectedYear] = useState(new Date().getFullYear());
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().getMonth();
   const [attendanceMap, setAttendanceMap] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
 
@@ -27,7 +29,11 @@ export default function ParentAttendancePage() {
     const { data } = await supabase.from('attendance').select('date, status')
       .eq('student_id', studentId).gte('date', startDate).lte('date', endDate);
     const map: Record<number, string> = {};
-    (data ?? []).forEach((a: any) => { map[new Date(a.date).getDate()] = a.status; });
+    (data ?? []).forEach((a: any) => {
+      // Parse day directly from 'YYYY-MM-DD' string to avoid UTC→IST off-by-one
+      const day = parseInt(a.date.split('-')[2], 10);
+      map[day] = a.status;
+    });
     setAttendanceMap(map);
     setLoading(false);
   }, [supabase, studentId, selectedMonth, selectedYear]);
@@ -87,7 +93,10 @@ export default function ParentAttendancePage() {
       <div style={{ background: 'white', borderRadius: 20, padding: '28px 32px', boxShadow: '0 2px 12px rgba(0,0,0,0.05)', border: '1px solid #E8ECF0' }}>
         {/* Month Nav */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
-          <button onClick={() => setSelectedMonth(m => (m - 1 + 12) % 12)}
+          <button onClick={() => {
+            if (selectedMonth === 0) { setSelectedMonth(11); setSelectedYear(y => y - 1); }
+            else setSelectedMonth(m => m - 1);
+          }}
             style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #E2E8F0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: '#475569', transition: 'all 0.15s' }}>
             ‹
           </button>
@@ -95,8 +104,12 @@ export default function ParentAttendancePage() {
             <h3 style={{ fontSize: 20, fontWeight: 800, color: '#0F172A', margin: 0 }}>{MONTHS[selectedMonth]}</h3>
             <p style={{ fontSize: 13, color: '#94A3B8', fontWeight: 500, margin: '2px 0 0' }}>{selectedYear}</p>
           </div>
-          <button onClick={() => setSelectedMonth(m => (m + 1) % 12)}
-            style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #E2E8F0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: '#475569', transition: 'all 0.15s' }}>
+          <button onClick={() => {
+            if (selectedMonth === 11) { setSelectedMonth(0); setSelectedYear(y => y + 1); }
+            else setSelectedMonth(m => m + 1);
+          }}
+            disabled={selectedMonth === currentMonth && selectedYear === currentYear}
+            style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #E2E8F0', background: 'white', cursor: (selectedMonth === currentMonth && selectedYear === currentYear) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: '#475569', opacity: (selectedMonth === currentMonth && selectedYear === currentYear) ? 0.3 : 1 }}>
             ›
           </button>
         </div>

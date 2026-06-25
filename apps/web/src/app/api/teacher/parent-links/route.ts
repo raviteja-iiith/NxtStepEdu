@@ -37,11 +37,30 @@ export async function GET(request: Request) {
     }
 
     // Use admin client to bypass RLS on student_parent_links
+    // IMPORTANT: We scope by school_id to prevent cross-school data leaks.
     const admin = await createServerSupabaseAdmin();
+
+    // First, verify all requested student IDs belong to this teacher's school
+    const { data: students, error: studentsError } = await admin
+      .from('students')
+      .select('id')
+      .in('id', studentIds)
+      .eq('school_id', userRow.school_id);
+
+    if (studentsError || !students) {
+      return NextResponse.json({ links: [] });
+    }
+
+    // Only proceed with verified student IDs from this school
+    const verifiedStudentIds = students.map((s: any) => s.id as string);
+    if (verifiedStudentIds.length === 0) {
+      return NextResponse.json({ links: [] });
+    }
+
     const { data: links, error } = await admin
       .from('student_parent_links')
-      .select('parent_id, student_id, users!parent_id(id, full_name, phone, is_active)')
-      .in('student_id', studentIds);
+      .select('parent_id, student_id')
+      .in('student_id', verifiedStudentIds);
 
     if (error) {
       console.error('parent-links API error:', error);

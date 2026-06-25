@@ -49,12 +49,25 @@ export async function getSectionStudents(supabase: SupabaseClient, sectionId: st
 }
 
 export async function getTeacherDashboardStats(supabase: SupabaseClient, teacherId: string) {
-  const { count } = await supabase
+  // Count DISTINCT sections across both sources to avoid double-counting.
+  // Source 1: sections where teacher is the class teacher
+  const { data: classSecs } = await supabase
+    .from('sections')
+    .select('id')
+    .eq('class_teacher_id', teacherId);
+
+  // Source 2: subject assignments (may overlap with class teacher sections)
+  const { data: subjectAsgn } = await supabase
     .from('teacher_section_assignments')
-    .select('*', { count: 'exact', head: true })
+    .select('section_id')
     .eq('teacher_id', teacherId);
+
+  const allIds = new Set<string>([
+    ...(classSecs || []).map((s: any) => s.id as string),
+    ...(subjectAsgn || []).map((a: any) => a.section_id as string).filter(Boolean),
+  ]);
     
-  return { sectionsCount: count || 0 };
+  return { sectionsCount: allIds.size };
 }
 
 export async function getTeacherAssignments(supabase: SupabaseClient, teacherId: string) {
@@ -80,13 +93,33 @@ export async function createAssignment(supabase: SupabaseClient, payload: any) {
 }
 
 export async function getTeacherSubjectsAndSections(supabase: SupabaseClient, teacherId: string) {
-  const { data, error } = await supabase
+  // Source 1: explicit subject assignments (section + subject pair)
+  const { data: subjectData, error } = await supabase
     .from('teacher_section_assignments')
     .select('sections(id, name, classes(name)), subjects(id, name)')
     .eq('teacher_id', teacherId);
-    
   if (error) throw error;
-  return data || [];
+
+  // Source 2: class-teacher sections (for class teachers with no subject assignments)
+  // These sections need a "dummy" subject entry so the dropdown still shows them.
+  const { data: classSecs } = await supabase
+    .from('sections')
+    .select('id, name, classes(name)')
+    .eq('class_teacher_id', teacherId);
+
+  const assignedSectionIds = new Set(
+    (subjectData || []).map((a: any) => a.sections?.id).filter(Boolean)
+  );
+
+  // Add class-teacher sections that aren't already covered by subject assignments
+  const classTeacherEntries = (classSecs || [])
+    .filter((s: any) => !assignedSectionIds.has(s.id))
+    .map((s: any) => ({
+      sections: { id: s.id, name: s.name, classes: s.classes },
+      subjects: null, // class teacher — no specific subject
+    }));
+
+  return [...(subjectData || []), ...classTeacherEntries];
 }
 
 export async function getTeacherLessonPlans(supabase: SupabaseClient, teacherId: string) {

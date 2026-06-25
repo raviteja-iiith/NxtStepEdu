@@ -7,6 +7,7 @@ export interface ChildInfo {
   student_id: string;
   student_name: string;
   section_id: string;
+  class_id: string;
   class_name: string;
   section_name: string;
 }
@@ -50,7 +51,7 @@ export function ParentProvider({ children: reactChildren }: { children: ReactNod
     // Fetch ALL linked children (not limit(1))
     const { data: links } = await supabase
       .from('student_parent_links')
-      .select('student_id, students(full_name, section_id, sections(name), classes(name))')
+      .select('student_id, students(full_name, section_id, sections(id, name, classes(id, name)))')
       .eq('parent_id', user.id);
 
     if (!links || links.length === 0) { setLoading(false); return; }
@@ -59,7 +60,9 @@ export function ParentProvider({ children: reactChildren }: { children: ReactNod
       student_id: l.student_id,
       student_name: l.students?.full_name || 'Unknown',
       section_id: l.students?.section_id || '',
-      class_name: l.students?.classes?.name || '',
+      class_id: l.students?.sections?.classes?.id || '',
+      // Get class_name via sections→classes join (more reliable than students.class_id)
+      class_name: l.students?.sections?.classes?.name || '',
       section_name: l.students?.sections?.name || '',
     }));
 

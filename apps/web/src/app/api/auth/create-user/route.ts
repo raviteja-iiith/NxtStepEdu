@@ -1,8 +1,21 @@
 import { NextResponse } from 'next/server';
-import { createServerSupabaseAdmin } from '@/lib/supabase/server';
+import { createServerSupabaseAdmin, createServerSupabaseClient } from '@/lib/supabase/server';
 
 export async function POST(request: Request) {
   try {
+    // ── Security gate: only authenticated principals/teachers may call this ─
+    const callerClient = await createServerSupabaseClient();
+    const { data: { user: caller } } = await callerClient.auth.getUser();
+    if (!caller) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const { data: callerProfile } = await (await createServerSupabaseAdmin())
+      .from('users').select('role').eq('id', caller.id).single();
+    if (!callerProfile || !['principal', 'teacher'].includes(callerProfile.role)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    // ────────────────────────────────────────────────────────────────────────
+
     const body = await request.json();
     const {
       email, password, role, school_id, full_name,

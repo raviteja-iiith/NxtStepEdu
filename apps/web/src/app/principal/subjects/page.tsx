@@ -105,10 +105,16 @@ export default function PrincipalSubjectsPage() {
   const handleAssignTeacher = async (subjectId: string, classId: string|null) => {
     setSaving(true);
     await supabase.from('subjects').update({ teacher_id: selectedTeacher || null }).eq('id', subjectId);
+    // Always clear old assignments for this subject before re-creating
     await supabase.from('teacher_section_assignments').delete().eq('subject_id', subjectId);
-    if (selectedTeacher && classId) {
+    if (selectedTeacher) {
       const { data: yr } = await supabase.from('academic_years').select('id').eq('is_current',true).maybeSingle();
-      const { data: secs } = await supabase.from('sections').select('id').eq('class_id', classId);
+      // If subject has a class_id, assign to sections of that class only.
+      // If class_id is null (school-wide subject), assign to ALL school sections.
+      const secQuery = classId
+        ? supabase.from('sections').select('id').eq('class_id', classId)
+        : supabase.from('sections').select('id').eq('school_id', schoolId);
+      const { data: secs } = await secQuery;
       if (secs && secs.length > 0) {
         const assignments = secs.map((s:any) => ({ teacher_id:selectedTeacher, section_id:s.id, subject_id:subjectId, school_id:schoolId, academic_year_id:yr?.id||null }));
         await supabase.from('teacher_section_assignments').upsert(assignments, { onConflict:'teacher_id,section_id,subject_id,academic_year_id', ignoreDuplicates:true });
