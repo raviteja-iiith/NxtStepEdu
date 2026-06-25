@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     }
     const { data: callerProfile } = await (await createServerSupabaseAdmin())
       .from('users').select('role').eq('id', caller.id).single();
-    if (!callerProfile || !['principal', 'teacher'].includes(callerProfile.role)) {
+    if (!callerProfile || !['admin', 'principal', 'teacher'].includes(callerProfile.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
     // ────────────────────────────────────────────────────────────────────────
