@@ -32,13 +32,14 @@ function generateTimetable(
   subjects: Subject[],
   periodsPerDay: number,
   days: number,
-  periodsPerDayConfig: Record<string, number>,   // how many slots each subject gets on Monday
-  existingSlots: TimetableSlot[],                 // other sections' confirmed slots
+  periodsPerWeekConfig: Record<string, number>,
+  existingSlots: TimetableSlot[],
   startTime: string,
   periodDuration: number,
   breakAfterPeriod: number,
   classTeacherId?: string,
-  classTeacherSubjectId?: string
+  classTeacherSubjectId?: string,
+  specialConfig?: Record<string, { isSpecial: boolean; fixedPeriod: number }>
 ): Omit<TimetableSlot, 'id' | 'section_id' | 'is_confirmed'>[] {
   const result: Omit<TimetableSlot, 'id' | 'section_id' | 'is_confirmed'>[] = [];
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -50,76 +51,134 @@ function generateTimetable(
     return { start: `${pad(Math.floor(totalMins/60))}:${pad(totalMins%60)}`, end: `${pad(Math.floor(endMins/60))}:${pad(endMins%60)}` };
   };
 
-  // ── Teacher clash detection ─────────────────────────────────────────────
-  // Since Tue–Sat copy Monday, we only need to check Monday (day=1) clashes.
-  const busyAtPeriod = new Set<string>(); // "teacherId_period"
+  // Build cross-section teacher clash lookup keyed by "teacherId_day_period"
+  const crossBusy = new Set<string>();
   existingSlots.forEach(s => {
-    if (s.teacher_id && s.day_of_week === 1) busyAtPeriod.add(`${s.teacher_id}_${s.period_number}`);
+    if (s.teacher_id) crossBusy.add(`${s.teacher_id}_${s.day_of_week}_${s.period_number}`);
   });
 
-  // ── Step 1: Class Teacher gets Period 1 on ALL days ─────────────────────
-  if (classTeacherId && classTeacherSubjectId) {
+  const takenSlots = new Set<string>();        // "day_period"
+  const thisSecBusy = new Set<string>();       // "teacherId_day_period"
+  const specialSubjectIds = new Set<string>(); // fully-placed subjects — skip from pool
+
+  const hasCT = !!classTeacherId && !!classTeacherSubjectId;
+
+  // ── Step 0: Class Teacher → Period 1 EVERY DAY (unconditionally the first slot) ──
+  // This is absolute: period 1 is always the class teacher's subject, regardless of
+  // any starred-subject configuration. Starred subjects always come AFTER this.
+  if (hasCT && periodsPerDay >= 1) {
     const ctSubject = subjects.find(s => s.id === classTeacherSubjectId);
-    if (ctSubject && !busyAtPeriod.has(`${classTeacherId}_1`)) {
+    if (ctSubject) {
       const { start, end } = calcTime(1);
       for (let day = 1; day <= days; day++) {
-        result.push({ subject_id: ctSubject.id, teacher_id: classTeacherId, day_of_week: day, period_number: 1, start_time: start, end_time: end, room: null, subject_name: ctSubject.name, teacher_name: ctSubject.teacher_name || '' });
+        result.push({
+          subject_id: ctSubject.id, teacher_id: classTeacherId!,
+          day_of_week: day, period_number: 1,
+          start_time: start, end_time: end,
+          room: null, subject_name: ctSubject.name, teacher_name: ctSubject.teacher_name || '',
+        });
+        takenSlots.add(`${day}_1`);
+        thisSecBusy.add(`${classTeacherId}_${day}_1`);
       }
-      busyAtPeriod.add(`${classTeacherId}_1`);
+      // If CT's subject is also marked starred, flag it placed so Step 1 won't re-schedule it
+      if (specialConfig?.[classTeacherSubjectId!]?.isSpecial) {
+        specialSubjectIds.add(classTeacherSubjectId!);
+      }
     }
   }
 
-  // ── Step 2: Build pool for Monday (periods 2 → periodsPerDay) ──────────
+  // ── Step 1: Starred subjects → sequential slots immediately after the CT period ──
+  // CT occupies period 1 → starred subjects start at period 2 (when CT exists),
+  // or period 1 (when there is no class teacher, preserving original behaviour).
+  // CT's own subject is excluded if it was already placed above.
+  const starredStart = hasCT ? 2 : 1;
+  const specialSubs = subjects
+    .filter(sub => specialConfig?.[sub.id]?.isSpecial && !specialSubjectIds.has(sub.id))
+    .sort((a, b) => (specialConfig![a.id]?.fixedPeriod ?? 1) - (specialConfig![b.id]?.fixedPeriod ?? 1));
+
+  specialSubs.forEach((sub, idx) => {
+    const actualPeriod = starredStart + idx;
+    if (actualPeriod > periodsPerDay) return;
+    specialSubjectIds.add(sub.id);
+    const { start, end } = calcTime(actualPeriod);
+    for (let day = 1; day <= days; day++) {
+      result.push({
+        subject_id: sub.id, teacher_id: sub.teacher_id || '',
+        day_of_week: day, period_number: actualPeriod,
+        start_time: start, end_time: end,
+        room: null, subject_name: sub.name, teacher_name: sub.teacher_name || '',
+      });
+      takenSlots.add(`${day}_${actualPeriod}`);
+      if (sub.teacher_id) thisSecBusy.add(`${sub.teacher_id}_${day}_${actualPeriod}`);
+    }
+  });
+
+  // Total reserved periods per day: 1 (CT at P1) + number of non-CT starred subjects
+  const reservedCount = (hasCT ? 1 : 0) + specialSubs.length;
+
+  // ── Step 2: Build weekly pool ─────────────────────────────────────────────
   const pool: { subject_id: string; teacher_id: string; subject_name: string; teacher_name: string }[] = [];
-  subjects.forEach(sub => {
-    const count = periodsPerDayConfig[sub.id] ?? 1;
+  for (const sub of subjects) {
+    if (specialSubjectIds.has(sub.id)) continue; // already fully placed (starred or CT-starred)
+    // CT's subject was placed `days` times at period 1; deduct those from the pool count
+    const isCtSub = hasCT && sub.id === classTeacherSubjectId;
+    const alreadyPlaced = isCtSub ? days : 0;
+    const count = Math.max(0, (periodsPerWeekConfig[sub.id] ?? 0) - alreadyPlaced);
     for (let i = 0; i < count; i++) {
       pool.push({ subject_id: sub.id, teacher_id: sub.teacher_id || '', subject_name: sub.name, teacher_name: sub.teacher_name || '' });
     }
-  });
-
-  // Remove one copy of class teacher's subject from pool (already placed at P1)
-  if (classTeacherId && classTeacherSubjectId) {
-    const ctIdx = pool.findIndex(p => p.subject_id === classTeacherSubjectId && p.teacher_id === classTeacherId);
-    if (ctIdx !== -1) pool.splice(ctIdx, 1);
   }
-
-  // Shuffle for randomness
+  // Shuffle pool for randomness
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
 
-  // ── Step 3: Fill Monday P2–N ─────────────────────────────────────────────
-  const teacherUsedMonday = new Set<string>(); // "teacherId_period" for this section
-  if (classTeacherId) teacherUsedMonday.add(`${classTeacherId}_1`);
-
-  const mondaySlots: Array<{ subject_id: string; teacher_id: string; period_number: number; subject_name: string; teacher_name: string }> = [];
-
-  for (let period = 2; period <= periodsPerDay && pool.length > 0; period++) {
-    let foundIdx = -1;
-    for (let attempt = 0; attempt < pool.length; attempt++) {
-      const item = pool[attempt];
-      if (!item.teacher_id) { foundIdx = attempt; break; }
-      const tKey = `${item.teacher_id}_${period}`;
-      if (!busyAtPeriod.has(tKey) && !teacherUsedMonday.has(tKey)) { foundIdx = attempt; break; }
+  // ── Step 3: Collect available slots — skip reserved zone (periods 1..reservedCount) ──
+  const availableSlots: { day: number; period: number }[] = [];
+  for (let day = 1; day <= days; day++) {
+    for (let period = 1; period <= periodsPerDay; period++) {
+      if (period <= reservedCount) continue; // reserved for CT + starred subjects
+      if (!takenSlots.has(`${day}_${period}`)) {
+        availableSlots.push({ day, period });
+      }
     }
-    if (foundIdx === -1) continue;
-    const item = pool[foundIdx];
-    mondaySlots.push({ ...item, period_number: period });
-    if (item.teacher_id) {
-      teacherUsedMonday.add(`${item.teacher_id}_${period}`);
-      busyAtPeriod.add(`${item.teacher_id}_${period}`);
-    }
-    pool.splice(foundIdx, 1);
+  }
+  // Shuffle so subjects spread across days randomly
+  for (let i = availableSlots.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [availableSlots[i], availableSlots[j]] = [availableSlots[j], availableSlots[i]];
   }
 
-  // ── Step 4: Copy Monday → Tue–Sat ────────────────────────────────────────
-  for (const slot of mondaySlots) {
-    const { start, end } = calcTime(slot.period_number);
-    for (let day = 1; day <= days; day++) {
-      result.push({ subject_id: slot.subject_id, teacher_id: slot.teacher_id, day_of_week: day, period_number: slot.period_number, start_time: start, end_time: end, room: null, subject_name: slot.subject_name, teacher_name: slot.teacher_name });
+  // ── Step 4: Assign pool items to slots across the whole week ────────────────
+  const subjectDayUsed = new Map<string, Set<number>>();
+
+  const tryFind = (day: number, period: number, allowRepeat: boolean): number => {
+    for (let i = 0; i < pool.length; i++) {
+      const item = pool[i];
+      if (item.teacher_id) {
+        if (crossBusy.has(`${item.teacher_id}_${day}_${period}`)) continue;
+        if (thisSecBusy.has(`${item.teacher_id}_${day}_${period}`)) continue;
+      }
+      if (!allowRepeat && subjectDayUsed.get(item.subject_id)?.has(day)) continue;
+      return i;
     }
+    return -1;
+  };
+
+  for (const { day, period } of availableSlots) {
+    if (pool.length === 0) break;
+    let idx = tryFind(day, period, false);
+    if (idx === -1) idx = tryFind(day, period, true);
+    if (idx === -1) continue;
+
+    const item = pool[idx];
+    const { start, end } = calcTime(period);
+    result.push({ subject_id: item.subject_id, teacher_id: item.teacher_id, day_of_week: day, period_number: period, start_time: start, end_time: end, room: null, subject_name: item.subject_name, teacher_name: item.teacher_name });
+    if (item.teacher_id) thisSecBusy.add(`${item.teacher_id}_${day}_${period}`);
+    if (!subjectDayUsed.has(item.subject_id)) subjectDayUsed.set(item.subject_id, new Set());
+    subjectDayUsed.get(item.subject_id)!.add(day);
+    pool.splice(idx, 1);
   }
 
   return result;
@@ -159,6 +218,7 @@ export default function TimetablePage() {
   const [breakAfterPeriod, setBreakAfterPeriod] = useState(4);
   const [periodsPerWeek, setPeriodsPerWeek] = useState<Record<string, number>>({});
   const [subjectTeacherOverrides, setSubjectTeacherOverrides] = useState<Record<string, string>>({});
+  const [specialSubjects, setSpecialSubjects] = useState<Record<string, { isSpecial: boolean; fixedPeriod: number }>>({});
   const [preview, setPreview] = useState<Omit<TimetableSlot, 'id' | 'section_id' | 'is_confirmed'>[]>([]);
   const [generating, setGenerating] = useState(false);
   const [applyingPreview, setApplyingPreview] = useState(false);
@@ -179,7 +239,6 @@ export default function TimetablePage() {
 
     const { data: yr } = await supabase.from('academic_years').select('id').eq('is_current', true).eq('school_id', sid).maybeSingle();
 
-    // Sections — include class_teacher_id so auto-generate can place them first
     let secQ = supabase.from('sections').select('id, name, class_teacher_id, classes(name)').eq('school_id', sid);
     if (yr?.id) secQ = secQ.eq('academic_year_id', yr.id);
     const { data: secD } = await secQ;
@@ -190,7 +249,6 @@ export default function TimetablePage() {
     }
     if (secData) setSections(secData.map((s: Record<string, unknown>) => ({ id: s.id as string, name: s.name as string, class_name: (s.classes as Record<string, string>)?.name || '', class_teacher_id: s.class_teacher_id as string | undefined })));
 
-    // Subjects with teacher
     let subQ = supabase.from('subjects').select('id, name, teacher_id, users(full_name)').eq('school_id', sid);
     if (yr?.id) subQ = subQ.eq('academic_year_id', yr.id);
     const { data: subD } = await subQ;
@@ -206,7 +264,6 @@ export default function TimetablePage() {
         teacher_name: (s.users as Record<string, string>)?.full_name || '',
       }));
       setSubjects(mapped);
-      // Build color map
       const cm: Record<string, number> = {};
       mapped.forEach((s: Subject, i: number) => { cm[s.id] = i % SUBJECT_COLORS.length; });
       setSubjectColorMap(cm);
@@ -226,14 +283,11 @@ export default function TimetablePage() {
   const currentSubjects = useMemo(() => {
     return subjects.map(sub => {
       const assignment = assignments.find(a => a.subject_id === sub.id && a.section_id === selectedSection);
-      if (assignment) {
-        return { ...sub, teacher_id: assignment.teacher_id, teacher_name: assignment.teacher_name };
-      }
+      if (assignment) return { ...sub, teacher_id: assignment.teacher_id, teacher_name: assignment.teacher_name };
       return sub;
     });
   }, [subjects, assignments, selectedSection]);
 
-  // Seed teacher overrides from current subject assignments when section changes
   useEffect(() => {
     const overrides: Record<string, string> = {};
     currentSubjects.forEach(sub => { if (sub.teacher_id) overrides[sub.id] = sub.teacher_id; });
@@ -326,12 +380,9 @@ export default function TimetablePage() {
     const currentSection = sections.find(s => s.id === selectedSection);
     const classTeacherId = currentSection?.class_teacher_id;
 
-    // Apply teacher overrides — merge subject_id with chosen teacher_id and name
     const subjectsWithOverrides = currentSubjects.map(sub => {
       const tid = subjectTeacherOverrides[sub.id] || sub.teacher_id || '';
-      const tname = tid
-        ? (teachers.find(t => t.id === tid)?.full_name || sub.teacher_name || '')
-        : '';
+      const tname = tid ? (teachers.find(t => t.id === tid)?.full_name || sub.teacher_name || '') : '';
       return { ...sub, teacher_id: tid, teacher_name: tname };
     });
 
@@ -345,6 +396,7 @@ export default function TimetablePage() {
       startTime, periodDuration, breakAfterPeriod,
       classTeacherId,
       classTeacherSubject?.id,
+      specialSubjects,
     );
     setPreview(result);
     setGenerating(false);
@@ -354,9 +406,7 @@ export default function TimetablePage() {
     if (!preview.length) return;
     setApplyingPreview(true);
     const { data: yr } = await supabase.from('academic_years').select('id').eq('is_current', true).maybeSingle();
-    // Clear existing
     await supabase.from('timetable').delete().eq('section_id', selectedSection);
-    // Insert preview
     const rows = preview.map(p => ({
       school_id: schoolId, section_id: selectedSection,
       subject_id: p.subject_id, teacher_id: p.teacher_id || null,
@@ -438,7 +488,6 @@ export default function TimetablePage() {
           {/* ══ MANUAL TAB ═══════════════════════════════════════════════ */}
           {activeTab === 'manual' && (
             <div style={{ background: '#fff', borderRadius: '20px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
-              {/* Period count control */}
               <div style={{ padding: '16px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <label style={{ fontSize: '0.8rem', color: '#64748B', fontWeight: 600 }}>Periods/Day:</label>
@@ -454,7 +503,6 @@ export default function TimetablePage() {
                 </div>
                 {isConfirmed && <span style={{ fontSize: '0.8rem', color: '#22C55E', fontWeight: 600 }}>🔒 Timetable is confirmed. Reset to draft to edit.</span>}
               </div>
-              {/* Grid */}
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse' }}>
                   <thead>
@@ -472,6 +520,7 @@ export default function TimetablePage() {
                         {Array.from({ length: days }, (_, di) => di + 1).map(day => {
                           const slot = getSlot(day, period);
                           const ci = slot ? (subjectColorMap[slot.subject_id] ?? 0) : 0;
+                          const isSpecialSlot = slot ? !!specialSubjects[slot.subject_id]?.isSpecial : false;
                           return (
                             <td key={day} style={{ padding: '4px' }}>
                               {slot ? (
@@ -479,7 +528,10 @@ export default function TimetablePage() {
                                   style={{ padding: '8px 10px', borderRadius: '10px', background: SUBJECT_COLORS[ci], border: `1.5px solid ${SUBJECT_BORDER[ci]}`, minHeight: '64px', cursor: isConfirmed ? 'default' : 'pointer', position: 'relative', transition: 'box-shadow .15s' }}
                                   onMouseEnter={e => { if (!isConfirmed) (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)'; }}
                                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = 'none'; }}>
-                                  <p style={{ margin: 0, fontSize: '0.78rem', fontWeight: 700, color: '#1E293B', lineHeight: 1.3 }}>{slot.subject_name}</p>
+                                  <p style={{ margin: 0, fontSize: '0.78rem', fontWeight: 700, color: '#1E293B', lineHeight: 1.3 }}>
+                                    {isSpecialSlot && <span style={{ fontSize: '0.7rem', marginRight: 3 }}>⭐</span>}
+                                    {slot.subject_name}
+                                  </p>
                                   <p style={{ margin: '2px 0 0', fontSize: '0.68rem', color: '#475569' }}>{slot.teacher_name}</p>
                                   <p style={{ margin: '2px 0 0', fontSize: '0.65rem', color: '#94A3B8' }}>{slot.start_time}–{slot.end_time}</p>
                                   {slot.room && <p style={{ margin: '2px 0 0', fontSize: '0.65rem', color: '#94A3B8' }}>📍{slot.room}</p>}
@@ -530,58 +582,135 @@ export default function TimetablePage() {
                         style={{ width: '100%', padding: '8px 12px', borderRadius: '10px', border: '1.5px solid #E2E8F0', fontSize: '0.85rem', boxSizing: 'border-box' }} />
                     </div>
                   ))}
+
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                      <label style={{ fontSize: '0.78rem', color: '#64748B', fontWeight: 700 }}>📚 Subjects · Periods/Day · Teacher</label>
+                    {/* ── Header row with overflow badge ──────────────────── */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <label style={{ fontSize: '0.78rem', color: '#64748B', fontWeight: 700 }}>📚 Subjects · Periods/Week · Teacher</label>
                       {(() => {
-                        const total = currentSubjects.reduce((s, sub) => s + (periodsPerWeek[sub.id] ?? 1), 0);
-                        const available = periods - 1; // P1 reserved for class teacher
-                        return total > available
-                          ? <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>⚠ {total} &gt; {available} slots — overflow</span>
-                          : <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: '#F0FDF4', color: '#15803D', border: '1px solid #BBF7D0' }}>✓ {total} / {available} slots</span>;
+                        // Accurately compute available slots accounting for:
+                        // - Period 1 reserved for class teacher (every day)
+                        // - Next N periods reserved for starred subjects (non-CT)
+                        const currentSec = sections.find(s => s.id === selectedSection);
+                        const hasClassTeacher = !!currentSec?.class_teacher_id;
+                        const ctTeacherId = currentSec?.class_teacher_id;
+                        const ctSubjectId = ctTeacherId
+                          ? currentSubjects.find(s => s.teacher_id === ctTeacherId)?.id
+                          : undefined;
+                        const starredNonCT = currentSubjects.filter(
+                          s => specialSubjects[s.id]?.isSpecial && s.id !== ctSubjectId
+                        ).length;
+                        const reservedPerDay = (hasClassTeacher ? 1 : 0) + starredNonCT;
+                        const totalAvailable = days * Math.max(0, periods - reservedPerDay);
+                        // Count pool-needing periods: non-starred subjects, minus CT's pre-placed days
+                        const regularSubs = currentSubjects.filter(s => !specialSubjects[s.id]?.isSpecial);
+                        const total = regularSubs.reduce((acc, sub) => {
+                          const w = periodsPerWeek[sub.id] ?? 0;
+                          return acc + (sub.id === ctSubjectId ? Math.max(0, w - days) : w);
+                        }, 0);
+                        return total > totalAvailable
+                          ? <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>⚠ {total} &gt; {totalAvailable} slots — overflow</span>
+                          : <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: '#F0FDF4', color: '#15803D', border: '1px solid #BBF7D0' }}>✓ {total} / {totalAvailable} slots</span>;
                       })()}
                     </div>
-                    {/* 3-column header */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 48px 1fr', gap: '4px', marginBottom: '4px', padding: '0 2px' }}>
+
+                    {/* ── Placement rule hint ──────────────────────────────── */}
+                    {/* Shows: CT → P1 | ⭐ Starred → P2..Pk | Regular → rest  */}
+                    {(() => {
+                      const currentSec = sections.find(s => s.id === selectedSection);
+                      const hasCT = !!currentSec?.class_teacher_id;
+                      const ctTeacherId = currentSec?.class_teacher_id;
+                      const ctSubjectId = ctTeacherId
+                        ? currentSubjects.find(s => s.teacher_id === ctTeacherId)?.id
+                        : undefined;
+                      const starredNonCT = currentSubjects.filter(
+                        s => specialSubjects[s.id]?.isSpecial && s.id !== ctSubjectId
+                      );
+                      if (!hasCT && starredNonCT.length === 0) return null;
+                      const starredStart = hasCT ? 2 : 1;
+                      const starredEnd = starredStart + starredNonCT.length - 1;
+                      return (
+                        <p style={{ margin: '0 0 6px', fontSize: '0.67rem', color: '#92400E', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '6px', padding: '4px 8px', lineHeight: 1.5 }}>
+                          {hasCT && <span>🏫 <strong>Period 1</strong> → Class Teacher (every day)</span>}
+                          {hasCT && starredNonCT.length > 0 && <span> · </span>}
+                          {starredNonCT.length > 0 && (
+                            <span>⭐ Starred subjects fill <strong>periods {starredStart}{starredNonCT.length > 1 ? `–${starredEnd}` : ''}</strong> every day</span>
+                          )}
+                          <span> · Regular subjects fill the remaining periods</span>
+                        </p>
+                      );
+                    })()}
+
+                    {/* ── Column headers: Subject | P/W | Teacher | ⭐ | Ord ── */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 44px 1fr 28px 44px', gap: '4px', marginBottom: '4px', padding: '0 2px' }}>
                       <span style={{ fontSize: '0.68rem', color: '#94A3B8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Subject</span>
-                      <span style={{ fontSize: '0.68rem', color: '#94A3B8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>P/Day</span>
+                      <span style={{ fontSize: '0.68rem', color: '#94A3B8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>P/W</span>
                       <span style={{ fontSize: '0.68rem', color: '#94A3B8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Teacher</span>
+                      <span style={{ fontSize: '0.68rem', color: '#F59E0B', fontWeight: 700, textAlign: 'center' }} title="Mark as Starred (pinned after the class-teacher period)">⭐</span>
+                      {/* "Ord" = sort-order among starred subjects (1 = first starred period, 2 = second, …) */}
+                      <span style={{ fontSize: '0.68rem', color: '#94A3B8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}
+                        title="Order among starred subjects — lower number appears earlier in the day">Ord</span>
                     </div>
+
+                    {/* ── Per-subject rows ─────────────────────────────────── */}
                     {currentSubjects.map(sub => {
-                      const val = periodsPerWeek[sub.id] ?? 1;
-                      const isOver = val > (periods - 1);
+                      const sc = specialSubjects[sub.id];
+                      const isSpecial = sc?.isSpecial ?? false;
+                      const fixedPeriod = sc?.fixedPeriod ?? 1;
+                      const val = periodsPerWeek[sub.id] ?? 0;
+                      const maxPerWeek = days * periods;
+                      const isOver = !isSpecial && val > days * (periods - 1);
                       const selectedTid = subjectTeacherOverrides[sub.id] || '';
                       return (
-                        <div key={sub.id} style={{ display: 'grid', gridTemplateColumns: '1fr 48px 1fr', gap: '4px', marginBottom: '5px', alignItems: 'center' }}>
-                          <span style={{ fontSize: '0.75rem', color: '#334155', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div key={sub.id} style={{ display: 'grid', gridTemplateColumns: '1fr 44px 1fr 28px 44px', gap: '4px', marginBottom: '5px', alignItems: 'center', background: isSpecial ? '#FFFBEB' : 'transparent', borderRadius: isSpecial ? '8px' : 0, padding: isSpecial ? '4px 6px' : '0', border: isSpecial ? '1px solid #FDE68A' : 'none' }}>
+                          <span style={{ fontSize: '0.75rem', color: isSpecial ? '#92400E' : '#334155', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {isSpecial && <span style={{ marginRight: 3 }}>⭐</span>}
                             {sub.name}
                             {isOver && <span style={{ marginLeft: 4, fontSize: '0.6rem', color: '#D97706' }}>⚠</span>}
                           </span>
-                          <input type="number" min={0} max={periods - 1} value={val}
+                          {/* P/W input — disabled for starred subjects (they fill exactly 1 slot/day) */}
+                          <input type="number" min={0} max={maxPerWeek} value={val} disabled={isSpecial}
                             onChange={e => { const v = parseInt(e.target.value); setPeriodsPerWeek(p => ({ ...p, [sub.id]: isNaN(v) ? 0 : v })); }}
-                            style={{ padding: '4px 4px', borderRadius: '8px', border: `1px solid ${isOver ? '#FDE68A' : '#E2E8F0'}`, textAlign: 'center', fontSize: '0.78rem', background: isOver ? '#FFFBEB' : 'white', width: '100%', boxSizing: 'border-box' }} />
+                            style={{ padding: '4px 4px', borderRadius: '8px', border: `1px solid ${isOver ? '#FDE68A' : '#E2E8F0'}`, textAlign: 'center', fontSize: '0.78rem', background: isSpecial ? '#F1F5F9' : isOver ? '#FFFBEB' : 'white', width: '100%', boxSizing: 'border-box', opacity: isSpecial ? 0.4 : 1 }} />
                           <select value={selectedTid}
                             onChange={e => setSubjectTeacherOverrides(o => ({ ...o, [sub.id]: e.target.value }))}
                             style={{ padding: '4px 6px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.72rem', width: '100%', background: 'white', color: selectedTid ? '#0F172A' : '#94A3B8' }}>
                             <option value="">-- No teacher --</option>
                             {teachers.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
                           </select>
+                          {/* Starred toggle */}
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <input type="checkbox" id={`special_${sub.id}`} checked={isSpecial}
+                              onChange={e => setSpecialSubjects(prev => ({ ...prev, [sub.id]: { isSpecial: e.target.checked, fixedPeriod: prev[sub.id]?.fixedPeriod ?? 1 } }))}
+                              style={{ width: '14px', height: '14px', cursor: 'pointer', accentColor: '#F59E0B' }} />
+                          </div>
+                          {/* Ord input: sort-order among starred subjects */}
+                          <input type="number" min={1} max={periods} value={fixedPeriod} disabled={!isSpecial}
+                            onChange={e => { const v = parseInt(e.target.value); setSpecialSubjects(prev => ({ ...prev, [sub.id]: { isSpecial: true, fixedPeriod: isNaN(v) ? 1 : Math.max(v, 1) } })); }}
+                            title="Order among starred subjects — 1 means first starred period, 2 means second, etc."
+                            style={{ padding: '4px 4px', borderRadius: '8px', border: `1px solid ${isSpecial ? '#FDE68A' : '#E2E8F0'}`, textAlign: 'center', fontSize: '0.78rem', background: isSpecial ? '#FEF3C7' : '#F8FAFC', width: '100%', boxSizing: 'border-box', fontWeight: isSpecial ? 700 : 400, opacity: isSpecial ? 1 : 0.35 }} />
                         </div>
                       );
                     })}
                   </div>
+
                   <button onClick={handleAutoGenerate} disabled={generating}
                     style={{ padding: '12px', borderRadius: '12px', background: 'linear-gradient(135deg,#1E40AF,#7C3AED)', color: '#fff', border: 'none', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}>
                     {generating ? '⏳ Generating...' : '⚡ Generate Timetable'}
                   </button>
                 </div>
               </div>
+
               {/* Preview grid */}
               <div style={{ background: '#fff', borderRadius: '20px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
                 <div style={{ padding: '16px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
                   <div>
                     <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#1E293B' }}>Preview</h3>
-                    {preview.length > 0 && <p style={{ margin: '2px 0 0', fontSize: '0.72rem', color: '#64748B' }}>📋 Tue–Sat are identical to Monday (copy-Monday schedule)</p>}
+                    {preview.length > 0 && (
+                      <p style={{ margin: '2px 0 0', fontSize: '0.72rem', color: '#64748B' }}>
+                        📋 Class teacher in <strong>period 1</strong> · Starred subjects next · Regular subjects fill the rest
+                      </p>
+                    )}
                   </div>
                   {preview.length > 0 && (
                     <button onClick={handleApplyPreview} disabled={applyingPreview}
@@ -605,26 +734,46 @@ export default function TimetablePage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {Array.from({ length: periods }, (_, p) => p + 1).map(period => (
-                          <tr key={period} style={{ borderTop: '1px solid #F1F5F9' }}>
-                            <td style={{ padding: '6px 14px', fontSize: '0.78rem', fontWeight: 700, color: '#94A3B8' }}>P{period}</td>
-                            {Array.from({ length: days }, (_, di) => di + 1).map(day => {
-                              const ps = getPreviewSlot(day, period);
-                              const ci = ps ? (subjectColorMap[ps.subject_id] ?? 0) : 0;
-                              return (
-                                <td key={day} style={{ padding: '4px' }}>
-                                  {ps ? (
-                                    <div style={{ padding: '6px 8px', borderRadius: '8px', background: SUBJECT_COLORS[ci], border: `1.5px solid ${SUBJECT_BORDER[ci]}`, minHeight: '56px' }}>
-                                      <p style={{ margin: 0, fontSize: '0.75rem', fontWeight: 700, color: '#1E293B' }}>{ps.subject_name}</p>
-                                      <p style={{ margin: '2px 0 0', fontSize: '0.65rem', color: '#475569' }}>{ps.teacher_name}</p>
-                                      <p style={{ margin: '2px 0 0', fontSize: '0.62rem', color: '#94A3B8' }}>{ps.start_time}–{ps.end_time}</p>
-                                    </div>
-                                  ) : <div style={{ minHeight: '56px', borderRadius: '8px', background: '#F8FAFC' }} />}
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
+                        {Array.from({ length: periods }, (_, p) => p + 1).map(period => {
+                          // Draw a divider after the last reserved row (CT + starred)
+                          const isLastReservedRow = (() => {
+                            const currentSec = sections.find(s => s.id === selectedSection);
+                            const hasCT = !!currentSec?.class_teacher_id;
+                            const ctTeacherId = currentSec?.class_teacher_id;
+                            const ctSubjectId = ctTeacherId
+                              ? currentSubjects.find(s => s.teacher_id === ctTeacherId)?.id
+                              : undefined;
+                            const starredNonCT = currentSubjects.filter(
+                              s => specialSubjects[s.id]?.isSpecial && s.id !== ctSubjectId
+                            ).length;
+                            const totalReserved = (hasCT ? 1 : 0) + starredNonCT;
+                            return totalReserved > 0 && period === totalReserved;
+                          })();
+                          return (
+                            <tr key={period} style={{ borderTop: isLastReservedRow ? '3px solid #FDE68A' : '1px solid #F1F5F9' }}>
+                              <td style={{ padding: '6px 14px', fontSize: '0.78rem', fontWeight: 700, color: '#94A3B8' }}>P{period}</td>
+                              {Array.from({ length: days }, (_, di) => di + 1).map(day => {
+                                const ps = getPreviewSlot(day, period);
+                                const ci = ps ? (subjectColorMap[ps.subject_id] ?? 0) : 0;
+                                const isPsSpecial = ps ? !!specialSubjects[ps.subject_id]?.isSpecial : false;
+                                return (
+                                  <td key={day} style={{ padding: '4px' }}>
+                                    {ps ? (
+                                      <div style={{ padding: '6px 8px', borderRadius: '8px', background: isPsSpecial ? '#FFFBEB' : SUBJECT_COLORS[ci], border: `1.5px solid ${isPsSpecial ? '#FDE68A' : SUBJECT_BORDER[ci]}`, minHeight: '56px' }}>
+                                        <p style={{ margin: 0, fontSize: '0.75rem', fontWeight: 700, color: '#1E293B' }}>
+                                          {isPsSpecial && <span style={{ fontSize: '0.7rem', marginRight: 3 }}>⭐</span>}
+                                          {ps.subject_name}
+                                        </p>
+                                        <p style={{ margin: '2px 0 0', fontSize: '0.65rem', color: '#475569' }}>{ps.teacher_name}</p>
+                                        <p style={{ margin: '2px 0 0', fontSize: '0.62rem', color: '#94A3B8' }}>{ps.start_time}–{ps.end_time}</p>
+                                      </div>
+                                    ) : <div style={{ minHeight: '56px', borderRadius: '8px', background: '#F8FAFC' }} />}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
