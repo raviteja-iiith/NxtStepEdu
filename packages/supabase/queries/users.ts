@@ -150,18 +150,43 @@ export async function getPrincipalDashboardStats(supabase: SupabaseClient, schoo
 
   const attendanceToday = markedToday && markedToday > 0
     ? `${Math.round(((presentToday || 0) / markedToday) * 100)}%`
-    : '—';
+    : 'Not Taken';  // distinguish "no attendance recorded today" from an error
 
-  // Pending fees — use fees table (has amount, status columns; fee_payments only has amount_paid)
+  // ── Fee Deficit: actual unpaid balance (amount - payments made) ──────────
+  // Do NOT just sum fees.amount for status=pending/overdue — that ignores
+  // payments already made on partially_paid fees. Must subtract real payments.
   const { data: feeData } = await supabase
     .from('fees')
-    .select('amount, discount_amount')
+    .select('id, amount, discount_amount')
     .eq('school_id', schoolId)
-    .in('status', ['pending', 'overdue']);
+    .not('status', 'eq', 'paid')   // include pending, overdue, partially_paid, waived
+    .not('status', 'eq', 'waived');
 
-  const pendingFeesTotal = feeData
-    ? feeData.reduce((acc, f) => acc + Math.max(0, (f.amount || 0) - (f.discount_amount || 0)), 0)
-    : 0;
+  let pendingFeesTotal = 0;
+  if (feeData && feeData.length > 0) {
+    const feeIds = feeData.map((f: any) => f.id);
+    // Fetch all non-voided payments for these fees
+    const { data: payments } = await supabase
+      .from('fee_payments')
+      .select('fee_id, amount_paid, is_voided')
+      .in('fee_id', feeIds);
+
+    // Build a map of fee_id → total paid (excluding voided)
+    const paidMap = new Map<string, number>();
+    (payments ?? []).forEach((p: any) => {
+      if (!p.is_voided) {
+        paidMap.set(p.fee_id, (paidMap.get(p.fee_id) ?? 0) + (p.amount_paid ?? 0));
+      }
+    });
+
+    // Sum actual remaining balances
+    pendingFeesTotal = feeData.reduce((acc: number, f: any) => {
+      const gross = Math.max(0, (f.amount || 0) - (f.discount_amount || 0));
+      const paid  = paidMap.get(f.id) ?? 0;
+      return acc + Math.max(0, gross - paid);
+    }, 0);
+  }
+
   const pendingFees = `₹${pendingFeesTotal.toLocaleString('en-IN')}`;
     
   return {

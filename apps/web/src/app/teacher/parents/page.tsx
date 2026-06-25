@@ -39,12 +39,14 @@ export default function TeacherParentsPage() {
     const userId = (await supabase.auth.getUser()).data.user?.id;
     if (!userId) { setLoading(false); return; }
 
+    // Parents management is EXCLUSIVELY a class teacher responsibility.
+    // Only fetch sections where this teacher is the assigned class teacher.
     const { data: classSecs } = await supabase.from('sections').select('id').eq('class_teacher_id', userId);
-    const { data: subjectAsgn } = await supabase.from('teacher_section_assignments').select('section_id').eq('teacher_id', userId);
 
-    const allSectionIds = [...new Set([...(classSecs || []).map((s: any) => s.id as string), ...(subjectAsgn || []).map((a: any) => a.section_id as string)])];
+    const allSectionIds = (classSecs || []).map((s: any) => s.id as string);
 
     if (allSectionIds.length === 0) {
+      // This teacher is not a class teacher — show a clear access message
       setStudents([]); setParents([]); setLoading(false); return;
     }
 

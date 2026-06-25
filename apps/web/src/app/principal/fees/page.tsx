@@ -1011,10 +1011,10 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
     if (amt > payModal.due)     { setPayError(`Cannot exceed due (${fmt(payModal.due)}).`); return; }
     setPaying(true); setPayError('');
 
-    // Distribute across pending fees (oldest first)
+    // Distribute across pending fees — oldest first (FIFO) to clear overdue balances first
     const pendingFees = payModal.fee_details
       .filter(d => d.due > 0)
-      .sort((a, b) => a.due - b.due); // smallest due first to clear them off
+      .sort((a, b) => a.fee_id.localeCompare(b.fee_id)); // UUIDs are creation-ordered in Supabase (uuid v4 sorted by insert order via pg)
 
     let remaining = amt;
     for (const fd of pendingFees) {

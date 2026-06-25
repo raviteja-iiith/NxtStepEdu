@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
 interface Teacher { id:string; full_name:string; phone:string; email:string|null; is_active:boolean; last_login_at:string|null; username:string; profile?:{ employee_id:string|null; qualification:string|null; specialization:string|null; joining_date:string|null; }; }
-interface Section { id:string; name:string; class_name:string; }
+interface Section { id:string; name:string; class_name:string; class_teacher_id?:string|null; }
 interface Subject { id:string; name:string; class_id:string; }
 interface Assignment { id:string; teacher_id:string; section_id:string; subject_id:string; }
 
@@ -29,13 +29,39 @@ export default function TeachersPage() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [selectedSection, setSelectedSection] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('');
+  // teacher_id → section label they are class teacher of (e.g. "10 - A")
+  const [classTeacherMap, setClassTeacherMap] = useState<Record<string, string>>({});
+  // Set of teacher_ids who have at least one subject assignment
+  const [subjectTeacherSet, setSubjectTeacherSet] = useState<Set<string>>(new Set());
+  // For the Assign modal: which section is this teacher currently class teacher of
+  const [classTeacherSection, setClassTeacherSection] = useState(''); // section_id
+  const [ctSaving, setCtSaving] = useState(false);
 
   const fetchTeachers = useCallback(async () => {
     setLoading(true);
     const { data: cu } = await supabase.from('users').select('school_id').eq('id',(await supabase.auth.getUser()).data.user?.id||'').single();
     if (!cu?.school_id) { setLoading(false); return; }
-    const { data } = await supabase.from('users').select('id,full_name,phone,email,is_active,last_login_at,username,teacher_profiles(employee_id,qualification,specialization,joining_date)').eq('role','teacher').eq('school_id',cu.school_id).order('full_name');
+    const sid = cu.school_id;
+
+    const { data } = await supabase.from('users').select('id,full_name,phone,email,is_active,last_login_at,username,teacher_profiles(employee_id,qualification,specialization,joining_date)').eq('role','teacher').eq('school_id',sid).order('full_name');
     if (data) setTeachers(data.map((t:any)=>({...t,profile:Array.isArray(t.teacher_profiles)?t.teacher_profiles[0]:t.teacher_profiles})) as Teacher[]);
+
+    // Build class teacher map: teacher_id → "ClassName - SectionName"
+    const { data: secs } = await supabase.from('sections')
+      .select('id, name, class_teacher_id, classes(name)').eq('school_id', sid);
+    const ctMap: Record<string, string> = {};
+    (secs || []).forEach((s: any) => {
+      if (s.class_teacher_id) {
+        ctMap[s.class_teacher_id] = `${s.classes?.name || ''} - ${s.name}`;
+      }
+    });
+    setClassTeacherMap(ctMap);
+
+    // Build subject teacher set: teacher_ids with at least one section assignment
+    const { data: asgns } = await supabase.from('teacher_section_assignments')
+      .select('teacher_id').eq('school_id', sid);
+    setSubjectTeacherSet(new Set((asgns || []).map((a: any) => a.teacher_id as string)));
+
     setLoading(false);
   }, [supabase]);
 
@@ -67,14 +93,38 @@ export default function TeachersPage() {
 
   const openAssign = async (teacherId:string) => {
     setShowAssign(teacherId);
+    setSelectedSection(''); setSelectedSubject('');
     const { data: tu } = await supabase.from('users').select('school_id').eq('id',teacherId).single();
     const schoolId=tu?.school_id; if(!schoolId) return;
-    const { data: sec } = await supabase.from('sections').select('id,name,classes(name)').eq('school_id',schoolId);
-    if (sec) setSections(sec.map((s:any)=>({id:s.id,name:s.name,class_name:s.classes?.name||''})));
+    const { data: sec } = await supabase.from('sections').select('id,name,class_teacher_id,classes(name)').eq('school_id',schoolId);
+    if (sec) setSections(sec.map((s:any)=>({id:s.id,name:s.name,class_name:s.classes?.name||'',class_teacher_id:s.class_teacher_id})));
     const { data: sub } = await supabase.from('subjects').select('id,name,class_id').eq('school_id',schoolId);
     if (sub) setSubjects(sub as Subject[]);
     const { data: asgn } = await supabase.from('teacher_section_assignments').select('*').eq('teacher_id',teacherId);
     if (asgn) setAssignments(asgn as Assignment[]);
+    // Pre-select the section this teacher is currently class teacher of
+    const currentCtSec = (sec || []).find((s:any) => s.class_teacher_id === teacherId);
+    setClassTeacherSection(currentCtSec?.id || '');
+  };
+
+  // Set (or remove) a teacher as class teacher for a section
+  const setAsClassTeacher = async () => {
+    if (!showAssign) return;
+    setCtSaving(true);
+    // Clear this teacher from any section where they were previously class teacher
+    const prevSec = sections.find(s => (s as any).class_teacher_id === showAssign);
+    if (prevSec && prevSec.id !== classTeacherSection) {
+      await supabase.from('sections').update({ class_teacher_id: null }).eq('id', prevSec.id);
+    }
+    // Set on selected section (or clear if none selected)
+    if (classTeacherSection) {
+      await supabase.from('sections').update({ class_teacher_id: showAssign }).eq('id', classTeacherSection);
+    } else if (prevSec) {
+      // Explicit removal (already cleared above)
+    }
+    setCtSaving(false);
+    fetchTeachers(); // refresh role badges
+    openAssign(showAssign); // refresh modal data
   };
 
   const addAssignment = async () => {
@@ -101,6 +151,9 @@ export default function TeachersPage() {
   };
   const filtered = teachers.filter(t=>t.full_name.toLowerCase().includes(search.toLowerCase())||t.username?.toLowerCase().includes(search.toLowerCase()));
   const activeCount = teachers.filter(t=>t.is_active).length;
+  const classTeacherCount = teachers.filter(t => classTeacherMap[t.id]).length;
+  const subjectOnlyCount = teachers.filter(t => !classTeacherMap[t.id] && subjectTeacherSet.has(t.id)).length;
+  const unassignedCount  = teachers.filter(t => !classTeacherMap[t.id] && !subjectTeacherSet.has(t.id)).length;
 
   return (
     <div className="dashboard-container">
@@ -115,10 +168,11 @@ export default function TeachersPage() {
       </div>
 
       {/* Stats */}
-      <div className="three-col-stats">
-        {[{ label:'Total Teachers', value:teachers.length, color:'#1D4ED8', bg:'#EFF6FF', border:'#DBEAFE' },
-          { label:'Active', value:activeCount, color:'#16A34A', bg:'#F0FDF4', border:'#DCFCE7' },
-          { label:'Inactive', value:teachers.length-activeCount, color:'#DC2626', bg:'#FEF2F2', border:'#FEE2E2' }
+      <div className="three-col-stats" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+        {[
+          { label:'Total Teachers',   value:teachers.length,    color:'#1D4ED8', bg:'#EFF6FF', border:'#DBEAFE' },
+          { label:'Active',           value:activeCount,         color:'#16A34A', bg:'#F0FDF4', border:'#DCFCE7' },
+          { label:'Inactive',         value:teachers.length-activeCount, color:'#DC2626', bg:'#FEF2F2', border:'#FEE2E2' },
         ].map((s,i)=>(
           <div key={i} style={{ background:s.bg, border:`1px solid ${s.border}`, borderRadius:12, padding:'16px 20px' }}>
             <p style={{ fontSize:11, fontWeight:700, color:s.color, textTransform:'uppercase', letterSpacing:'0.06em', margin:0 }}>{s.label}</p>
@@ -127,6 +181,31 @@ export default function TeachersPage() {
             </p>
           </div>
         ))}
+      </div>
+
+      {/* Role breakdown row */}
+      <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 14px', background:'#F0FDF4', border:'1px solid #BBF7D0', borderRadius:10 }}>
+          <span style={{ fontSize:14 }}>🏫</span>
+          <div>
+            <p style={{ fontSize:10, fontWeight:700, color:'#15803D', margin:0, textTransform:'uppercase', letterSpacing:'0.05em' }}>Class Teachers</p>
+            <p style={{ fontSize:20, fontWeight:800, color:'#14532D', margin:0 }}>{loading ? '—' : classTeacherCount}</p>
+          </div>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 14px', background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:10 }}>
+          <span style={{ fontSize:14 }}>📚</span>
+          <div>
+            <p style={{ fontSize:10, fontWeight:700, color:'#1D4ED8', margin:0, textTransform:'uppercase', letterSpacing:'0.05em' }}>Subject Teachers</p>
+            <p style={{ fontSize:20, fontWeight:800, color:'#1E3A8A', margin:0 }}>{loading ? '—' : subjectOnlyCount}</p>
+          </div>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 14px', background:'#F8FAFC', border:'1px solid #E2E8F0', borderRadius:10 }}>
+          <span style={{ fontSize:14 }}>⚪</span>
+          <div>
+            <p style={{ fontSize:10, fontWeight:700, color:'#64748B', margin:0, textTransform:'uppercase', letterSpacing:'0.05em' }}>Unassigned</p>
+            <p style={{ fontSize:20, fontWeight:800, color:'#334155', margin:0 }}>{loading ? '—' : unassignedCount}</p>
+          </div>
+        </div>
       </div>
 
       {/* Search */}
@@ -155,12 +234,28 @@ export default function TeachersPage() {
         ) : filtered.map((t,idx)=>(
           <div key={t.id} className="teacher-list-grid" style={{ padding:'14px 20px', borderBottom:idx<filtered.length-1?'1px solid #F8FAFC':'none', alignItems:'center' }}>
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-              <div style={{ width:36, height:36, borderRadius:'50%', background:'linear-gradient(135deg, #1E3A8A, #3B82F6)', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:800, flexShrink:0 }}>
+              <div style={{ width:36, height:36, borderRadius:'50%', background: classTeacherMap[t.id] ? 'linear-gradient(135deg, #065F46, #059669)' : subjectTeacherSet.has(t.id) ? 'linear-gradient(135deg, #1E3A8A, #3B82F6)' : 'linear-gradient(135deg, #475569, #94A3B8)', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:800, flexShrink:0 }}>
                 {t.full_name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase()}
               </div>
               <div>
                 <p style={{ fontWeight:700, fontSize:13, color:'#0F172A', margin:0 }}>{t.full_name}</p>
-                <code style={{ fontSize:10, color:'#94A3B8', background:'#F1F5F9', padding:'1px 5px', borderRadius:4 }}>{t.username}</code>
+                <div style={{ display:'flex', alignItems:'center', gap:5, marginTop:2, flexWrap:'wrap' }}>
+                  <code style={{ fontSize:10, color:'#94A3B8', background:'#F1F5F9', padding:'1px 5px', borderRadius:4 }}>{t.username}</code>
+                  {/* Role badge */}
+                  {classTeacherMap[t.id] ? (
+                    <span style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:99, background:'#DCFCE7', color:'#15803D', letterSpacing:'0.03em' }}>
+                      🏫 Class Teacher · {classTeacherMap[t.id]}
+                    </span>
+                  ) : subjectTeacherSet.has(t.id) ? (
+                    <span style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:99, background:'#DBEAFE', color:'#1D4ED8', letterSpacing:'0.03em' }}>
+                      📚 Subject Teacher
+                    </span>
+                  ) : (
+                    <span style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:99, background:'#F1F5F9', color:'#64748B', letterSpacing:'0.03em' }}>
+                      ⚪ Unassigned
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
             <code style={{ fontSize:11, padding:'3px 8px', background:'#F1F5F9', color:'#475569', borderRadius:6 }}>{t.profile?.employee_id||'—'}</code>
@@ -246,44 +341,94 @@ export default function TeachersPage() {
       {/* Assign Modal */}
       {showAssign && (
         <div style={overlay}>
-          <div style={{ width:'100%', maxWidth:500, background:'white', borderRadius:18, boxShadow:'0 24px 64px rgba(0,0,0,0.2)', overflow:'hidden' }}>
-            <div style={{ padding:'24px 28px 18px', borderBottom:'1px solid #F1F5F9', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-              <div><h3 style={{ fontSize:17, fontWeight:800, color:'#0F172A', margin:0 }}>Assignments</h3><p style={{ fontSize:12, color:'#94A3B8', marginTop:3 }}>Section & subject assignments</p></div>
-              <button onClick={()=>setShowAssign(null)} style={{ width:32, height:32, borderRadius:'50%', border:'1px solid #E2E8F0', background:'white', cursor:'pointer', color:'#64748B', fontSize:16, display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
-            </div>
-            <div style={{ padding:'16px 28px', maxHeight:300, overflowY:'auto' }}>
-              {assignments.length===0 ? (
-                <p style={{ textAlign:'center', fontSize:13, color:'#94A3B8', padding:'20px 0', fontStyle:'italic' }}>No assignments yet</p>
-              ) : assignments.map(a=>{
-                const sec=sections.find(s=>s.id===a.section_id);
-                const sub=subjects.find(s=>s.id===a.subject_id);
-                return (
-                  <div key={a.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 14px', borderRadius:9, background:'#F8FAFC', border:'1px solid #F1F5F9', marginBottom:6 }}>
-                    <span style={{ fontSize:13, color:'#334155' }}><strong>{sec?.class_name} – {sec?.name}</strong> → {sub?.name}</span>
-                    <button onClick={()=>removeAssignment(a.id, a.subject_id)} style={{ fontSize:12, fontWeight:600, padding:'4px 10px', borderRadius:7, border:'1px solid #FEE2E2', background:'#FEF2F2', color:'#DC2626', cursor:'pointer' }}>Remove</button>
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{ padding:'16px 28px', borderTop:'1px solid #F1F5F9' }}>
-              <p style={{ fontSize:12, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:10 }}>Add New Assignment</p>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
-                <select value={selectedSection} onChange={e=>setSelectedSection(e.target.value)} style={IS}>
-                  <option value="">Select section...</option>
-                  {sections.map(s=><option key={s.id} value={s.id}>{s.class_name} – {s.name}</option>)}
-                </select>
-                <select value={selectedSubject} onChange={e=>setSelectedSubject(e.target.value)} style={IS}>
-                  <option value="">Select subject...</option>
-                  {subjects.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
+          <div style={{ width:'100%', maxWidth:520, background:'white', borderRadius:18, boxShadow:'0 24px 64px rgba(0,0,0,0.2)', overflow:'hidden', display:'flex', flexDirection:'column', maxHeight:'90vh' }}>
+            <div style={{ padding:'24px 28px 18px', borderBottom:'1px solid #F1F5F9', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
+              <div>
+                <h3 style={{ fontSize:17, fontWeight:800, color:'#0F172A', margin:0 }}>Assignments</h3>
+                <p style={{ fontSize:12, color:'#94A3B8', marginTop:3 }}>
+                  {teachers.find(t=>t.id===showAssign)?.full_name}
+                </p>
               </div>
-              <button onClick={addAssignment} disabled={!selectedSection||!selectedSubject} style={{ width:'100%', padding:11, borderRadius:10, border:'none', background:(!selectedSection||!selectedSubject)?'#93C5FD':'linear-gradient(135deg,#1E3A8A,#3B82F6)', color:'white', fontSize:13, fontWeight:700, cursor:(!selectedSection||!selectedSubject)?'not-allowed':'pointer' }}>
-                Add Assignment
-              </button>
+              <button onClick={()=>{setShowAssign(null);}} style={{ width:32, height:32, borderRadius:'50%', border:'1px solid #E2E8F0', background:'white', cursor:'pointer', color:'#64748B', fontSize:16, display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
+            </div>
+
+            <div style={{ overflowY:'auto', flex:1 }}>
+              {/* ── Section 1: Class Teacher Role ────────────────────────── */}
+              <div style={{ padding:'20px 28px', borderBottom:'1px solid #F1F5F9' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
+                  <span style={{ fontSize:16 }}>🏫</span>
+                  <p style={{ fontSize:13, fontWeight:700, color:'#0F172A', margin:0 }}>Class Teacher Assignment</p>
+                  <span style={{ fontSize:11, padding:'2px 8px', borderRadius:99, background:'#F0FDF4', color:'#15803D', fontWeight:600 }}>Exclusive per section</span>
+                </div>
+                <p style={{ fontSize:12, color:'#64748B', margin:'0 0 12px' }}>
+                  Class teachers take Period 1 attendance and manage their section. Only one teacher can be class teacher per section.
+                </p>
+                <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+                  <select value={classTeacherSection} onChange={e=>setClassTeacherSection(e.target.value)}
+                    style={{ ...IS, flex:1, fontSize:12 }}>
+                    <option value="">— Not a class teacher —</option>
+                    {sections.map(s=>(
+                      <option key={s.id} value={s.id}>
+                        {s.class_name} – {s.name}
+                        {(s as any).class_teacher_id && (s as any).class_teacher_id !== showAssign ? ' ⚠ Has teacher' : ''}
+                        {(s as any).class_teacher_id === showAssign ? ' ✓ Current' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <button onClick={setAsClassTeacher} disabled={ctSaving}
+                    style={{ padding:'10px 18px', borderRadius:10, border:'none', background:ctSaving?'#A7F3D0':'linear-gradient(135deg,#065F46,#059669)', color:'white', fontSize:13, fontWeight:700, cursor:ctSaving?'not-allowed':'pointer', flexShrink:0, whiteSpace:'nowrap' }}>
+                    {ctSaving ? '...' : 'Save'}
+                  </button>
+                </div>
+                {/* Warning if the chosen section already has a different class teacher */}
+                {classTeacherSection && sections.find(s=>s.id===classTeacherSection) && (sections.find(s=>s.id===classTeacherSection) as any)?.class_teacher_id && (sections.find(s=>s.id===classTeacherSection) as any)?.class_teacher_id !== showAssign && (
+                  <p style={{ fontSize:12, color:'#D97706', marginTop:8, display:'flex', gap:5, alignItems:'center' }}>
+                    <span>⚠</span> This section already has a class teacher — saving will replace them.
+                  </p>
+                )}
+              </div>
+
+              {/* ── Section 2: Subject Assignments ──────────────────────── */}
+              <div style={{ padding:'20px 28px 0' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
+                  <span style={{ fontSize:16 }}>📚</span>
+                  <p style={{ fontSize:13, fontWeight:700, color:'#0F172A', margin:0 }}>Subject Assignments</p>
+                </div>
+                {assignments.length===0 ? (
+                  <p style={{ textAlign:'center', fontSize:13, color:'#94A3B8', padding:'16px 0', fontStyle:'italic' }}>No subject assignments yet</p>
+                ) : assignments.map(a=>{
+                  const sec=sections.find(s=>s.id===a.section_id);
+                  const sub=subjects.find(s=>s.id===a.subject_id);
+                  return (
+                    <div key={a.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 14px', borderRadius:9, background:'#F8FAFC', border:'1px solid #F1F5F9', marginBottom:6 }}>
+                      <span style={{ fontSize:13, color:'#334155' }}><strong>{sec?.class_name} – {sec?.name}</strong> → {sub?.name}</span>
+                      <button onClick={()=>removeAssignment(a.id, a.subject_id)} style={{ fontSize:12, fontWeight:600, padding:'4px 10px', borderRadius:7, border:'1px solid #FEE2E2', background:'#FEF2F2', color:'#DC2626', cursor:'pointer' }}>Remove</button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{ padding:'16px 28px', borderTop:'1px solid #F1F5F9', marginTop:12 }}>
+                <p style={{ fontSize:12, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:10 }}>Add Subject Assignment</p>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
+                  <select value={selectedSection} onChange={e=>setSelectedSection(e.target.value)} style={IS}>
+                    <option value="">Select section...</option>
+                    {sections.map(s=><option key={s.id} value={s.id}>{s.class_name} – {s.name}</option>)}
+                  </select>
+                  <select value={selectedSubject} onChange={e=>setSelectedSubject(e.target.value)} style={IS}>
+                    <option value="">Select subject...</option>
+                    {subjects.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+                <button onClick={addAssignment} disabled={!selectedSection||!selectedSubject} style={{ width:'100%', padding:11, borderRadius:10, border:'none', background:(!selectedSection||!selectedSubject)?'#93C5FD':'linear-gradient(135deg,#1E3A8A,#3B82F6)', color:'white', fontSize:13, fontWeight:700, cursor:(!selectedSection||!selectedSubject)?'not-allowed':'pointer' }}>
+                  Add Assignment
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
+
     </div>
   );
 }

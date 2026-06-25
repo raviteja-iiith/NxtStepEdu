@@ -15,11 +15,28 @@ export default function ApprovalsPage() {
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const { data: lr } = await supabase.from('leave_requests').select('*, users!leave_requests_requester_id_fkey(full_name)').order('created_at', { ascending: false });
+    const userId = (await supabase.auth.getUser()).data.user?.id;
+    if (!userId) { setLoading(false); return; }
+    const { data: u } = await supabase.from('users').select('school_id').eq('id', userId).single();
+    const schoolId = u?.school_id;
+    if (!schoolId) { setLoading(false); return; }
+
+    const { data: lr } = await supabase.from('leave_requests')
+      .select('*, users!leave_requests_requester_id_fkey(full_name)')
+      .eq('school_id', schoolId)
+      .order('created_at', { ascending: false });
     if (lr) setLeaveRequests(lr);
-    const { data: dr } = await supabase.from('document_requests').select('*, students(full_name), users!document_requests_requested_by_fkey(full_name)').order('created_at', { ascending: false });
+
+    const { data: dr } = await supabase.from('document_requests')
+      .select('*, students(full_name), users!document_requests_requested_by_fkey(full_name)')
+      .eq('school_id', schoolId)
+      .order('created_at', { ascending: false });
     if (dr) setDocRequests(dr);
-    const { data: mr } = await supabase.from('meeting_requests').select('*, users!meeting_requests_parent_id_fkey(full_name)').order('created_at', { ascending: false });
+
+    const { data: mr } = await supabase.from('meeting_requests')
+      .select('*, users!meeting_requests_parent_id_fkey(full_name)')
+      .eq('school_id', schoolId)
+      .order('created_at', { ascending: false });
     if (mr) setMeetingRequests(mr);
     setLoading(false);
   }, [supabase]);

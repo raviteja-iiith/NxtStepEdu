@@ -9,7 +9,7 @@ interface TimetableSlot {
   day_of_week: number; period_number: number; start_time: string; end_time: string;
   room: string | null; subject_name?: string; teacher_name?: string; is_confirmed?: boolean;
 }
-interface Section { id: string; name: string; class_name: string; }
+interface Section { id: string; name: string; class_name: string; class_teacher_id?: string; }
 interface Subject { id: string; name: string; teacher_id?: string; teacher_name?: string; }
 interface Teacher { id: string; full_name: string; }
 
@@ -36,7 +36,9 @@ function generateTimetable(
   existingSlots: TimetableSlot[], // other sections' confirmed slots
   startTime: string,
   periodDuration: number,
-  breakAfterPeriod: number
+  breakAfterPeriod: number,
+  classTeacherId?: string,       // the class teacher of this section
+  classTeacherSubjectId?: string // a subject taught by the class teacher in this section
 ): Omit<TimetableSlot, 'id' | 'section_id' | 'is_confirmed'>[] {
   const result: Omit<TimetableSlot, 'id' | 'section_id' | 'is_confirmed'>[] = [];
   // Build a teacher → busy set from existing slots
@@ -52,13 +54,12 @@ function generateTimetable(
     }
   });
 
-  // Shuffle pool for variety
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
-  }
-
-  // Track occupancy
+  // ── CLASS TEACHER GETS PERIOD 1 EVERY DAY ───────────────────────────────
+  // In Indian schools the class teacher takes the first period to mark
+  // attendance, make announcements, and settle the class before subject
+  // teachers arrive. We pre-fill Period 1 on every active day with the
+  // class teacher's subject and remove those pool entries so they are
+  // not double-scheduled.
   const placed = new Set<string>();        // "day_period"
   const teacherUsed = new Set<string>();   // "teacherId_day_period" for this section
   const subjectDay = new Map<string, Set<number>>(); // subjectId → days already used
@@ -72,51 +73,144 @@ function generateTimetable(
     return { start: `${pad(Math.floor(totalMins/60))}:${pad(totalMins%60)}`, end: `${pad(Math.floor(endMins/60))}:${pad(endMins%60)}` };
   };
 
-  // PERIOD-FIRST traversal: visit (P1,Mon),(P1,Tue)…(P1,Sat),(P2,Mon)…
-  // This distributes subjects evenly across all days rather than piling on Monday.
+  if (classTeacherId && classTeacherSubjectId) {
+    const ctSubject = subjects.find(s => s.id === classTeacherSubjectId);
+    if (ctSubject) {
+      for (let day = 1; day <= days; day++) {
+        const cellKey = `1_${day}`; // period 1, each day (stored as day_period)
+        const tKey = `${classTeacherId}_${day}_1`;
+        // Only pre-place if teacher is free from other sections on this slot
+        if (!teacherBusy.has(tKey)) {
+          const { start, end } = calcTime(1);
+          result.push({
+            subject_id: ctSubject.id,
+            teacher_id: classTeacherId,
+            day_of_week: day,
+            period_number: 1,
+            start_time: start,
+            end_time: end,
+            room: null,
+            subject_name: ctSubject.name,
+            teacher_name: ctSubject.teacher_name || '',
+          });
+          placed.add(`${day}_1`);
+          teacherUsed.add(tKey);
+          teacherBusy.add(tKey);
+          const du = subjectDay.get(ctSubject.id) || new Set<number>();
+          du.add(day); subjectDay.set(ctSubject.id, du);
+        }
+      }
+      // Remove pre-placed class teacher entries from pool so they're not double-booked.
+      // The class teacher teaches period 1 on every day — remove that many copies.
+      let removed = 0;
+      const ctPoolCount = pool.filter(p => p.subject_id === classTeacherSubjectId && p.teacher_id === classTeacherId).length;
+      // Remove up to `days` copies (one per day we pre-placed) but at most all copies
+      const toRemove = Math.min(days, ctPoolCount);
+      for (let i = pool.length - 1; i >= 0 && removed < toRemove; i--) {
+        if (pool[i].subject_id === classTeacherSubjectId && pool[i].teacher_id === classTeacherId) {
+          pool.splice(i, 1);
+          removed++;
+        }
+      }
+    }
+  }
+
+  // Shuffle remaining pool for variety
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+
+  // ── 2-PASS PLACEMENT ─────────────────────────────────────────────────────
+  // Pass 1 (STRICT): place subjects only when teacher is free AND subject not
+  //         used on this day. Slots that can't be filled cleanly are skipped.
+  // Pass 2 (FILL): go back and fill remaining empty slots, picking the
+  //         subject with the minimum same-day count (least repeat).
+  //
+  // This guarantees: if a no-duplicate solution exists it will be found.
+  // Duplicates only appear when total configured periods > available slots.
+
+  const subjectDayCount = new Map<string, number>();
+  result.forEach(r => {
+    const k = `${r.subject_id}_${r.day_of_week}`;
+    subjectDayCount.set(k, (subjectDayCount.get(k) || 0) + 1);
+  });
+
+  // ── Pass 1: strict, no same-subject-same-day ────────────────────────────
   for (let period = 1; period <= periodsPerDay && pool.length > 0; period++) {
     for (let day = 1; day <= days && pool.length > 0; day++) {
       const cellKey = `${day}_${period}`;
       if (placed.has(cellKey)) continue;
 
-      // Find best-fit item: teacher free + subject not already on this day
       let foundIdx = -1;
       for (let attempt = 0; attempt < pool.length; attempt++) {
         const item = pool[attempt];
         const tKey = `${item.teacher_id}_${day}_${period}`;
-        const daysUsed = subjectDay.get(item.subject_id) || new Set<number>();
-        const isTeacherFree = item.teacher_id ? (!teacherBusy.has(tKey) && !teacherUsed.has(tKey)) : true;
-        if (isTeacherFree && !daysUsed.has(day)) {
-          foundIdx = attempt; break;
-        }
+        const isTeacherFree = item.teacher_id
+          ? (!teacherBusy.has(tKey) && !teacherUsed.has(tKey))
+          : true;
+        const usedToday = (subjectDayCount.get(`${item.subject_id}_${day}`) || 0) > 0;
+        if (isTeacherFree && !usedToday) { foundIdx = attempt; break; }
       }
-      // Fallback: ignore same-day constraint
-      if (foundIdx === -1) {
-        for (let attempt = 0; attempt < pool.length; attempt++) {
-          const item = pool[attempt];
-          const tKey = `${item.teacher_id}_${day}_${period}`;
-          const isTeacherFree = item.teacher_id ? (!teacherBusy.has(tKey) && !teacherUsed.has(tKey)) : true;
-          if (isTeacherFree) { foundIdx = attempt; break; }
-        }
-      }
-      if (foundIdx === -1) continue;
+      if (foundIdx === -1) continue; // skip — will be filled in Pass 2
 
       const item = pool[foundIdx];
       const tKey = `${item.teacher_id}_${day}_${period}`;
       const { start, end } = calcTime(period);
       result.push({ subject_id: item.subject_id, teacher_id: item.teacher_id, day_of_week: day, period_number: period, start_time: start, end_time: end, room: null, subject_name: item.subject_name, teacher_name: item.teacher_name });
       placed.add(cellKey);
-      if (item.teacher_id) {
-        teacherUsed.add(tKey);
-        teacherBusy.add(tKey);
-      }
+      if (item.teacher_id) { teacherUsed.add(tKey); teacherBusy.add(tKey); }
+      const sdKey = `${item.subject_id}_${day}`;
+      subjectDayCount.set(sdKey, (subjectDayCount.get(sdKey) || 0) + 1);
       const du = subjectDay.get(item.subject_id) || new Set<number>();
       du.add(day); subjectDay.set(item.subject_id, du);
       pool.splice(foundIdx, 1);
     }
   }
+
+  // ── Pass 2: fill remaining slots, prefer least-repeated subject today ────
+  // At this point, pool items that survive are ones that couldn't be placed
+  // without a same-day duplicate.  We now place them as evenly as possible.
+  if (pool.length > 0) {
+    for (let period = 1; period <= periodsPerDay; period++) {
+      for (let day = 1; day <= days; day++) {
+        if (pool.length === 0) break;
+        const cellKey = `${day}_${period}`;
+        if (placed.has(cellKey)) continue; // already filled in Pass 1
+
+        // Pick the teacher-free subject with the fewest uses today
+        let foundIdx = -1;
+        let minCount = Infinity;
+        for (let attempt = 0; attempt < pool.length; attempt++) {
+          const item = pool[attempt];
+          const tKey = `${item.teacher_id}_${day}_${period}`;
+          const isTeacherFree = item.teacher_id
+            ? (!teacherBusy.has(tKey) && !teacherUsed.has(tKey))
+            : true;
+          if (!isTeacherFree) continue;
+          const count = subjectDayCount.get(`${item.subject_id}_${day}`) || 0;
+          if (count < minCount) { minCount = count; foundIdx = attempt; if (minCount === 0) break; }
+        }
+        if (foundIdx === -1) continue;
+
+        const item = pool[foundIdx];
+        const tKey = `${item.teacher_id}_${day}_${period}`;
+        const { start, end } = calcTime(period);
+        result.push({ subject_id: item.subject_id, teacher_id: item.teacher_id, day_of_week: day, period_number: period, start_time: start, end_time: end, room: null, subject_name: item.subject_name, teacher_name: item.teacher_name });
+        placed.add(cellKey);
+        if (item.teacher_id) { teacherUsed.add(tKey); teacherBusy.add(tKey); }
+        const sdKey = `${item.subject_id}_${day}`;
+        subjectDayCount.set(sdKey, (subjectDayCount.get(sdKey) || 0) + 1);
+        const du = subjectDay.get(item.subject_id) || new Set<number>();
+        du.add(day); subjectDay.set(item.subject_id, du);
+        pool.splice(foundIdx, 1);
+      }
+    }
+  }
+
   return result;
 }
+
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 export default function TimetablePage() {
@@ -171,16 +265,16 @@ export default function TimetablePage() {
 
     const { data: yr } = await supabase.from('academic_years').select('id').eq('is_current', true).eq('school_id', sid).maybeSingle();
 
-    // Sections
-    let secQ = supabase.from('sections').select('id, name, classes(name)').eq('school_id', sid);
+    // Sections — include class_teacher_id so auto-generate can place them first
+    let secQ = supabase.from('sections').select('id, name, class_teacher_id, classes(name)').eq('school_id', sid);
     if (yr?.id) secQ = secQ.eq('academic_year_id', yr.id);
     const { data: secD } = await secQ;
     let secData = secD;
     if (!secData?.length) {
-      const { data: a } = await supabase.from('sections').select('id, name, classes(name)').eq('school_id', sid);
+      const { data: a } = await supabase.from('sections').select('id, name, class_teacher_id, classes(name)').eq('school_id', sid);
       secData = a;
     }
-    if (secData) setSections(secData.map((s: Record<string, unknown>) => ({ id: s.id as string, name: s.name as string, class_name: (s.classes as Record<string, string>)?.name || '' })));
+    if (secData) setSections(secData.map((s: Record<string, unknown>) => ({ id: s.id as string, name: s.name as string, class_name: (s.classes as Record<string, string>)?.name || '', class_teacher_id: s.class_teacher_id as string | undefined })));
 
     // Subjects with teacher
     let subQ = supabase.from('subjects').select('id, name, teacher_id, users(full_name)').eq('school_id', sid);
@@ -308,7 +402,23 @@ export default function TimetablePage() {
   const handleAutoGenerate = () => {
     setGenerating(true);
     const otherSlots = allSlots.filter(s => s.section_id !== selectedSection);
-    const result = generateTimetable(currentSubjects, periods, days, periodsPerWeek, otherSlots as TimetableSlot[], startTime, periodDuration, breakAfterPeriod);
+
+    // Identify class teacher and their subject for this section
+    const currentSection = sections.find(s => s.id === selectedSection);
+    const classTeacherId = currentSection?.class_teacher_id;
+    // Find a subject assigned to the class teacher in this section
+    // (first matching teacher_section_assignment, or fall back to subjects.teacher_id)
+    const classTeacherSubject = classTeacherId
+      ? currentSubjects.find(s => s.teacher_id === classTeacherId)
+      : undefined;
+
+    const result = generateTimetable(
+      currentSubjects, periods, days, periodsPerWeek,
+      otherSlots as TimetableSlot[],
+      startTime, periodDuration, breakAfterPeriod,
+      classTeacherId,
+      classTeacherSubject?.id,
+    );
     setPreview(result);
     setGenerating(false);
   };
@@ -494,17 +604,40 @@ export default function TimetablePage() {
                     </div>
                   ))}
                   <div>
-                    <label style={{ fontSize: '0.78rem', color: '#64748B', fontWeight: 600, display: 'block', marginBottom: '8px' }}>📚 Periods/Week per Subject</label>
-                    {currentSubjects.map(sub => (
-                      <div key={sub.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                        <span style={{ fontSize: '0.78rem', color: '#334155', flex: 1 }}>
-                          {sub.name}
-                          {!sub.teacher_id && <span style={{ marginLeft: '6px', fontSize: '0.65rem', color: '#EF4444', background: '#FEF2F2', padding: '2px 6px', borderRadius: '4px' }}>No Teacher</span>}
-                        </span>
-                        <input type="number" min={0} max={20} value={periodsPerWeek[sub.id] ?? 1} onChange={e => { const val = parseInt(e.target.value); setPeriodsPerWeek(p => ({ ...p, [sub.id]: isNaN(val) ? 0 : val })); }}
-                          style={{ width: '48px', padding: '4px 6px', borderRadius: '8px', border: '1px solid #E2E8F0', textAlign: 'center', fontSize: '0.8rem' }} />
-                      </div>
-                    ))}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <label style={{ fontSize: '0.78rem', color: '#64748B', fontWeight: 600 }}>📚 Periods/Week per Subject</label>
+                      {(() => {
+                        const totalPeriods = currentSubjects.reduce((s, sub) => s + (periodsPerWeek[sub.id] ?? 1), 0);
+                        const available = periods * days;
+                        if (totalPeriods > available) return (
+                          <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>
+                            ⚠ {totalPeriods} configured / {available} slots — duplicates will occur
+                          </span>
+                        );
+                        return (
+                          <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: '#F0FDF4', color: '#15803D', border: '1px solid #BBF7D0' }}>
+                            ✓ {totalPeriods} / {available} — no forced repeats
+                          </span>
+                        );
+                      })()}
+                    </div>
+                    {currentSubjects.map(sub => {
+                      const val = periodsPerWeek[sub.id] ?? 1;
+                      const maxSafe = days; // max 1 per day = days
+                      const isOver = val > maxSafe;
+                      return (
+                        <div key={sub.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                          <span style={{ fontSize: '0.78rem', color: '#334155', flex: 1 }}>
+                            {sub.name}
+                            {!sub.teacher_id && <span style={{ marginLeft: '6px', fontSize: '0.65rem', color: '#EF4444', background: '#FEF2F2', padding: '2px 6px', borderRadius: '4px' }}>No Teacher</span>}
+                            {isOver && <span style={{ marginLeft: '6px', fontSize: '0.65rem', color: '#D97706', background: '#FFFBEB', padding: '2px 6px', borderRadius: '4px' }}>⚠ &gt;{maxSafe}/wk → same-day repeat</span>}
+                          </span>
+                          <input type="number" min={0} max={periods * days} value={val}
+                            onChange={e => { const v = parseInt(e.target.value); setPeriodsPerWeek(p => ({ ...p, [sub.id]: isNaN(v) ? 0 : v })); }}
+                            style={{ width: '48px', padding: '4px 6px', borderRadius: '8px', border: `1px solid ${isOver ? '#FDE68A' : '#E2E8F0'}`, textAlign: 'center', fontSize: '0.8rem', background: isOver ? '#FFFBEB' : 'white' }} />
+                        </div>
+                      );
+                    })}
                   </div>
                   <button onClick={handleAutoGenerate} disabled={generating}
                     style={{ padding: '12px', borderRadius: '12px', background: 'linear-gradient(135deg,#1E40AF,#7C3AED)', color: '#fff', border: 'none', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}>

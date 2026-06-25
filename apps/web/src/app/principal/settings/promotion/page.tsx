@@ -173,7 +173,8 @@ export default function PromotionPage() {
         if (ch.graduate) {
           return supabase.from('students').update({ is_active: false }).eq('id', ch.student_id);
         } else {
-          return supabase.from('students').update({ class_id: ch.new_class_id, section_id: ch.new_section_id }).eq('id', ch.student_id);
+          // Clear roll_number on promotion — new class teacher will assign fresh numbers
+          return supabase.from('students').update({ class_id: ch.new_class_id, section_id: ch.new_section_id, roll_number: null }).eq('id', ch.student_id);
         }
       }));
       done += batch.length;

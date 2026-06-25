@@ -57,8 +57,26 @@ export default function LessonPlansPage() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  // Helper: snap any date to its week's Monday
+  const toMonday = (dateStr: string): string => {
+    if (!dateStr) return dateStr;
+    const d = new Date(dateStr + 'T12:00:00'); // noon to avoid UTC daylight issues
+    const day = d.getDay(); // 0=Sun, 1=Mon...
+    const diff = day === 0 ? -6 : 1 - day; // if Sunday go back 6, else go to Monday
+    d.setDate(d.getDate() + diff);
+    return d.toISOString().split('T')[0];
+  };
+
   const handleCreate = async () => {
-    if (!form.subject_id || !form.section_id || !form.week_start_date || !form.topics) return;
+    if (!form.subject_id || !form.section_id || !form.week_start_date || !form.topics) {
+      alert('Subject, section, week date and topics are required.'); return;
+    }
+    // Ensure the selected date is a Monday
+    const snapped = toMonday(form.week_start_date);
+    if (snapped !== form.week_start_date) {
+      setForm(f => ({ ...f, week_start_date: snapped }));
+      alert('Week start date auto-corrected to Monday: ' + snapped); return;
+    }
     setSaving(true);
     const userId = (await supabase.auth.getUser()).data.user?.id;
     if (!userId) return;
@@ -100,7 +118,18 @@ export default function LessonPlansPage() {
               <option value="">Select Section</option>
               {sections.map(s => <option key={s.id} value={s.id}>{s.class_name} - {s.name}</option>)}
             </select>
-            <input type="date" className={inputCls} value={form.week_start_date} onChange={e => setForm({...form, week_start_date: e.target.value})} placeholder="Week Start Date" />
+            <input
+              type="date" className={inputCls} value={form.week_start_date}
+              onChange={e => {
+                // Always snap to the Monday of the selected week
+                const d = new Date(e.target.value + 'T12:00:00');
+                const day = d.getDay();
+                const diff = day === 0 ? -6 : 1 - day;
+                d.setDate(d.getDate() + diff);
+                setForm({...form, week_start_date: d.toISOString().split('T')[0]});
+              }}
+              placeholder="Week Start (Monday)" title="Select any day — auto-snaps to Monday"
+            />
             <div className="md:col-span-2">
               <input type="text" className={inputCls} value={form.topics} onChange={e => setForm({...form, topics: e.target.value})} placeholder="Topics to cover (comma separated)" />
             </div>
@@ -130,7 +159,7 @@ export default function LessonPlansPage() {
               <div className="flex justify-between items-start mb-3">
                 <div>
                   <h4 className="font-bold text-gray-900">{(p.subjects as any)?.name} - {(p.sections as any)?.name}</h4>
-                  <p className="text-xs text-gray-500 font-medium mt-0.5">Week of {new Date(p.week_start_date).toLocaleDateString()}</p>
+                  <p className="text-xs text-gray-500 font-medium mt-0.5">Week of {p.week_start_date ? p.week_start_date.split('T')[0] : '—'}</p>
                 </div>
                 <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${p.status === 'planned' ? 'bg-blue-50 text-blue-700' : p.status === 'completed' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
                   {p.status}

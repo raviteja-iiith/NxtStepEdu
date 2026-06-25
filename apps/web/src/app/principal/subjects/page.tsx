@@ -101,6 +101,10 @@ export default function PrincipalSubjectsPage() {
     setSaving(false);
   };
 
+  // When assigning teacher to a school-wide subject (class_id=null), 
+  // the principal must select which specific classes this teacher covers
+  const [selectedClasses, setSelectedClasses] = useState<string[]>([]);
+
   // Assign teacher to subject (also syncs teacher_section_assignments)
   const handleAssignTeacher = async (subjectId: string, classId: string|null) => {
     setSaving(true);
@@ -108,19 +112,34 @@ export default function PrincipalSubjectsPage() {
     // Always clear old assignments for this subject before re-creating
     await supabase.from('teacher_section_assignments').delete().eq('subject_id', subjectId);
     if (selectedTeacher) {
-      const { data: yr } = await supabase.from('academic_years').select('id').eq('is_current',true).maybeSingle();
-      // If subject has a class_id, assign to sections of that class only.
-      // If class_id is null (school-wide subject), assign to ALL school sections.
-      const secQuery = classId
-        ? supabase.from('sections').select('id').eq('class_id', classId)
-        : supabase.from('sections').select('id').eq('school_id', schoolId);
+      // Always filter by school_id when fetching current academic year
+      const { data: yr } = await supabase.from('academic_years').select('id').eq('is_current',true).eq('school_id',schoolId).maybeSingle();
+
+      let targetClassIds: string[] = [];
+      if (classId) {
+        // Subject scoped to a single class — use that class only
+        targetClassIds = [classId];
+      } else if (selectedClasses.length > 0) {
+        // Principal explicitly selected which classes this school-wide subject covers
+        targetClassIds = selectedClasses;
+      } else {
+        // No class selected for a school-wide subject — warn and abort
+        alert('Please select at least one class this teacher will cover for this subject.');
+        setSaving(false); return;
+      }
+
+      // Fetch sections for the target class(es), scoped to current academic year when available
+      let secQuery = supabase.from('sections').select('id').in('class_id', targetClassIds);
+      if (yr?.id) secQuery = secQuery.eq('academic_year_id', yr.id);
+      else secQuery = secQuery.eq('school_id', schoolId);
+
       const { data: secs } = await secQuery;
       if (secs && secs.length > 0) {
         const assignments = secs.map((s:any) => ({ teacher_id:selectedTeacher, section_id:s.id, subject_id:subjectId, school_id:schoolId, academic_year_id:yr?.id||null }));
         await supabase.from('teacher_section_assignments').upsert(assignments, { onConflict:'teacher_id,section_id,subject_id,academic_year_id', ignoreDuplicates:true });
       }
     }
-    setEditingId(null); setSelectedTeacher('');
+    setEditingId(null); setSelectedTeacher(''); setSelectedClasses([]);
     fetchAll(); setSaving(false);
   };
 
@@ -215,15 +234,33 @@ export default function PrincipalSubjectsPage() {
 
               {/* Assigned Teacher */}
               {isEditing ? (
-                <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                  <select value={selectedTeacher} onChange={e => setSelectedTeacher(e.target.value)} style={{ ...IS, padding:'6px 10px', fontSize:12 }}>
-                    <option value="">— Remove —</option>
-                    {teachers.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
-                  </select>
-                  <button onClick={() => handleAssignTeacher(sub.id, sub.class_id)} disabled={saving} style={{ padding:'6px 12px', borderRadius:8, border:'none', background:'#1D4ED8', color:'white', fontSize:12, fontWeight:700, cursor:saving?'not-allowed':'pointer', flexShrink:0 }}>
-                    {saving?'…':'Save'}
-                  </button>
-                  <button onClick={() => { setEditingId(null); setSelectedTeacher(''); }} style={{ padding:'6px 10px', borderRadius:8, border:'1px solid #E2E8F0', background:'white', fontSize:12, color:'#64748B', cursor:'pointer', flexShrink:0 }}>✕</button>
+                <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                    <select value={selectedTeacher} onChange={e => setSelectedTeacher(e.target.value)} style={{ ...IS, padding:'6px 10px', fontSize:12 }}>
+                      <option value="">— Remove —</option>
+                      {teachers.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+                    </select>
+                    <button onClick={() => handleAssignTeacher(sub.id, sub.class_id)} disabled={saving} style={{ padding:'6px 12px', borderRadius:8, border:'none', background:'#1D4ED8', color:'white', fontSize:12, fontWeight:700, cursor:saving?'not-allowed':'pointer', flexShrink:0 }}>
+                      {saving?'…':'Save'}
+                    </button>
+                    <button onClick={() => { setEditingId(null); setSelectedTeacher(''); setSelectedClasses([]); }} style={{ padding:'6px 10px', borderRadius:8, border:'1px solid #E2E8F0', background:'white', fontSize:12, color:'#64748B', cursor:'pointer', flexShrink:0 }}>✕</button>
+                  </div>
+                  {/* When subject is school-wide (no class), require principal to pick classes */}
+                  {!sub.class_id && selectedTeacher && (
+                    <div style={{ padding:'8px 10px', background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:8, fontSize:11 }}>
+                      <p style={{ fontWeight:700, color:'#92400E', margin:'0 0 6px' }}>⚠ Select which classes this teacher covers:</p>
+                      <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+                        {classes.map(cls => (
+                          <label key={cls.id} style={{ display:'flex', alignItems:'center', gap:4, fontSize:11, fontWeight:600, cursor:'pointer', background:'white', padding:'3px 8px', borderRadius:6, border:`1px solid ${selectedClasses.includes(cls.id)?'#3B82F6':'#E2E8F0'}`, color:selectedClasses.includes(cls.id)?'#1D4ED8':'#475569' }}>
+                            <input type="checkbox" checked={selectedClasses.includes(cls.id)}
+                              onChange={e => setSelectedClasses(prev => e.target.checked ? [...prev, cls.id] : prev.filter(id => id !== cls.id))}
+                              style={{ margin:0, accentColor:'#1D4ED8' }} />
+                            {cls.name}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div style={{ display:'flex', alignItems:'center', gap:8 }}>
