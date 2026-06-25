@@ -32,38 +32,15 @@ function generateTimetable(
   subjects: Subject[],
   periodsPerDay: number,
   days: number,
-  periodsPerWeek: Record<string, number>,
-  existingSlots: TimetableSlot[], // other sections' confirmed slots
+  periodsPerDayConfig: Record<string, number>,   // how many slots each subject gets on Monday
+  existingSlots: TimetableSlot[],                 // other sections' confirmed slots
   startTime: string,
   periodDuration: number,
   breakAfterPeriod: number,
-  classTeacherId?: string,       // the class teacher of this section
-  classTeacherSubjectId?: string // a subject taught by the class teacher in this section
+  classTeacherId?: string,
+  classTeacherSubjectId?: string
 ): Omit<TimetableSlot, 'id' | 'section_id' | 'is_confirmed'>[] {
   const result: Omit<TimetableSlot, 'id' | 'section_id' | 'is_confirmed'>[] = [];
-  // Build a teacher → busy set from existing slots
-  const teacherBusy = new Set<string>();
-  existingSlots.forEach(s => teacherBusy.add(`${s.teacher_id}_${s.day_of_week}_${s.period_number}`));
-
-  // Build a pool of (subjectId, teacherId) entries based on periodsPerWeek
-  const pool: { subject_id: string; teacher_id: string; subject_name: string; teacher_name: string }[] = [];
-  subjects.forEach(sub => {
-    const count = periodsPerWeek[sub.id] ?? 1;
-    for (let i = 0; i < count; i++) {
-      pool.push({ subject_id: sub.id, teacher_id: sub.teacher_id || '', subject_name: sub.name, teacher_name: sub.teacher_name || '' });
-    }
-  });
-
-  // ── CLASS TEACHER GETS PERIOD 1 EVERY DAY ───────────────────────────────
-  // In Indian schools the class teacher takes the first period to mark
-  // attendance, make announcements, and settle the class before subject
-  // teachers arrive. We pre-fill Period 1 on every active day with the
-  // class teacher's subject and remove those pool entries so they are
-  // not double-scheduled.
-  const placed = new Set<string>();        // "day_period"
-  const teacherUsed = new Set<string>();   // "teacherId_day_period" for this section
-  const subjectDay = new Map<string, Set<number>>(); // subjectId → days already used
-
   const pad = (n: number) => String(n).padStart(2, '0');
   const calcTime = (period: number) => {
     const [sh, sm] = startTime.split(':').map(Number);
@@ -73,144 +50,80 @@ function generateTimetable(
     return { start: `${pad(Math.floor(totalMins/60))}:${pad(totalMins%60)}`, end: `${pad(Math.floor(endMins/60))}:${pad(endMins%60)}` };
   };
 
+  // ── Teacher clash detection ─────────────────────────────────────────────
+  // Since Tue–Sat copy Monday, we only need to check Monday (day=1) clashes.
+  const busyAtPeriod = new Set<string>(); // "teacherId_period"
+  existingSlots.forEach(s => {
+    if (s.teacher_id && s.day_of_week === 1) busyAtPeriod.add(`${s.teacher_id}_${s.period_number}`);
+  });
+
+  // ── Step 1: Class Teacher gets Period 1 on ALL days ─────────────────────
   if (classTeacherId && classTeacherSubjectId) {
     const ctSubject = subjects.find(s => s.id === classTeacherSubjectId);
-    if (ctSubject) {
+    if (ctSubject && !busyAtPeriod.has(`${classTeacherId}_1`)) {
+      const { start, end } = calcTime(1);
       for (let day = 1; day <= days; day++) {
-        const cellKey = `1_${day}`; // period 1, each day (stored as day_period)
-        const tKey = `${classTeacherId}_${day}_1`;
-        // Only pre-place if teacher is free from other sections on this slot
-        if (!teacherBusy.has(tKey)) {
-          const { start, end } = calcTime(1);
-          result.push({
-            subject_id: ctSubject.id,
-            teacher_id: classTeacherId,
-            day_of_week: day,
-            period_number: 1,
-            start_time: start,
-            end_time: end,
-            room: null,
-            subject_name: ctSubject.name,
-            teacher_name: ctSubject.teacher_name || '',
-          });
-          placed.add(`${day}_1`);
-          teacherUsed.add(tKey);
-          teacherBusy.add(tKey);
-          const du = subjectDay.get(ctSubject.id) || new Set<number>();
-          du.add(day); subjectDay.set(ctSubject.id, du);
-        }
+        result.push({ subject_id: ctSubject.id, teacher_id: classTeacherId, day_of_week: day, period_number: 1, start_time: start, end_time: end, room: null, subject_name: ctSubject.name, teacher_name: ctSubject.teacher_name || '' });
       }
-      // Remove pre-placed class teacher entries from pool so they're not double-booked.
-      // The class teacher teaches period 1 on every day — remove that many copies.
-      let removed = 0;
-      const ctPoolCount = pool.filter(p => p.subject_id === classTeacherSubjectId && p.teacher_id === classTeacherId).length;
-      // Remove up to `days` copies (one per day we pre-placed) but at most all copies
-      const toRemove = Math.min(days, ctPoolCount);
-      for (let i = pool.length - 1; i >= 0 && removed < toRemove; i--) {
-        if (pool[i].subject_id === classTeacherSubjectId && pool[i].teacher_id === classTeacherId) {
-          pool.splice(i, 1);
-          removed++;
-        }
-      }
+      busyAtPeriod.add(`${classTeacherId}_1`);
     }
   }
 
-  // Shuffle remaining pool for variety
+  // ── Step 2: Build pool for Monday (periods 2 → periodsPerDay) ──────────
+  const pool: { subject_id: string; teacher_id: string; subject_name: string; teacher_name: string }[] = [];
+  subjects.forEach(sub => {
+    const count = periodsPerDayConfig[sub.id] ?? 1;
+    for (let i = 0; i < count; i++) {
+      pool.push({ subject_id: sub.id, teacher_id: sub.teacher_id || '', subject_name: sub.name, teacher_name: sub.teacher_name || '' });
+    }
+  });
+
+  // Remove one copy of class teacher's subject from pool (already placed at P1)
+  if (classTeacherId && classTeacherSubjectId) {
+    const ctIdx = pool.findIndex(p => p.subject_id === classTeacherSubjectId && p.teacher_id === classTeacherId);
+    if (ctIdx !== -1) pool.splice(ctIdx, 1);
+  }
+
+  // Shuffle for randomness
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
 
-  // ── 2-PASS PLACEMENT ─────────────────────────────────────────────────────
-  // Pass 1 (STRICT): place subjects only when teacher is free AND subject not
-  //         used on this day. Slots that can't be filled cleanly are skipped.
-  // Pass 2 (FILL): go back and fill remaining empty slots, picking the
-  //         subject with the minimum same-day count (least repeat).
-  //
-  // This guarantees: if a no-duplicate solution exists it will be found.
-  // Duplicates only appear when total configured periods > available slots.
+  // ── Step 3: Fill Monday P2–N ─────────────────────────────────────────────
+  const teacherUsedMonday = new Set<string>(); // "teacherId_period" for this section
+  if (classTeacherId) teacherUsedMonday.add(`${classTeacherId}_1`);
 
-  const subjectDayCount = new Map<string, number>();
-  result.forEach(r => {
-    const k = `${r.subject_id}_${r.day_of_week}`;
-    subjectDayCount.set(k, (subjectDayCount.get(k) || 0) + 1);
-  });
+  const mondaySlots: Array<{ subject_id: string; teacher_id: string; period_number: number; subject_name: string; teacher_name: string }> = [];
 
-  // ── Pass 1: strict, no same-subject-same-day ────────────────────────────
-  for (let period = 1; period <= periodsPerDay && pool.length > 0; period++) {
-    for (let day = 1; day <= days && pool.length > 0; day++) {
-      const cellKey = `${day}_${period}`;
-      if (placed.has(cellKey)) continue;
-
-      let foundIdx = -1;
-      for (let attempt = 0; attempt < pool.length; attempt++) {
-        const item = pool[attempt];
-        const tKey = `${item.teacher_id}_${day}_${period}`;
-        const isTeacherFree = item.teacher_id
-          ? (!teacherBusy.has(tKey) && !teacherUsed.has(tKey))
-          : true;
-        const usedToday = (subjectDayCount.get(`${item.subject_id}_${day}`) || 0) > 0;
-        if (isTeacherFree && !usedToday) { foundIdx = attempt; break; }
-      }
-      if (foundIdx === -1) continue; // skip — will be filled in Pass 2
-
-      const item = pool[foundIdx];
-      const tKey = `${item.teacher_id}_${day}_${period}`;
-      const { start, end } = calcTime(period);
-      result.push({ subject_id: item.subject_id, teacher_id: item.teacher_id, day_of_week: day, period_number: period, start_time: start, end_time: end, room: null, subject_name: item.subject_name, teacher_name: item.teacher_name });
-      placed.add(cellKey);
-      if (item.teacher_id) { teacherUsed.add(tKey); teacherBusy.add(tKey); }
-      const sdKey = `${item.subject_id}_${day}`;
-      subjectDayCount.set(sdKey, (subjectDayCount.get(sdKey) || 0) + 1);
-      const du = subjectDay.get(item.subject_id) || new Set<number>();
-      du.add(day); subjectDay.set(item.subject_id, du);
-      pool.splice(foundIdx, 1);
+  for (let period = 2; period <= periodsPerDay && pool.length > 0; period++) {
+    let foundIdx = -1;
+    for (let attempt = 0; attempt < pool.length; attempt++) {
+      const item = pool[attempt];
+      if (!item.teacher_id) { foundIdx = attempt; break; }
+      const tKey = `${item.teacher_id}_${period}`;
+      if (!busyAtPeriod.has(tKey) && !teacherUsedMonday.has(tKey)) { foundIdx = attempt; break; }
     }
+    if (foundIdx === -1) continue;
+    const item = pool[foundIdx];
+    mondaySlots.push({ ...item, period_number: period });
+    if (item.teacher_id) {
+      teacherUsedMonday.add(`${item.teacher_id}_${period}`);
+      busyAtPeriod.add(`${item.teacher_id}_${period}`);
+    }
+    pool.splice(foundIdx, 1);
   }
 
-  // ── Pass 2: fill remaining slots, prefer least-repeated subject today ────
-  // At this point, pool items that survive are ones that couldn't be placed
-  // without a same-day duplicate.  We now place them as evenly as possible.
-  if (pool.length > 0) {
-    for (let period = 1; period <= periodsPerDay; period++) {
-      for (let day = 1; day <= days; day++) {
-        if (pool.length === 0) break;
-        const cellKey = `${day}_${period}`;
-        if (placed.has(cellKey)) continue; // already filled in Pass 1
-
-        // Pick the teacher-free subject with the fewest uses today
-        let foundIdx = -1;
-        let minCount = Infinity;
-        for (let attempt = 0; attempt < pool.length; attempt++) {
-          const item = pool[attempt];
-          const tKey = `${item.teacher_id}_${day}_${period}`;
-          const isTeacherFree = item.teacher_id
-            ? (!teacherBusy.has(tKey) && !teacherUsed.has(tKey))
-            : true;
-          if (!isTeacherFree) continue;
-          const count = subjectDayCount.get(`${item.subject_id}_${day}`) || 0;
-          if (count < minCount) { minCount = count; foundIdx = attempt; if (minCount === 0) break; }
-        }
-        if (foundIdx === -1) continue;
-
-        const item = pool[foundIdx];
-        const tKey = `${item.teacher_id}_${day}_${period}`;
-        const { start, end } = calcTime(period);
-        result.push({ subject_id: item.subject_id, teacher_id: item.teacher_id, day_of_week: day, period_number: period, start_time: start, end_time: end, room: null, subject_name: item.subject_name, teacher_name: item.teacher_name });
-        placed.add(cellKey);
-        if (item.teacher_id) { teacherUsed.add(tKey); teacherBusy.add(tKey); }
-        const sdKey = `${item.subject_id}_${day}`;
-        subjectDayCount.set(sdKey, (subjectDayCount.get(sdKey) || 0) + 1);
-        const du = subjectDay.get(item.subject_id) || new Set<number>();
-        du.add(day); subjectDay.set(item.subject_id, du);
-        pool.splice(foundIdx, 1);
-      }
+  // ── Step 4: Copy Monday → Tue–Sat ────────────────────────────────────────
+  for (const slot of mondaySlots) {
+    const { start, end } = calcTime(slot.period_number);
+    for (let day = 1; day <= days; day++) {
+      result.push({ subject_id: slot.subject_id, teacher_id: slot.teacher_id, day_of_week: day, period_number: slot.period_number, start_time: start, end_time: end, room: null, subject_name: slot.subject_name, teacher_name: slot.teacher_name });
     }
   }
 
   return result;
 }
-
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 export default function TimetablePage() {
@@ -245,6 +158,7 @@ export default function TimetablePage() {
   const [periodDuration, setPeriodDuration] = useState(45);
   const [breakAfterPeriod, setBreakAfterPeriod] = useState(4);
   const [periodsPerWeek, setPeriodsPerWeek] = useState<Record<string, number>>({});
+  const [subjectTeacherOverrides, setSubjectTeacherOverrides] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState<Omit<TimetableSlot, 'id' | 'section_id' | 'is_confirmed'>[]>([]);
   const [generating, setGenerating] = useState(false);
   const [applyingPreview, setApplyingPreview] = useState(false);
@@ -318,6 +232,13 @@ export default function TimetablePage() {
       return sub;
     });
   }, [subjects, assignments, selectedSection]);
+
+  // Seed teacher overrides from current subject assignments when section changes
+  useEffect(() => {
+    const overrides: Record<string, string> = {};
+    currentSubjects.forEach(sub => { if (sub.teacher_id) overrides[sub.id] = sub.teacher_id; });
+    setSubjectTeacherOverrides(overrides);
+  }, [selectedSection, assignments]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchSlots = useCallback(async () => {
     if (!selectedSection) return;
@@ -402,18 +323,24 @@ export default function TimetablePage() {
   const handleAutoGenerate = () => {
     setGenerating(true);
     const otherSlots = allSlots.filter(s => s.section_id !== selectedSection);
-
-    // Identify class teacher and their subject for this section
     const currentSection = sections.find(s => s.id === selectedSection);
     const classTeacherId = currentSection?.class_teacher_id;
-    // Find a subject assigned to the class teacher in this section
-    // (first matching teacher_section_assignment, or fall back to subjects.teacher_id)
+
+    // Apply teacher overrides — merge subject_id with chosen teacher_id and name
+    const subjectsWithOverrides = currentSubjects.map(sub => {
+      const tid = subjectTeacherOverrides[sub.id] || sub.teacher_id || '';
+      const tname = tid
+        ? (teachers.find(t => t.id === tid)?.full_name || sub.teacher_name || '')
+        : '';
+      return { ...sub, teacher_id: tid, teacher_name: tname };
+    });
+
     const classTeacherSubject = classTeacherId
-      ? currentSubjects.find(s => s.teacher_id === classTeacherId)
+      ? subjectsWithOverrides.find(s => s.teacher_id === classTeacherId)
       : undefined;
 
     const result = generateTimetable(
-      currentSubjects, periods, days, periodsPerWeek,
+      subjectsWithOverrides, periods, days, periodsPerWeek,
       otherSlots as TimetableSlot[],
       startTime, periodDuration, breakAfterPeriod,
       classTeacherId,
@@ -584,9 +511,9 @@ export default function TimetablePage() {
 
           {/* ══ AUTO-GENERATE TAB ════════════════════════════════════════ */}
           {activeTab === 'auto' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: '20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '420px 1fr', gap: '20px' }}>
               {/* Config panel */}
-              <div style={{ background: '#fff', borderRadius: '20px', border: '1px solid #E2E8F0', padding: '24px' }}>
+              <div style={{ background: '#fff', borderRadius: '20px', border: '1px solid #E2E8F0', padding: '24px', maxHeight: '85vh', overflowY: 'auto' }}>
                 <h3 style={{ margin: '0 0 20px', fontSize: '1rem', fontWeight: 700, color: '#1E293B' }}>⚙️ Generator Settings</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   {[
@@ -604,37 +531,41 @@ export default function TimetablePage() {
                     </div>
                   ))}
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                      <label style={{ fontSize: '0.78rem', color: '#64748B', fontWeight: 600 }}>📚 Periods/Week per Subject</label>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <label style={{ fontSize: '0.78rem', color: '#64748B', fontWeight: 700 }}>📚 Subjects · Periods/Day · Teacher</label>
                       {(() => {
-                        const totalPeriods = currentSubjects.reduce((s, sub) => s + (periodsPerWeek[sub.id] ?? 1), 0);
-                        const available = periods * days;
-                        if (totalPeriods > available) return (
-                          <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>
-                            ⚠ {totalPeriods} configured / {available} slots — duplicates will occur
-                          </span>
-                        );
-                        return (
-                          <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: '#F0FDF4', color: '#15803D', border: '1px solid #BBF7D0' }}>
-                            ✓ {totalPeriods} / {available} — no forced repeats
-                          </span>
-                        );
+                        const total = currentSubjects.reduce((s, sub) => s + (periodsPerWeek[sub.id] ?? 1), 0);
+                        const available = periods - 1; // P1 reserved for class teacher
+                        return total > available
+                          ? <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>⚠ {total} &gt; {available} slots — overflow</span>
+                          : <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: '#F0FDF4', color: '#15803D', border: '1px solid #BBF7D0' }}>✓ {total} / {available} slots</span>;
                       })()}
+                    </div>
+                    {/* 3-column header */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 48px 1fr', gap: '4px', marginBottom: '4px', padding: '0 2px' }}>
+                      <span style={{ fontSize: '0.68rem', color: '#94A3B8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Subject</span>
+                      <span style={{ fontSize: '0.68rem', color: '#94A3B8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>P/Day</span>
+                      <span style={{ fontSize: '0.68rem', color: '#94A3B8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Teacher</span>
                     </div>
                     {currentSubjects.map(sub => {
                       const val = periodsPerWeek[sub.id] ?? 1;
-                      const maxSafe = days; // max 1 per day = days
-                      const isOver = val > maxSafe;
+                      const isOver = val > (periods - 1);
+                      const selectedTid = subjectTeacherOverrides[sub.id] || '';
                       return (
-                        <div key={sub.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                          <span style={{ fontSize: '0.78rem', color: '#334155', flex: 1 }}>
+                        <div key={sub.id} style={{ display: 'grid', gridTemplateColumns: '1fr 48px 1fr', gap: '4px', marginBottom: '5px', alignItems: 'center' }}>
+                          <span style={{ fontSize: '0.75rem', color: '#334155', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {sub.name}
-                            {!sub.teacher_id && <span style={{ marginLeft: '6px', fontSize: '0.65rem', color: '#EF4444', background: '#FEF2F2', padding: '2px 6px', borderRadius: '4px' }}>No Teacher</span>}
-                            {isOver && <span style={{ marginLeft: '6px', fontSize: '0.65rem', color: '#D97706', background: '#FFFBEB', padding: '2px 6px', borderRadius: '4px' }}>⚠ &gt;{maxSafe}/wk → same-day repeat</span>}
+                            {isOver && <span style={{ marginLeft: 4, fontSize: '0.6rem', color: '#D97706' }}>⚠</span>}
                           </span>
-                          <input type="number" min={0} max={periods * days} value={val}
+                          <input type="number" min={0} max={periods - 1} value={val}
                             onChange={e => { const v = parseInt(e.target.value); setPeriodsPerWeek(p => ({ ...p, [sub.id]: isNaN(v) ? 0 : v })); }}
-                            style={{ width: '48px', padding: '4px 6px', borderRadius: '8px', border: `1px solid ${isOver ? '#FDE68A' : '#E2E8F0'}`, textAlign: 'center', fontSize: '0.8rem', background: isOver ? '#FFFBEB' : 'white' }} />
+                            style={{ padding: '4px 4px', borderRadius: '8px', border: `1px solid ${isOver ? '#FDE68A' : '#E2E8F0'}`, textAlign: 'center', fontSize: '0.78rem', background: isOver ? '#FFFBEB' : 'white', width: '100%', boxSizing: 'border-box' }} />
+                          <select value={selectedTid}
+                            onChange={e => setSubjectTeacherOverrides(o => ({ ...o, [sub.id]: e.target.value }))}
+                            style={{ padding: '4px 6px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.72rem', width: '100%', background: 'white', color: selectedTid ? '#0F172A' : '#94A3B8' }}>
+                            <option value="">-- No teacher --</option>
+                            {teachers.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+                          </select>
                         </div>
                       );
                     })}
@@ -647,8 +578,11 @@ export default function TimetablePage() {
               </div>
               {/* Preview grid */}
               <div style={{ background: '#fff', borderRadius: '20px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
-                <div style={{ padding: '16px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#1E293B' }}>Preview</h3>
+                <div style={{ padding: '16px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#1E293B' }}>Preview</h3>
+                    {preview.length > 0 && <p style={{ margin: '2px 0 0', fontSize: '0.72rem', color: '#64748B' }}>📋 Tue–Sat are identical to Monday (copy-Monday schedule)</p>}
+                  </div>
                   {preview.length > 0 && (
                     <button onClick={handleApplyPreview} disabled={applyingPreview}
                       style={{ padding: '8px 20px', borderRadius: '10px', background: '#22C55E', color: '#fff', border: 'none', fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem' }}>

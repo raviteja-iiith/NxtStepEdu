@@ -121,7 +121,8 @@ interface StudentFeeRow {
   full_name: string;
   roll_number: number | null;
   fee_id: string | null;       // existing fees.id if any
-  amount: string;              // editable input value
+  current_amount: number;      // current total fee in DB (read-only display)
+  amount: string;              // additive input — how much to ADD to the due
   status: string | null;
   saving: boolean;
   saved: boolean;
@@ -210,7 +211,8 @@ function TabIndividual({ schoolId, academicYearId, classes, sections }: {
         full_name: s.full_name,
         roll_number: s.roll_number,
         fee_id: fee?.id ?? null,
-        amount: fee?.amount != null ? String(fee.amount) : '0',
+        current_amount: fee?.amount ?? 0,   // existing total shown as label
+        amount: '0',                         // always start at 0 for additive input
         status: fee?.status ?? null,
         saving: false,
         saved: false,
@@ -230,12 +232,15 @@ function TabIndividual({ schoolId, academicYearId, classes, sections }: {
   async function saveRow(student_id: string) {
     const row = rows.find(r => r.student_id === student_id);
     if (!row) return;
-    const amt = parseFloat(row.amount);
-    if (isNaN(amt) || amt < 0) {
-      setRows(r => r.map(x => x.student_id === student_id ? { ...x, error: 'Invalid amount' } : x));
+    const addAmt = parseFloat(row.amount);
+    if (isNaN(addAmt) || addAmt <= 0) {
+      setRows(r => r.map(x => x.student_id === student_id ? { ...x, error: 'Enter an amount greater than 0' } : x));
       return;
     }
     setRows(r => r.map(x => x.student_id === student_id ? { ...x, saving: true, error: null } : x));
+
+    // ADDITIVE: new total = existing amount + what was entered
+    const newTotal = row.current_amount + addAmt;
 
     const now = new Date();
     const defaultDueDate = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
@@ -243,7 +248,7 @@ function TabIndividual({ schoolId, academicYearId, classes, sections }: {
     const payload: Record<string, unknown> = {
       school_id: schoolId,
       student_id,
-      amount: amt,
+      amount: newTotal,
       status: row.fee_id ? (row.status ?? 'pending') : 'pending',
       due_date: defaultDueDate,
       ...(academicYearId ? { academic_year_id: academicYearId } : {}),
@@ -261,19 +266,30 @@ function TabIndividual({ schoolId, academicYearId, classes, sections }: {
     }
 
     setRows(r => r.map(x => x.student_id === student_id
-      ? { ...x, saving: false, saved: !error, error: error?.message ?? null } : x));
+      ? {
+          ...x,
+          saving: false,
+          saved: !error,
+          error: error?.message ?? null,
+          // On success: update current_amount to the new total and reset input to 0
+          current_amount: error ? x.current_amount : newTotal,
+          amount: error ? x.amount : '0',
+        }
+      : x));
   }
 
   async function saveAll() {
-    const toSave = rows.filter(r => !r.saving);
-    if (toSave.length === 0) return;
+    // Only save rows where the principal actually entered an amount
+    const toSave = rows.filter(r => !r.saving && parseFloat(r.amount) > 0);
+    if (toSave.length === 0) { showToast('No fee amounts entered — type an amount in each row first', false); return; }
     setSaveAllBusy(true);
     await Promise.all(toSave.map(r => saveRow(r.student_id)));
     setSaveAllBusy(false);
-    showToast(`${toSave.length} record(s) saved`, true);
+    showToast(`₹ Added fee for ${toSave.length} student(s)`, true);
   }
 
-  const filledCount = rows.length;
+  // Count only rows with an amount entered (> 0)
+  const filledCount = rows.filter(r => parseFloat(r.amount) > 0).length;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -335,7 +351,7 @@ function TabIndividual({ schoolId, academicYearId, classes, sections }: {
         <div style={{ background: 'white', borderRadius: 14, border: '1px solid #E8ECF0', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
           {/* Header */}
           <div style={{ display: 'grid', gridTemplateColumns: '48px 2fr 120px 180px 90px', padding: '11px 20px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9', gap: 12 }}>
-            {['Roll','Student','Status','Fee Amount (₹)',''].map((h, i) => (
+            {['Roll','Student','Status','Add Fee Amount (₹)',''].map((h, i) => (
               <p key={i} style={{ fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>{h}</p>
             ))}
           </div>
@@ -360,13 +376,20 @@ function TabIndividual({ schoolId, academicYearId, classes, sections }: {
                   placeholder="0"
                   value={row.amount}
                   onChange={e => {
-                    // Allow only numeric + single decimal point
                     const v = e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
                     updateAmount(row.student_id, v);
                   }}
                   onFocus={e => { if (e.target.value === '0') e.target.select(); }}
                   style={{ ...IS, border: row.error ? '1px solid #EF4444' : '1px solid #E2E8F0', padding: '7px 11px' }}
                 />
+                {row.current_amount > 0 && (
+                  <p style={{ fontSize: 11, color: '#64748B', margin: '3px 0 0' }}>
+                    Current due: <strong style={{ color: '#DC2626' }}>₹{row.current_amount.toLocaleString('en-IN')}</strong>
+                    {row.amount && parseFloat(row.amount) > 0 && (
+                      <span style={{ color: '#0F172A' }}> → ₹{(row.current_amount + parseFloat(row.amount)).toLocaleString('en-IN')}</span>
+                    )}
+                  </p>
+                )}
                 {row.error && <p style={{ fontSize: 11, color: '#EF4444', margin: '3px 0 0' }}>{row.error}</p>}
               </div>
               <button
@@ -888,7 +911,11 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
     (fees as any[]).filter(f => f.students).forEach(f => {
       const feePaid = paidMap.get(f.id) ?? 0;
       const feeAmt  = f.amount ?? 0;
-      const detail: FeeDetail = { fee_id: f.id, amount: feeAmt, paid: feePaid, due: Math.max(0, feeAmt - feePaid), status: f.status ?? 'pending', payments: payMap.get(f.id) ?? [] };
+      // Auto-derive status from payments vs fee amount
+      let derivedStatus = f.status ?? 'pending';
+      if (feePaid >= feeAmt && feeAmt > 0) derivedStatus = 'paid';
+      else if (feePaid > 0 && feePaid < feeAmt) derivedStatus = 'partially_paid';
+      const detail: FeeDetail = { fee_id: f.id, amount: feeAmt, paid: feePaid, due: Math.max(0, feeAmt - feePaid), status: derivedStatus, payments: payMap.get(f.id) ?? [] };
       if (studentMap.has(f.student_id)) {
         const row = studentMap.get(f.student_id)!;
         row.total_fee += feeAmt;
@@ -907,7 +934,7 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
           total_fee:    feeAmt,
           paid:         feePaid,
           due:          Math.max(0, feeAmt - feePaid),
-          status:       f.status ?? 'pending',
+          status:       derivedStatus,
           fee_details:  [detail],
         });
       }
@@ -1172,8 +1199,8 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
                         <span style={{ fontSize: 10, color: '#94A3B8' }}>{isExp ? '▲' : '▼'}</span>
                       </div>
                       <div style={{ width: 80, height: 4, background: '#E2E8F0', borderRadius: 99, marginTop: 4, overflow: 'hidden' }}>
-                        <div style={{ height: '100%', borderRadius: 99, width: `${pct}%`,
-                          background: pct === 100 ? '#16A34A' : pct > 50 ? '#F59E0B' : '#EF4444', transition: 'width 0.4s' }} />
+                        <div style={{ height: '100%', borderRadius: 99, width: `${Math.min(pct, 100)}%`,
+                          background: pct >= 100 ? '#16A34A' : pct > 50 ? '#F59E0B' : '#EF4444', transition: 'width 0.4s' }} />
                       </div>
                     </div>
                   </div>
@@ -1181,7 +1208,14 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
                   <p style={{ fontSize: 12, color: '#475569', margin: 0 }}>{row.section_name}</p>
                   <p style={{ fontSize: 13, fontWeight: 700, color: '#0F172A', margin: 0 }}>{fmt(row.total_fee)}</p>
                   <p style={{ fontSize: 13, fontWeight: 600, color: '#15803D', margin: 0 }}>{fmt(row.paid)}</p>
-                  <p style={{ fontSize: 13, fontWeight: 800, color: row.due > 0 ? '#DC2626' : '#15803D', margin: 0 }}>{fmt(row.due)}</p>
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 800, color: row.due > 0 ? '#DC2626' : '#15803D', margin: 0 }}>{fmt(row.due)}</p>
+                    {row.paid > row.total_fee && (
+                      <p style={{ fontSize: 10, color: '#92400E', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 4, padding: '1px 5px', margin: '2px 0 0', display: 'inline-block', fontWeight: 700 }}>
+                        Overpaid ₹{(row.paid - row.total_fee).toLocaleString('en-IN')}
+                      </p>
+                    )}
+                  </div>
                   <div onClick={e => e.stopPropagation()}>{statusBadge(row.status)}</div>
                   <div onClick={e => e.stopPropagation()}>
                     <button onClick={() => openPay(row)} disabled={row.due === 0}
