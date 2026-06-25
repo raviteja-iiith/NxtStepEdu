@@ -267,11 +267,26 @@ export default function ParentFeesPage() {
     else if (!childLoading && !selectedChild) setLoading(false);
   }, [fetchFees, selectedChild, childLoading]);
 
-  const totalPending = fees
-    .filter(f => f.status === 'pending' || f.status === 'overdue' || f.status === 'partially_paid')
-    .reduce((a, f) => a + Math.max(0, (f.amount - (f.discount_amount || 0)) - (f.amount_paid || 0)), 0);
+  // Compute actual due from live payment data — do NOT trust the stale DB status field
+  const totalPending = fees.reduce((a, f) => {
+    const netAmt = f.amount - (f.discount_amount || 0);
+    const actualDue = Math.max(0, netAmt - (f.amount_paid || 0));
+    return a + actualDue;
+  }, 0);
   const totalPaid = fees.reduce((a, f) => a + (f.amount_paid || 0), 0);
-  const nextDue = fees.find(f => (f.status === 'pending' || f.status === 'partially_paid') && f.due_date);
+  const nextDue = fees.find(f => {
+    const netAmt = f.amount - (f.discount_amount || 0);
+    return Math.max(0, netAmt - (f.amount_paid || 0)) > 0 && f.due_date;
+  });
+
+  // Helper: derive correct status from payment totals
+  function deriveStatus(f: Fee): string {
+    const netAmt = f.amount - (f.discount_amount || 0);
+    const paid = f.amount_paid || 0;
+    if (paid <= 0) return f.status ?? 'pending'; // keep pending/overdue from DB
+    if (paid >= netAmt) return 'paid';
+    return 'partially_paid';
+  }
 
   const summaryCards = [
     { label: 'Total Pending', value: fmt(totalPending), color: '#DC2626', bg: '#FEF2F2', border: '#FECACA', icon: '⚠️' },
@@ -334,9 +349,12 @@ export default function ParentFeesPage() {
           )
           : fees.map(f => {
             const netAmount = f.amount - (f.discount_amount || 0);
-            const cfg = statusCfg[f.status] || statusCfg.pending;
+            const paid = f.amount_paid || 0;
+            const actualDue = Math.max(0, netAmount - paid);
+            const derivedStatus = deriveStatus(f);
+            const cfg = statusCfg[derivedStatus] || statusCfg.pending;
             const dueDate = f.due_date ? new Date(f.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
-            const canPrint = f.status === 'paid' || f.status === 'partially_paid';
+            const canPrint = paid > 0; // show receipt whenever any payment exists
             return (
               <div key={f.id} style={{ background: 'white', borderRadius: 18, padding: '20px 24px', border: '1px solid #E8ECF0', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -346,7 +364,7 @@ export default function ParentFeesPage() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4, flexWrap: 'wrap' }}>
                       {(f.fee_structures as any)?.fee_type && <span style={{ fontSize: 11, color: '#94A3B8', fontWeight: 600, textTransform: 'capitalize' }}>{(f.fee_structures as any).fee_type.replace('_', ' ')}</span>}
                       {dueDate && <span style={{ fontSize: 11, color: '#64748B' }}>Due: {dueDate}</span>}
-                      {f.payment_date && <span style={{ fontSize: 11, color: '#16A34A', fontWeight: 600 }}>Paid: {new Date(f.payment_date).toLocaleDateString('en-IN')}</span>}
+                      {f.payment_date && <span style={{ fontSize: 11, color: '#16A34A', fontWeight: 600 }}>Last paid: {new Date(f.payment_date).toLocaleDateString('en-IN')}</span>}
                       {(f.discount_amount ?? 0) > 0 && <span style={{ fontSize: 11, color: '#7C3AED', fontWeight: 600 }}>Discount: {fmt(f.discount_amount)}</span>}
                     </div>
                   </div>
@@ -354,9 +372,9 @@ export default function ParentFeesPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   <div style={{ textAlign: 'right' }}>
                     <p style={{ fontSize: 20, fontWeight: 900, color: '#1E40AF', letterSpacing: '-0.02em', margin: 0 }}>{fmt(netAmount)}</p>
-                    {((f.amount_paid || 0) > 0) && f.status !== 'paid' && (
-                      <p style={{ fontSize: 12, color: '#16A34A', fontWeight: 600, margin: '2px 0 0' }}>
-                        {fmt(f.amount_paid || 0)} paid · {fmt(Math.max(0, f.amount - (f.discount_amount||0) - (f.amount_paid || 0)))} remaining
+                    {paid > 0 && (
+                      <p style={{ fontSize: 12, fontWeight: 600, margin: '2px 0 0', color: actualDue > 0 ? '#DC2626' : '#16A34A' }}>
+                        {fmt(paid)} paid{actualDue > 0 ? ` · ${fmt(actualDue)} remaining` : ' · Fully paid'}
                       </p>
                     )}
                   </div>
@@ -374,7 +392,7 @@ export default function ParentFeesPage() {
                       🖨️ Receipt
                     </button>
                   )}
-                  {(f.status === 'pending' || f.status === 'overdue') && (
+                  {actualDue > 0 && (
                     <button style={{ padding: '9px 18px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#7C3AED,#A855F7)', color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 12px rgba(124,58,237,0.3)', whiteSpace: 'nowrap' }}>
                       Pay Now
                     </button>
