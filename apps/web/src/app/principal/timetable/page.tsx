@@ -66,11 +66,14 @@ function generateTimetable(
   // ── Step 0: Class Teacher → Period 1 EVERY DAY (unconditionally the first slot) ──
   // This is absolute: period 1 is always the class teacher's subject, regardless of
   // any starred-subject configuration. Starred subjects always come AFTER this.
+  // We skip a day if the class teacher is already busy in another section at Period 1.
   if (hasCT && periodsPerDay >= 1) {
     const ctSubject = subjects.find(s => s.id === classTeacherSubjectId);
     if (ctSubject) {
       const { start, end } = calcTime(1);
       for (let day = 1; day <= days; day++) {
+        // ✅ Cross-section conflict check: skip if teacher already has Period 1 this day
+        if (crossBusy.has(`${classTeacherId}_${day}_1`)) continue;
         result.push({
           subject_id: ctSubject.id, teacher_id: classTeacherId!,
           day_of_week: day, period_number: 1,
@@ -102,6 +105,8 @@ function generateTimetable(
     specialSubjectIds.add(sub.id);
     const { start, end } = calcTime(actualPeriod);
     for (let day = 1; day <= days; day++) {
+      // ✅ Cross-section conflict check: skip if teacher is busy in another class at this slot
+      if (sub.teacher_id && crossBusy.has(`${sub.teacher_id}_${day}_${actualPeriod}`)) continue;
       result.push({
         subject_id: sub.id, teacher_id: sub.teacher_id || '',
         day_of_week: day, period_number: actualPeriod,
