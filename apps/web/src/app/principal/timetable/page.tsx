@@ -27,7 +27,24 @@ const SUBJECT_BORDER = [
   '#A7F3D0', '#FEF08A'
 ];
 
-// ─── Auto-Generate Algorithm ─────────────────────────────────────────────────
+// ─── Generate Result Type ────────────────────────────────────────────────────
+interface GenerateResult {
+  slots: Omit<TimetableSlot, 'id' | 'section_id' | 'is_confirmed'>[];
+  errors: string[];
+  warnings: string[];
+}
+
+// ─── Auto-Generate Algorithm (Column-First, Consistent Periods) ───────────────
+//
+// DESIGN:
+//   • Each period number is a "column". The same subject sits at the same
+//     period on every day it is scheduled → consistent daily structure.
+//   • Priority order: CT → P1 every day | ⭐ Starred → P2, P3 … | Regular → rest
+//   • Option-B: one period column can serve different regular subjects on
+//     different days when P/W < days.
+//   • Conflict fallback (teacher busy at their fixed period on a specific day):
+//       1. If teacher is busy, leave slot empty to maintain column consistency.
+// ─────────────────────────────────────────────────────────────────────────────
 function generateTimetable(
   subjects: Subject[],
   periodsPerDay: number,
@@ -40,186 +57,411 @@ function generateTimetable(
   classTeacherId?: string,
   classTeacherSubjectId?: string,
   specialConfig?: Record<string, { isSpecial: boolean; fixedPeriod: number }>
-): Omit<TimetableSlot, 'id' | 'section_id' | 'is_confirmed'>[] {
+): GenerateResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
   const result: Omit<TimetableSlot, 'id' | 'section_id' | 'is_confirmed'>[] = [];
+
   const pad = (n: number) => String(n).padStart(2, '0');
   const calcTime = (period: number) => {
     const [sh, sm] = startTime.split(':').map(Number);
     let totalMins = sh * 60 + sm + (period - 1) * periodDuration;
     if (period > breakAfterPeriod) totalMins += 30;
     const endMins = totalMins + periodDuration;
-    return { start: `${pad(Math.floor(totalMins / 60))}:${pad(totalMins % 60)}`, end: `${pad(Math.floor(endMins / 60))}:${pad(endMins % 60)}` };
+    return {
+      start: `${pad(Math.floor(totalMins / 60))}:${pad(totalMins % 60)}`,
+      end: `${pad(Math.floor(endMins / 60))}:${pad(endMins % 60)}`,
+    };
   };
 
-  // Build cross-section teacher clash lookup keyed by "teacherId_day_period"
+  const noTeacherSubs = subjects.filter(s => !s.teacher_id && (periodsPerWeekConfig[s.id] ?? 0) > 0);
+  noTeacherSubs.forEach(s =>
+    warnings.push(`"${s.name}" has no teacher assigned — it will be skipped in auto-generation.`)
+  );
+
+  const schedulable = subjects.filter(s => !!s.teacher_id && (periodsPerWeekConfig[s.id] ?? 0) > 0);
+
+  const totalRequired = schedulable.reduce(
+    (acc, s) => acc + Math.min(days, periodsPerWeekConfig[s.id] ?? 0), 0
+  );
+  const totalAvailable = days * periodsPerDay;
+
+  if (totalRequired > totalAvailable) {
+    errors.push(
+      `Total periods requested (${totalRequired}) exceeds available slots ` +
+      `(${days} days × ${periodsPerDay} periods/day = ${totalAvailable} slots).`
+    );
+    return { slots: [], errors, warnings };
+  }
+
+  if (schedulable.length === 0) {
+    errors.push('No subjects have a teacher assigned and P/W > 0.');
+    return { slots: [], errors, warnings };
+  }
+
   const crossBusy = new Set<string>();
   existingSlots.forEach(s => {
     if (s.teacher_id) crossBusy.add(`${s.teacher_id}_${s.day_of_week}_${s.period_number}`);
   });
+  const thisSecBusy = new Set<string>();
 
-  const takenSlots = new Set<string>();        // "day_period"
-  const thisSecBusy = new Set<string>();       // "teacherId_day_period"
-  const specialSubjectIds = new Set<string>(); // fully-placed subjects — skip from pool
+  const isTeacherFree = (tid: string, day: number, period: number) =>
+    !crossBusy.has(`${tid}_${day}_${period}`) &&
+    !thisSecBusy.has(`${tid}_${day}_${period}`);
 
-  const hasCT = !!classTeacherId && !!classTeacherSubjectId;
+  const markBusy = (tid: string, day: number, period: number) =>
+    thisSecBusy.add(`${tid}_${day}_${period}`);
 
-  /**
-   * findFreeSlot — scans forward from `fromPeriod` on a given day until it finds
-   * a period that is (a) not yet taken and (b) the teacher is free in ALL sections.
-   * If teacherId is null/empty, only the taken-slot check applies.
-   *
-   * KEY BEHAVIOUR: when a teacher is already in another class at the preferred
-   * period, the subject automatically slides to the next conflict-free period
-   * on that same day — nothing is ever silently dropped.
-   *
-   * Returns -1 only when there is truly no period left on this day.
-   */
-  const findFreeSlot = (day: number, teacherId: string | null, fromPeriod: number): number => {
-    for (let p = fromPeriod; p <= periodsPerDay; p++) {
-      if (takenSlots.has(`${day}_${p}`)) continue;
-      if (teacherId) {
-        if (crossBusy.has(`${teacherId}_${day}_${p}`)) continue;   // busy in another class → slide
-        if (thisSecBusy.has(`${teacherId}_${day}_${p}`)) continue; // already assigned in this section
-      }
-      return p;
-    }
-    return -1; // no slot available on this day at all
-  };
+  // ── Step 1: Separate subjects by category ───────────────────────────
+  const ctSub = (classTeacherId && classTeacherSubjectId)
+    ? schedulable.find(s => s.id === classTeacherSubjectId)
+    : undefined;
 
-  // ── Step 0: Class Teacher ─────────────────────────────────────────────────
-  // Prefers Period 1. If teacher is already teaching another class at P1,
-  // the algorithm slides the subject to the next free period on that day
-  // automatically — the CT subject is never silently omitted.
-  if (hasCT && periodsPerDay >= 1) {
-    const ctSubject = subjects.find(s => s.id === classTeacherSubjectId);
-    if (ctSubject) {
-      for (let day = 1; day <= days; day++) {
-        const p = findFreeSlot(day, classTeacherId!, 1);
-        if (p === -1) continue; // no room at all this day (edge case)
-        const { start, end } = calcTime(p);
-        result.push({
-          subject_id: ctSubject.id, teacher_id: classTeacherId!,
-          day_of_week: day, period_number: p,
-          start_time: start, end_time: end,
-          room: null, subject_name: ctSubject.name, teacher_name: ctSubject.teacher_name || '',
-        });
-        takenSlots.add(`${day}_${p}`);
-        thisSecBusy.add(`${classTeacherId!}_${day}_${p}`);
-      }
-      if (specialConfig?.[classTeacherSubjectId!]?.isSpecial) {
-        specialSubjectIds.add(classTeacherSubjectId!);
-      }
-    }
-  }
+  const ctPw = ctSub ? Math.min(days, periodsPerWeekConfig[ctSub.id] ?? days) : 0;
 
-  // ── Step 1: Starred subjects ──────────────────────────────────────────────
-  // Preferred at periods starredStart, starredStart+1, …
-  // If the teacher is already in another class at the preferred period,
-  // findFreeSlot() slides the subject forward to the next conflict-free slot
-  // on that day — the subject is never dropped.
-  const starredStart = hasCT ? 2 : 1;
-  const specialSubs = subjects
-    .filter(sub => specialConfig?.[sub.id]?.isSpecial && !specialSubjectIds.has(sub.id))
+  const starredSubs = schedulable
+    .filter(s => specialConfig?.[s.id]?.isSpecial && s.id !== ctSub?.id)
     .sort((a, b) => (specialConfig![a.id]?.fixedPeriod ?? 1) - (specialConfig![b.id]?.fixedPeriod ?? 1));
 
-  specialSubs.forEach((sub, idx) => {
-    specialSubjectIds.add(sub.id);
-    // Preferred period position: 1st starred → P(starredStart), 2nd → P(starredStart+1), …
-    // This is the EARLIEST period we try first; findFreeSlot will slide forward if needed.
-    const preferredPeriod = starredStart + idx;
-    if (preferredPeriod > periodsPerDay) return;
-
-    // P/W controls how many times per week this subject is scheduled.
-    // Default = every school day (all `days` days) if not set.
-    const periodsNeeded = Math.min(days, Math.max(1, periodsPerWeekConfig[sub.id] || days));
-    let placed = 0;
-
-    for (let day = 1; day <= days && placed < periodsNeeded; day++) {
-      // Try preferred period; if teacher is blocked there, slide forward automatically
-      const p = findFreeSlot(day, sub.teacher_id || null, preferredPeriod);
-      if (p === -1) continue; // no room anywhere this day
-      const { start, end } = calcTime(p);
-      result.push({
-        subject_id: sub.id, teacher_id: sub.teacher_id || '',
-        day_of_week: day, period_number: p,
-        start_time: start, end_time: end,
-        room: null, subject_name: sub.name, teacher_name: sub.teacher_name || '',
-      });
-      takenSlots.add(`${day}_${p}`);
-      if (sub.teacher_id) thisSecBusy.add(`${sub.teacher_id}_${day}_${p}`);
-      placed++;
-    }
-  });
-
-  // ── Step 2: Build weekly pool for regular subjects ────────────────────────
-  const pool: { subject_id: string; teacher_id: string; subject_name: string; teacher_name: string }[] = [];
-  for (const sub of subjects) {
-    if (specialSubjectIds.has(sub.id)) continue;
-    // Count how many CT slots were actually placed (may differ from `days` if
-    // teacher had zero free periods on some days — rare but handled correctly)
-    const alreadyPlaced = (hasCT && sub.id === classTeacherSubjectId)
-      ? result.filter(r => r.subject_id === classTeacherSubjectId).length
-      : 0;
-    const count = Math.max(0, (periodsPerWeekConfig[sub.id] ?? 0) - alreadyPlaced);
-    for (let i = 0; i < count; i++) {
-      pool.push({ subject_id: sub.id, teacher_id: sub.teacher_id || '', subject_name: sub.name, teacher_name: sub.teacher_name || '' });
-    }
-  }
-  // Shuffle pool for randomness
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
+  if (starredSubs.length > (periodsPerDay - 1)) {
+    errors.push(
+      `Not enough periods per day to assign a dedicated period to each priority (starred) subject. ` +
+      `You have ${starredSubs.length} priority subject(s) but only ${periodsPerDay - 1} period column(s) available.`
+    );
+    return { slots: [], errors, warnings };
   }
 
-  // ── Step 3: Collect ALL untaken slots ─────────────────────────────────────
-  // CT and starred subjects may have shifted to later periods due to conflicts,
-  // so we must NOT hard-block any period range — collect every free slot.
-  const availableSlots: { day: number; period: number }[] = [];
-  for (let day = 1; day <= days; day++) {
-    for (let period = 1; period <= periodsPerDay; period++) {
-      if (!takenSlots.has(`${day}_${period}`)) {
-        availableSlots.push({ day, period });
+  const reservedIds = new Set<string>([
+    ...(ctSub ? [ctSub.id] : []),
+    ...starredSubs.map(s => s.id),
+  ]);
+
+  const regularSubs = schedulable.filter(s => !reservedIds.has(s.id));
+
+  // ── Step 2: Backtracking search to assign subjects to period numbers ──
+  interface SearchSubject {
+    id: string;
+    name: string;
+    teacher_id: string;
+    teacher_name: string;
+    pw: number;
+    isSpecial: boolean;
+    fixedPeriod: number;
+  }
+
+  const starredSearchSubs: SearchSubject[] = starredSubs.map(s => ({
+    id: s.id,
+    name: s.name,
+    teacher_id: s.teacher_id!,
+    teacher_name: s.teacher_name || '',
+    pw: Math.min(days, periodsPerWeekConfig[s.id] ?? days),
+    isSpecial: true,
+    fixedPeriod: specialConfig?.[s.id]?.fixedPeriod ?? 1
+  }));
+
+  const regularSearchSubs: SearchSubject[] = regularSubs.map(s => ({
+    id: s.id,
+    name: s.name,
+    teacher_id: s.teacher_id!,
+    teacher_name: s.teacher_name || '',
+    pw: Math.min(days, periodsPerWeekConfig[s.id] ?? 0),
+    isSpecial: false,
+    fixedPeriod: 1
+  }));
+
+  // Sort regular subjects by weight descending for efficient packing (LPT rule)
+  const sortedRegs = [...regularSearchSubs].sort((a, b) => b.pw - a.pw || a.id.localeCompare(b.id));
+
+  const numStarred = starredSearchSubs.length;
+  const numRegular = sortedRegs.length;
+  const minStarredSum = (numStarred * (numStarred + 3)) / 2;
+
+  let bestSolution: {
+    binSubjects: SearchSubject[][];
+    conflicts: number;
+    starredSum: number;
+  } | null = null;
+
+  const binLoad = Array(periodsPerDay + 1).fill(0);
+  const binSubjects: SearchSubject[][] = Array.from({ length: periodsPerDay + 1 }, () => []);
+
+  // Initialize Period 1 with CT subject
+  if (ctSub) {
+    binLoad[1] = ctPw;
+    binSubjects[1] = [{
+      id: ctSub.id,
+      name: ctSub.name,
+      teacher_id: ctSub.teacher_id!,
+      teacher_name: ctSub.teacher_name || '',
+      pw: ctPw,
+      isSpecial: false,
+      fixedPeriod: 1
+    }];
+  }
+
+  let statesVisited = 0;
+  const MAX_STATES = 50000;
+
+  function calculateConflictsForBin(p: number, subjectsInBin: SearchSubject[]): number {
+    let conflicts = 0;
+    let currentDayOffset = 0;
+    for (const sub of subjectsInBin) {
+      for (let d = 0; d < sub.pw; d++) {
+        const day = currentDayOffset + d + 1;
+        if (!isTeacherFree(sub.teacher_id, day, p)) {
+          conflicts++;
+        }
+      }
+      currentDayOffset += sub.pw;
+    }
+    return conflicts;
+  }
+
+  function calculateAllConflicts(): number {
+    let totalConflicts = 0;
+    for (let p = 1; p <= periodsPerDay; p++) {
+      if (binSubjects[p].length > 0) {
+        totalConflicts += calculateConflictsForBin(p, binSubjects[p]);
+      }
+    }
+    return totalConflicts;
+  }
+
+  const starredPeriods: number[] = [];
+
+  function searchRegular(regIndex: number) {
+    if (statesVisited > MAX_STATES) return;
+    statesVisited++;
+
+    if (regIndex === numRegular) {
+      const conflicts = calculateAllConflicts();
+      const starredSum = starredPeriods.reduce((a, b) => a + b, 0);
+      const cost = conflicts * 1000 + starredSum;
+
+      if (bestSolution === null || cost < (bestSolution.conflicts * 1000 + bestSolution.starredSum)) {
+        bestSolution = {
+          binSubjects: binSubjects.map(arr => [...arr]),
+          conflicts,
+          starredSum
+        };
+      }
+      return;
+    }
+
+    const sub = sortedRegs[regIndex];
+    for (let p = 2; p <= periodsPerDay; p++) {
+      if (binLoad[p] + sub.pw <= days) {
+        if (bestSolution && bestSolution.conflicts === 0 && bestSolution.starredSum === minStarredSum) {
+          return; // Already found globally optimal solution
+        }
+
+        binLoad[p] += sub.pw;
+        binSubjects[p].push(sub);
+
+        searchRegular(regIndex + 1);
+
+        binLoad[p] -= sub.pw;
+        binSubjects[p].pop();
       }
     }
   }
-  // Shuffle so subjects spread across days randomly
-  for (let i = availableSlots.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [availableSlots[i], availableSlots[j]] = [availableSlots[j], availableSlots[i]];
+
+  function searchStarred(starIndex: number) {
+    if (statesVisited > MAX_STATES) return;
+    statesVisited++;
+
+    if (starIndex === numStarred) {
+      searchRegular(0);
+      return;
+    }
+
+    const sub = starredSearchSubs[starIndex];
+    for (let p = 2; p <= periodsPerDay; p++) {
+      // Check if period p already has a starred subject assigned
+      const hasStarred = binSubjects[p].some(s => s.isSpecial);
+      if (hasStarred) continue;
+
+      if (binLoad[p] + sub.pw <= days) {
+        binLoad[p] += sub.pw;
+        binSubjects[p].push(sub);
+        starredPeriods.push(p);
+
+        searchStarred(starIndex + 1);
+
+        binLoad[p] -= sub.pw;
+        binSubjects[p].pop();
+        starredPeriods.pop();
+      }
+    }
   }
 
-  // ── Step 4: Assign pool items to slots across the whole week ─────────────
-  const subjectDayUsed = new Map<string, Set<number>>();
+  // Execute backtracking search
+  searchStarred(0);
 
-  const tryFind = (day: number, period: number, allowRepeat: boolean): number => {
-    for (let i = 0; i < pool.length; i++) {
-      const item = pool[i];
-      if (item.teacher_id) {
-        if (crossBusy.has(`${item.teacher_id}_${day}_${period}`)) continue;
-        if (thisSecBusy.has(`${item.teacher_id}_${day}_${period}`)) continue;
+  if (!bestSolution) {
+    errors.push(
+      "Cannot pack subjects into the available period columns without splitting them. " +
+      "Please adjust Periods/Day or Periods/Week values."
+    );
+    return { slots: [], errors, warnings };
+  }
+
+  // ── Step 2.5: Report details on swaps and shared columns ────────────────
+  const DAYS_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const solution = bestSolution as { binSubjects: SearchSubject[][]; conflicts: number; starredSum: number };
+
+  // Explain why starred/priority subjects were assigned to other periods if shifted
+  for (const sub of starredSearchSubs) {
+    let assignedPeriod = -1;
+    for (let p = 2; p <= periodsPerDay; p++) {
+      if (solution.binSubjects[p].some(s => s.id === sub.id)) {
+        assignedPeriod = p;
+        break;
       }
-      if (!allowRepeat && subjectDayUsed.get(item.subject_id)?.has(day)) continue;
-      return i;
     }
-    return -1;
-  };
 
-  for (const { day, period } of availableSlots) {
-    if (pool.length === 0) break;
-    let idx = tryFind(day, period, false);
-    if (idx === -1) idx = tryFind(day, period, true);
-    if (idx === -1) continue;
+    if (assignedPeriod !== -1 && assignedPeriod !== sub.fixedPeriod) {
+      const stepReasons: string[] = [];
 
-    const item = pool[idx];
+      for (let p = sub.fixedPeriod; p < assignedPeriod; p++) {
+        if (p === 1) {
+          stepReasons.push("Period 1 is reserved for Class Teacher's subject");
+        } else {
+          // Check if taken by another starred subject
+          const taker = starredSearchSubs.find(other => {
+            if (other.id === sub.id) return false;
+            return solution.binSubjects[p]?.some(s => s.id === other.id);
+          });
+
+          if (taker) {
+            stepReasons.push(`Period ${p} is taken by priority subject "${taker.name}"`);
+          } else {
+            // Check for teacher busy
+            const busyDays: string[] = [];
+            for (let d = 1; d <= days; d++) {
+              if (!isTeacherFree(sub.teacher_id, d, p)) {
+                busyDays.push(DAYS_NAMES[d - 1]);
+              }
+            }
+            if (busyDays.length > 0) {
+              stepReasons.push(`Period ${p} teacher is busy on ${busyDays.join(", ")}`);
+            } else {
+              stepReasons.push(`Period ${p} was skipped to optimize other priority subjects or avoid conflicts`);
+            }
+          }
+        }
+      }
+
+      if (stepReasons.length > 0) {
+        warnings.push(
+          `ℹ️ Priority subject "${sub.name}" was assigned to Period ${assignedPeriod} instead of preferred Period ${sub.fixedPeriod} because: ${stepReasons.join("; ")}.`
+        );
+      }
+    }
+  }
+
+  // Explain shared periods
+  for (let p = 2; p <= periodsPerDay; p++) {
+    const subs = solution.binSubjects[p];
+    if (subs.length > 1) {
+      const shareList = subs.map(s => `"${s.name}" (${s.pw} days/week)`).join(" and ");
+      warnings.push(`ℹ️ Period ${p} is shared between ${shareList}.`);
+    }
+  }
+
+  // ── Step 3: Populate columns map based on the best solution ───────────
+  type ColEntry = { subject_id: string; teacher_id: string; subject_name: string; teacher_name: string };
+  const columns = new Map<number, (ColEntry | null)[]>();
+
+  // Initialize all columns 2 to periodsPerDay with null arrays
+  for (let p = 2; p <= periodsPerDay; p++) {
+    columns.set(p, Array(days).fill(null));
+  }
+
+  // Set Period 1 if CT subject exists
+  if (ctSub && periodsPerDay >= 1) {
+    const entry: ColEntry = {
+      subject_id: ctSub.id,
+      teacher_id: ctSub.teacher_id!,
+      subject_name: ctSub.name,
+      teacher_name: ctSub.teacher_name || ''
+    };
+    columns.set(1, Array.from({ length: days }, (_, i) => (i < ctPw ? entry : null)));
+  }
+
+  // Set periods 2 to periodsPerDay
+  for (let p = 2; p <= periodsPerDay; p++) {
+    const col = Array(days).fill(null);
+    let dayIdx = 0;
+    const subsInBin = solution.binSubjects[p];
+
+    // Sort starred first, then regular by pw descending, then id (to ensure deterministic behavior)
+    const sortedSubs = [...subsInBin].sort((a, b) => {
+      if (a.isSpecial !== b.isSpecial) return a.isSpecial ? -1 : 1;
+      return b.pw - a.pw || a.id.localeCompare(b.id);
+    });
+
+    for (const sub of sortedSubs) {
+      const entry: ColEntry = {
+        subject_id: sub.id,
+        teacher_id: sub.teacher_id,
+        subject_name: sub.name,
+        teacher_name: sub.teacher_name
+      };
+      for (let i = 0; i < sub.pw; i++) {
+        if (dayIdx < days) {
+          col[dayIdx] = entry;
+          dayIdx++;
+        }
+      }
+    }
+    columns.set(p, col);
+  }
+
+  // ── Step 4: Generate output slots ──────────────────────────────────────
+  for (const [period, col] of Array.from(columns.entries()).sort(([a], [b]) => a - b)) {
     const { start, end } = calcTime(period);
-    result.push({ subject_id: item.subject_id, teacher_id: item.teacher_id, day_of_week: day, period_number: period, start_time: start, end_time: end, room: null, subject_name: item.subject_name, teacher_name: item.teacher_name });
-    if (item.teacher_id) thisSecBusy.add(`${item.teacher_id}_${day}_${period}`);
-    if (!subjectDayUsed.has(item.subject_id)) subjectDayUsed.set(item.subject_id, new Set());
-    subjectDayUsed.get(item.subject_id)!.add(day);
-    pool.splice(idx, 1);
+
+    for (let di = 0; di < days; di++) {
+      const day = di + 1;
+      const primary = col[di];
+      if (!primary) continue;
+
+      if (isTeacherFree(primary.teacher_id, day, period)) {
+        result.push({ ...primary, day_of_week: day, period_number: period, start_time: start, end_time: end, room: null });
+        markBusy(primary.teacher_id, day, period);
+      } else {
+        warnings.push(
+          `⚠️ "${primary.subject_name}" teacher is busy on ${DAYS_NAMES[di]}, Period ${period} ` +
+          `(teaching another class). This slot is left empty to maintain schedule consistency.`
+        );
+      }
+    }
   }
 
-  return result;
+  // ── Step 5: Count validation ──────────────────────────────────────────
+  const placedCounts: Record<string, number> = {};
+  result.forEach(r => { placedCounts[r.subject_id] = (placedCounts[r.subject_id] || 0) + 1; });
+
+  for (const sub of schedulable) {
+    const requested = Math.min(days, periodsPerWeekConfig[sub.id] ?? 0);
+    const placed = placedCounts[sub.id] || 0;
+    if (placed > requested) {
+      errors.push(
+        `❌ "${sub.name}" was placed ${placed} time(s) but you only requested ${requested} period(s)/week. ` +
+        `This is a scheduling bug — please report it.`
+      );
+    } else if (placed < requested) {
+      const missing = requested - placed;
+      warnings.push(
+        `⚠ "${sub.name}" needed ${requested} period(s)/week but only ${placed} could be placed ` +
+        `(${missing} missing — teacher has conflicts in all remaining empty slots). ` +
+        `Try increasing Periods/Day or resolving teacher conflicts.`
+      );
+    }
+  }
+
+  return { slots: result, errors, warnings };
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
@@ -261,6 +503,8 @@ export default function TimetablePage() {
   const [preview, setPreview] = useState<Omit<TimetableSlot, 'id' | 'section_id' | 'is_confirmed'>[]>([]);
   const [generating, setGenerating] = useState(false);
   const [applyingPreview, setApplyingPreview] = useState(false);
+  const [generateErrors, setGenerateErrors] = useState<string[]>([]);
+  const [generateWarnings, setGenerateWarnings] = useState<string[]>([]);
 
   // Teacher view
   const [selectedTeacher, setSelectedTeacher] = useState('');
@@ -430,6 +674,8 @@ export default function TimetablePage() {
 
   const handleAutoGenerate = () => {
     setGenerating(true);
+    setGenerateErrors([]);
+    setGenerateWarnings([]);
     const otherSlots = allSlots.filter(s => s.section_id !== selectedSection);
     const currentSection = sections.find(s => s.id === selectedSection);
     const classTeacherId = currentSection?.class_teacher_id;
@@ -444,7 +690,7 @@ export default function TimetablePage() {
       ? subjectsWithOverrides.find(s => s.teacher_id === classTeacherId)
       : undefined;
 
-    const result = generateTimetable(
+    const { slots, errors, warnings } = generateTimetable(
       subjectsWithOverrides, periods, days, periodsPerWeek,
       otherSlots as TimetableSlot[],
       startTime, periodDuration, breakAfterPeriod,
@@ -452,7 +698,14 @@ export default function TimetablePage() {
       classTeacherSubject?.id,
       specialSubjects,
     );
-    setPreview(result);
+
+    setGenerateErrors(errors);
+    setGenerateWarnings(warnings);
+    if (errors.length === 0) {
+      setPreview(slots);
+    } else {
+      setPreview([]);
+    }
     setGenerating(false);
   };
 
@@ -513,7 +766,7 @@ export default function TimetablePage() {
 
       {/* ── Section Selector ────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-        <select value={selectedSection} onChange={e => { setSelectedSection(e.target.value); setPreview([]); }}
+        <select value={selectedSection} onChange={e => { setSelectedSection(e.target.value); setPreview([]); setGenerateErrors([]); setGenerateWarnings([]); }}
           style={{ padding: '10px 16px', borderRadius: '12px', border: '1.5px solid #E2E8F0', fontSize: '0.9rem', fontWeight: 600, color: '#1E293B', background: '#fff', minWidth: '220px' }}>
           <option value="">Select Section...</option>
           {sections.map(s => <option key={s.id} value={s.id}>{s.class_name} — {s.name}</option>)}
@@ -624,9 +877,58 @@ export default function TimetablePage() {
             </div>
           )}
 
+
           {/* ══ AUTO-GENERATE TAB ════════════════════════════════════════ */}
           {activeTab === 'auto' && (
             <div style={{ display: 'grid', gridTemplateColumns: '420px 1fr', gap: '20px' }}>
+
+              {/* ── Error / Warning Banners (full-width, spans both columns) ── */}
+              {(generateErrors.length > 0 || generateWarnings.length > 0) && (
+                <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+
+                  {/* Error banner — blocks preview */}
+                  {generateErrors.length > 0 && (
+                    <div style={{ background: '#FEF2F2', border: '1.5px solid #FCA5A5', borderRadius: '16px', padding: '18px 22px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                        <span style={{ fontSize: '1.4rem' }}>❌</span>
+                        <p style={{ fontWeight: 800, fontSize: '0.95rem', color: '#DC2626', margin: 0 }}>Cannot Generate Timetable</p>
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {generateErrors.map((e, i) => (
+                          <li key={i} style={{ fontSize: '0.85rem', color: '#B91C1C', lineHeight: 1.5 }}>{e}</li>
+                        ))}
+                      </ul>
+                      <p style={{ fontSize: '0.78rem', color: '#B91C1C', marginTop: '12px', margin: '12px 0 0', fontWeight: 600 }}>
+                        💡 Fix the issue above and click ⚡ Generate again.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Warning banner — generated but with caveats */}
+                  {generateWarnings.length > 0 && (
+                    <div style={{ background: '#FFFBEB', border: '1.5px solid #FDE68A', borderRadius: '16px', padding: '18px 22px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                        <span style={{ fontSize: '1.4rem' }}>⚠️</span>
+                        <p style={{ fontWeight: 800, fontSize: '0.95rem', color: '#D97706', margin: 0 }}>
+                          {generateErrors.length > 0 ? 'Additional Warnings' : 'Generated with Issues'}
+                        </p>
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {generateWarnings.map((w, i) => (
+                          <li key={i} style={{ fontSize: '0.85rem', color: '#92400E', lineHeight: 1.5 }}>{w}</li>
+                        ))}
+                      </ul>
+                      {generateErrors.length === 0 && (
+                        <p style={{ fontSize: '0.78rem', color: '#92400E', marginTop: '12px', margin: '12px 0 0', fontWeight: 600 }}>
+                          📋 Review the preview carefully before applying.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                </div>
+              )}
+
               {/* Config panel */}
               <div style={{ background: '#fff', borderRadius: '20px', border: '1px solid #E2E8F0', padding: '24px', maxHeight: '85vh', overflowY: 'auto' }}>
                 <h3 style={{ margin: '0 0 20px', fontSize: '1rem', fontWeight: 700, color: '#1E293B' }}>⚙️ Generator Settings</h3>
@@ -736,12 +1038,31 @@ export default function TimetablePage() {
                           <input type="number" min={1} max={isSpecial ? days : maxPerWeek * periods} value={val || (isSpecial ? days : 0)}
                             onChange={e => { const v = parseInt(e.target.value); setPeriodsPerWeek(p => ({ ...p, [sub.id]: isNaN(v) ? 0 : Math.min(v, isSpecial ? days : days * periods) })); }}
                             style={{ padding: '4px 4px', borderRadius: '8px', border: `1px solid ${isOver ? '#FCA5A5' : isSpecial ? '#FDE68A' : '#E2E8F0'}`, textAlign: 'center', fontSize: '0.78rem', background: isOver ? '#FEF2F2' : isSpecial ? '#FEF3C7' : 'white', width: '100%', boxSizing: 'border-box', fontWeight: isSpecial ? 700 : 400 }} />
-                          <select value={selectedTid}
-                            onChange={e => setSubjectTeacherOverrides(o => ({ ...o, [sub.id]: e.target.value }))}
-                            style={{ padding: '4px 6px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.72rem', width: '100%', background: 'white', color: selectedTid ? '#0F172A' : '#94A3B8' }}>
-                            <option value="">-- No teacher --</option>
-                            {teachers.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
-                          </select>
+                          {(() => {
+                            // Only show teachers assigned to THIS subject in THIS section.
+                            // Falls back to all teachers if no section-specific assignments exist.
+                            const sectionAssignments = assignments.filter(
+                              a => a.subject_id === sub.id && a.section_id === selectedSection
+                            );
+                            const eligibleTeachers = sectionAssignments.length > 0
+                              ? teachers.filter(t => sectionAssignments.some(a => a.teacher_id === t.id))
+                              : teachers;
+                            const hasSectionFilter = sectionAssignments.length > 0;
+                            return (
+                              <select value={selectedTid}
+                                onChange={e => setSubjectTeacherOverrides(o => ({ ...o, [sub.id]: e.target.value }))}
+                                title={hasSectionFilter ? `Showing ${eligibleTeachers.length} assigned teacher(s) for this class` : 'No specific assignment found — showing all teachers'}
+                                style={{ padding: '4px 6px', borderRadius: '8px', border: `1px solid ${hasSectionFilter ? '#BBF7D0' : '#E2E8F0'}`, fontSize: '0.72rem', width: '100%', background: hasSectionFilter ? '#F0FDF4' : 'white', color: selectedTid ? '#0F172A' : '#94A3B8' }}>
+                                <option value="">-- No teacher --</option>
+                                {eligibleTeachers.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+                                {/* If current override is not in eligible list, show it anyway to avoid blank */}
+                                {selectedTid && !eligibleTeachers.some(t => t.id === selectedTid) && (() => {
+                                  const fallback = teachers.find(t => t.id === selectedTid);
+                                  return fallback ? <option key={fallback.id} value={fallback.id}>{fallback.full_name} ⚠️</option> : null;
+                                })()}
+                              </select>
+                            );
+                          })()}
                           {/* Starred toggle */}
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <input type="checkbox" id={`special_${sub.id}`} checked={isSpecial}
@@ -936,11 +1257,30 @@ export default function TimetablePage() {
               </div>
               <div>
                 <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>Teacher *</label>
-                <select value={slotForm.teacher_id} onChange={e => { setSlotForm(f => ({ ...f, teacher_id: e.target.value })); checkConflict(e.target.value, showModal.day, showModal.period); }}
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '12px', border: `1.5px solid ${conflict ? '#FCA5A5' : '#E2E8F0'}`, fontSize: '0.9rem', boxSizing: 'border-box' }}>
-                  <option value="">Select teacher...</option>
-                  {teachers.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
-                </select>
+                {(() => {
+                  // Only show teachers assigned to the selected subject in this section.
+                  // Falls back to all teachers if no section-specific assignments exist or no subject is selected.
+                  const sectionAssignments = assignments.filter(
+                    a => a.subject_id === slotForm.subject_id && a.section_id === selectedSection
+                  );
+                  const eligibleTeachers = sectionAssignments.length > 0
+                    ? teachers.filter(t => sectionAssignments.some(a => a.teacher_id === t.id))
+                    : teachers;
+                  const hasSectionFilter = sectionAssignments.length > 0 && !!slotForm.subject_id;
+                  return (
+                    <select value={slotForm.teacher_id} onChange={e => { setSlotForm(f => ({ ...f, teacher_id: e.target.value })); checkConflict(e.target.value, showModal.day, showModal.period); }}
+                      title={hasSectionFilter ? `Showing ${eligibleTeachers.length} assigned teacher(s) for this class` : 'No specific assignment found — showing all teachers'}
+                      style={{ width: '100%', padding: '10px 14px', borderRadius: '12px', border: `1.5px solid ${conflict ? '#FCA5A5' : hasSectionFilter ? '#BBF7D0' : '#E2E8F0'}`, fontSize: '0.9rem', boxSizing: 'border-box', background: hasSectionFilter ? '#F0FDF4' : 'white', color: slotForm.teacher_id ? '#0F172A' : '#94A3B8' }}>
+                      <option value="">Select teacher...</option>
+                      {eligibleTeachers.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+                      {/* If current selection is not in eligible list, show it anyway to avoid blank */}
+                      {slotForm.teacher_id && !eligibleTeachers.some(t => t.id === slotForm.teacher_id) && (() => {
+                        const fallback = teachers.find(t => t.id === slotForm.teacher_id);
+                        return fallback ? <option key={fallback.id} value={fallback.id}>{fallback.full_name} ⚠️</option> : null;
+                      })()}
+                    </select>
+                  );
+                })()}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
