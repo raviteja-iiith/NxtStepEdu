@@ -14,17 +14,17 @@ interface Subject { id: string; name: string; teacher_id?: string; teacher_name?
 interface Teacher { id: string; full_name: string; }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-const DAYS_SHORT = ['Mon','Tue','Wed','Thu','Fri','Sat'];
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const DAYS_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const SUBJECT_COLORS = [
-  '#EFF6FF','#F0FDF4','#FFFBEB','#FFF1F2','#F5F3FF',
-  '#F0FDFA','#FFF7ED','#F0F9FF','#FDF4FF','#F7FEE7',
-  '#ECFDF5','#FEF9C3'
+  '#EFF6FF', '#F0FDF4', '#FFFBEB', '#FFF1F2', '#F5F3FF',
+  '#F0FDFA', '#FFF7ED', '#F0F9FF', '#FDF4FF', '#F7FEE7',
+  '#ECFDF5', '#FEF9C3'
 ];
 const SUBJECT_BORDER = [
-  '#BFDBFE','#BBF7D0','#FDE68A','#FECDD3','#DDD6FE',
-  '#99F6E4','#FED7AA','#BAE6FD','#E9D5FF','#D9F99D',
-  '#A7F3D0','#FEF08A'
+  '#BFDBFE', '#BBF7D0', '#FDE68A', '#FECDD3', '#DDD6FE',
+  '#99F6E4', '#FED7AA', '#BAE6FD', '#E9D5FF', '#D9F99D',
+  '#A7F3D0', '#FEF08A'
 ];
 
 // ─── Auto-Generate Algorithm ─────────────────────────────────────────────────
@@ -48,7 +48,7 @@ function generateTimetable(
     let totalMins = sh * 60 + sm + (period - 1) * periodDuration;
     if (period > breakAfterPeriod) totalMins += 30;
     const endMins = totalMins + periodDuration;
-    return { start: `${pad(Math.floor(totalMins/60))}:${pad(totalMins%60)}`, end: `${pad(Math.floor(endMins/60))}:${pad(endMins%60)}` };
+    return { start: `${pad(Math.floor(totalMins / 60))}:${pad(totalMins % 60)}`, end: `${pad(Math.floor(endMins / 60))}:${pad(endMins % 60)}` };
   };
 
   // Build cross-section teacher clash lookup keyed by "teacherId_day_period"
@@ -63,71 +63,103 @@ function generateTimetable(
 
   const hasCT = !!classTeacherId && !!classTeacherSubjectId;
 
-  // ── Step 0: Class Teacher → Period 1 EVERY DAY (unconditionally the first slot) ──
-  // This is absolute: period 1 is always the class teacher's subject, regardless of
-  // any starred-subject configuration. Starred subjects always come AFTER this.
-  // We skip a day if the class teacher is already busy in another section at Period 1.
+  /**
+   * findFreeSlot — scans forward from `fromPeriod` on a given day until it finds
+   * a period that is (a) not yet taken and (b) the teacher is free in ALL sections.
+   * If teacherId is null/empty, only the taken-slot check applies.
+   *
+   * KEY BEHAVIOUR: when a teacher is already in another class at the preferred
+   * period, the subject automatically slides to the next conflict-free period
+   * on that same day — nothing is ever silently dropped.
+   *
+   * Returns -1 only when there is truly no period left on this day.
+   */
+  const findFreeSlot = (day: number, teacherId: string | null, fromPeriod: number): number => {
+    for (let p = fromPeriod; p <= periodsPerDay; p++) {
+      if (takenSlots.has(`${day}_${p}`)) continue;
+      if (teacherId) {
+        if (crossBusy.has(`${teacherId}_${day}_${p}`)) continue;   // busy in another class → slide
+        if (thisSecBusy.has(`${teacherId}_${day}_${p}`)) continue; // already assigned in this section
+      }
+      return p;
+    }
+    return -1; // no slot available on this day at all
+  };
+
+  // ── Step 0: Class Teacher ─────────────────────────────────────────────────
+  // Prefers Period 1. If teacher is already teaching another class at P1,
+  // the algorithm slides the subject to the next free period on that day
+  // automatically — the CT subject is never silently omitted.
   if (hasCT && periodsPerDay >= 1) {
     const ctSubject = subjects.find(s => s.id === classTeacherSubjectId);
     if (ctSubject) {
-      const { start, end } = calcTime(1);
       for (let day = 1; day <= days; day++) {
-        // ✅ Cross-section conflict check: skip if teacher already has Period 1 this day
-        if (crossBusy.has(`${classTeacherId}_${day}_1`)) continue;
+        const p = findFreeSlot(day, classTeacherId!, 1);
+        if (p === -1) continue; // no room at all this day (edge case)
+        const { start, end } = calcTime(p);
         result.push({
           subject_id: ctSubject.id, teacher_id: classTeacherId!,
-          day_of_week: day, period_number: 1,
+          day_of_week: day, period_number: p,
           start_time: start, end_time: end,
           room: null, subject_name: ctSubject.name, teacher_name: ctSubject.teacher_name || '',
         });
-        takenSlots.add(`${day}_1`);
-        thisSecBusy.add(`${classTeacherId}_${day}_1`);
+        takenSlots.add(`${day}_${p}`);
+        thisSecBusy.add(`${classTeacherId!}_${day}_${p}`);
       }
-      // If CT's subject is also marked starred, flag it placed so Step 1 won't re-schedule it
       if (specialConfig?.[classTeacherSubjectId!]?.isSpecial) {
         specialSubjectIds.add(classTeacherSubjectId!);
       }
     }
   }
 
-  // ── Step 1: Starred subjects → sequential slots immediately after the CT period ──
-  // CT occupies period 1 → starred subjects start at period 2 (when CT exists),
-  // or period 1 (when there is no class teacher, preserving original behaviour).
-  // CT's own subject is excluded if it was already placed above.
+  // ── Step 1: Starred subjects ──────────────────────────────────────────────
+  // Preferred at periods starredStart, starredStart+1, …
+  // If the teacher is already in another class at the preferred period,
+  // findFreeSlot() slides the subject forward to the next conflict-free slot
+  // on that day — the subject is never dropped.
   const starredStart = hasCT ? 2 : 1;
   const specialSubs = subjects
     .filter(sub => specialConfig?.[sub.id]?.isSpecial && !specialSubjectIds.has(sub.id))
     .sort((a, b) => (specialConfig![a.id]?.fixedPeriod ?? 1) - (specialConfig![b.id]?.fixedPeriod ?? 1));
 
   specialSubs.forEach((sub, idx) => {
-    const actualPeriod = starredStart + idx;
-    if (actualPeriod > periodsPerDay) return;
     specialSubjectIds.add(sub.id);
-    const { start, end } = calcTime(actualPeriod);
-    for (let day = 1; day <= days; day++) {
-      // ✅ Cross-section conflict check: skip if teacher is busy in another class at this slot
-      if (sub.teacher_id && crossBusy.has(`${sub.teacher_id}_${day}_${actualPeriod}`)) continue;
+    // Preferred period position: 1st starred → P(starredStart), 2nd → P(starredStart+1), …
+    // This is the EARLIEST period we try first; findFreeSlot will slide forward if needed.
+    const preferredPeriod = starredStart + idx;
+    if (preferredPeriod > periodsPerDay) return;
+
+    // P/W controls how many times per week this subject is scheduled.
+    // Default = every school day (all `days` days) if not set.
+    const periodsNeeded = Math.min(days, Math.max(1, periodsPerWeekConfig[sub.id] || days));
+    let placed = 0;
+
+    for (let day = 1; day <= days && placed < periodsNeeded; day++) {
+      // Try preferred period; if teacher is blocked there, slide forward automatically
+      const p = findFreeSlot(day, sub.teacher_id || null, preferredPeriod);
+      if (p === -1) continue; // no room anywhere this day
+      const { start, end } = calcTime(p);
       result.push({
         subject_id: sub.id, teacher_id: sub.teacher_id || '',
-        day_of_week: day, period_number: actualPeriod,
+        day_of_week: day, period_number: p,
         start_time: start, end_time: end,
         room: null, subject_name: sub.name, teacher_name: sub.teacher_name || '',
       });
-      takenSlots.add(`${day}_${actualPeriod}`);
-      if (sub.teacher_id) thisSecBusy.add(`${sub.teacher_id}_${day}_${actualPeriod}`);
+      takenSlots.add(`${day}_${p}`);
+      if (sub.teacher_id) thisSecBusy.add(`${sub.teacher_id}_${day}_${p}`);
+      placed++;
     }
   });
 
-  // Total reserved periods per day: 1 (CT at P1) + number of non-CT starred subjects
-  const reservedCount = (hasCT ? 1 : 0) + specialSubs.length;
-
-  // ── Step 2: Build weekly pool ─────────────────────────────────────────────
+  // ── Step 2: Build weekly pool for regular subjects ────────────────────────
   const pool: { subject_id: string; teacher_id: string; subject_name: string; teacher_name: string }[] = [];
   for (const sub of subjects) {
-    if (specialSubjectIds.has(sub.id)) continue; // already fully placed (starred or CT-starred)
-    // CT's subject was placed `days` times at period 1; deduct those from the pool count
-    const isCtSub = hasCT && sub.id === classTeacherSubjectId;
-    const alreadyPlaced = isCtSub ? days : 0;
+    if (specialSubjectIds.has(sub.id)) continue;
+    // Count how many CT slots were actually placed (may differ from `days` if
+    // teacher had zero free periods on some days — rare but handled correctly)
+    const alreadyPlaced = (hasCT && sub.id === classTeacherSubjectId)
+      ? result.filter(r => r.subject_id === classTeacherSubjectId).length
+      : 0;
     const count = Math.max(0, (periodsPerWeekConfig[sub.id] ?? 0) - alreadyPlaced);
     for (let i = 0; i < count; i++) {
       pool.push({ subject_id: sub.id, teacher_id: sub.teacher_id || '', subject_name: sub.name, teacher_name: sub.teacher_name || '' });
@@ -139,11 +171,12 @@ function generateTimetable(
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
 
-  // ── Step 3: Collect available slots — skip reserved zone (periods 1..reservedCount) ──
+  // ── Step 3: Collect ALL untaken slots ─────────────────────────────────────
+  // CT and starred subjects may have shifted to later periods due to conflicts,
+  // so we must NOT hard-block any period range — collect every free slot.
   const availableSlots: { day: number; period: number }[] = [];
   for (let day = 1; day <= days; day++) {
     for (let period = 1; period <= periodsPerDay; period++) {
-      if (period <= reservedCount) continue; // reserved for CT + starred subjects
       if (!takenSlots.has(`${day}_${period}`)) {
         availableSlots.push({ day, period });
       }
@@ -155,7 +188,7 @@ function generateTimetable(
     [availableSlots[i], availableSlots[j]] = [availableSlots[j], availableSlots[i]];
   }
 
-  // ── Step 4: Assign pool items to slots across the whole week ────────────────
+  // ── Step 4: Assign pool items to slots across the whole week ─────────────
   const subjectDayUsed = new Map<string, Set<number>>();
 
   const tryFind = (day: number, period: number, allowRepeat: boolean): number => {
@@ -199,7 +232,7 @@ export default function TimetablePage() {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [slots, setSlots] = useState<TimetableSlot[]>([]);
   const [allSlots, setAllSlots] = useState<TimetableSlot[]>([]); // cross-section
-  const [assignments, setAssignments] = useState<{subject_id: string, section_id: string, teacher_id: string, teacher_name: string}[]>([]);
+  const [assignments, setAssignments] = useState<{ subject_id: string, section_id: string, teacher_id: string, teacher_name: string }[]>([]);
   const [schoolId, setSchoolId] = useState('');
 
   // UI state
@@ -468,12 +501,14 @@ export default function TimetablePage() {
       {/* ── Tabs ────────────────────────────────────────────────────────── */}
       {selectedSection && (
         <div style={{ display: 'flex', gap: '4px', background: '#F1F5F9', borderRadius: '14px', padding: '4px', width: 'fit-content' }}>
-          {(['manual','auto','teacher'] as const).map(tab => (
+          {(['manual', 'auto', 'teacher'] as const).map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}
-              style={{ padding: '8px 22px', borderRadius: '10px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', transition: 'all .2s',
+              style={{
+                padding: '8px 22px', borderRadius: '10px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', transition: 'all .2s',
                 background: activeTab === tab ? '#fff' : 'transparent',
                 color: activeTab === tab ? '#1E40AF' : '#64748B',
-                boxShadow: activeTab === tab ? '0 2px 8px rgba(0,0,0,0.08)' : 'none' }}>
+                boxShadow: activeTab === tab ? '0 2px 8px rgba(0,0,0,0.08)' : 'none'
+              }}>
               {tab === 'manual' ? '✏️ Manual Edit' : tab === 'auto' ? '⚡ Auto Generate' : '👩‍🏫 Teacher View'}
             </button>
           ))}
@@ -548,9 +583,9 @@ export default function TimetablePage() {
                                   )}
                                 </div>
                               ) : (
-                                <div onClick={() => { if (isConfirmed) return; setShowModal({ day, period }); setSlotForm({ subject_id: '', teacher_id: '', start_time: `${String(7 + period).padStart(2,'0')}:00`, end_time: `${String(7 + period).padStart(2,'0')}:45`, room: '' }); setConflict(''); }}
+                                <div onClick={() => { if (isConfirmed) return; setShowModal({ day, period }); setSlotForm({ subject_id: '', teacher_id: '', start_time: `${String(7 + period).padStart(2, '0')}:00`, end_time: `${String(7 + period).padStart(2, '0')}:45`, room: '' }); setConflict(''); }}
                                   style={{ minHeight: '64px', borderRadius: '10px', border: '2px dashed #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isConfirmed ? 'default' : 'pointer', color: '#CBD5E1', fontSize: '1.2rem', transition: 'all .15s' }}
-                                  onMouseEnter={e => { if (!isConfirmed) { (e.currentTarget as HTMLElement).style.borderColor = '#93C5FD'; (e.currentTarget as HTMLElement).style.background = '#EFF6FF'; }}}
+                                  onMouseEnter={e => { if (!isConfirmed) { (e.currentTarget as HTMLElement).style.borderColor = '#93C5FD'; (e.currentTarget as HTMLElement).style.background = '#EFF6FF'; } }}
                                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#E2E8F0'; (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
                                   {!isConfirmed && '+'}
                                 </div>
@@ -574,16 +609,16 @@ export default function TimetablePage() {
                 <h3 style={{ margin: '0 0 20px', fontSize: '1rem', fontWeight: 700, color: '#1E293B' }}>⚙️ Generator Settings</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   {[
-                    { label: 'Periods / Day', value: periods, onChange: (v: string) => setPeriods(parseInt(v)||8), type: 'number', min: 4, max: 12 },
-                    { label: 'Days / Week', value: days, onChange: (v: string) => setDays(parseInt(v)||6), type: 'number', min: 5, max: 6 },
+                    { label: 'Periods / Day', value: periods, onChange: (v: string) => setPeriods(parseInt(v) || 8), type: 'number', min: 4, max: 12 },
+                    { label: 'Days / Week', value: days, onChange: (v: string) => setDays(parseInt(v) || 6), type: 'number', min: 5, max: 6 },
                     { label: 'Start Time', value: startTime, onChange: setStartTime, type: 'time' },
-                    { label: 'Period Duration (min)', value: periodDuration, onChange: (v: string) => setPeriodDuration(parseInt(v)||45), type: 'number', min: 30, max: 90 },
-                    { label: 'Break After Period', value: breakAfterPeriod, onChange: (v: string) => setBreakAfterPeriod(parseInt(v)||4), type: 'number', min: 1, max: 8 },
+                    { label: 'Period Duration (min)', value: periodDuration, onChange: (v: string) => setPeriodDuration(parseInt(v) || 45), type: 'number', min: 30, max: 90 },
+                    { label: 'Break After Period', value: breakAfterPeriod, onChange: (v: string) => setBreakAfterPeriod(parseInt(v) || 4), type: 'number', min: 1, max: 8 },
                   ].map(f => (
                     <div key={f.label}>
                       <label style={{ fontSize: '0.78rem', color: '#64748B', fontWeight: 600, display: 'block', marginBottom: '4px' }}>{f.label}</label>
                       <input type={f.type} value={f.value} onChange={e => (f.onChange as (v: string) => void)(e.target.value)}
-                        min={(f as {min?: number}).min} max={(f as {max?: number}).max}
+                        min={(f as { min?: number }).min} max={(f as { max?: number }).max}
                         style={{ width: '100%', padding: '8px 12px', borderRadius: '10px', border: '1.5px solid #E2E8F0', fontSize: '0.85rem', boxSizing: 'border-box' }} />
                     </div>
                   ))}
@@ -646,15 +681,15 @@ export default function TimetablePage() {
                       );
                     })()}
 
-                    {/* ── Column headers: Subject | P/W | Teacher | ⭐ | Ord ── */}
+                    {/* ── Column headers: Subject | P/W | Teacher | ⭐ | Pos ── */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 44px 1fr 28px 44px', gap: '4px', marginBottom: '4px', padding: '0 2px' }}>
                       <span style={{ fontSize: '0.68rem', color: '#94A3B8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Subject</span>
                       <span style={{ fontSize: '0.68rem', color: '#94A3B8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>P/W</span>
                       <span style={{ fontSize: '0.68rem', color: '#94A3B8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Teacher</span>
-                      <span style={{ fontSize: '0.68rem', color: '#F59E0B', fontWeight: 700, textAlign: 'center' }} title="Mark as Starred (pinned after the class-teacher period)">⭐</span>
-                      {/* "Ord" = sort-order among starred subjects (1 = first starred period, 2 = second, …) */}
+                      <span style={{ fontSize: '0.68rem', color: '#F59E0B', fontWeight: 700, textAlign: 'center' }} title="Mark as Priority — subject is pinned to early periods">⭐</span>
+                      {/* "Pos" = preferred period position among priority subjects (1 = earliest) */}
                       <span style={{ fontSize: '0.68rem', color: '#94A3B8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}
-                        title="Order among starred subjects — lower number appears earlier in the day">Ord</span>
+                        title="Preferred period position among priority subjects — 1 = first morning slot">Pos</span>
                     </div>
 
                     {/* ── Per-subject rows ─────────────────────────────────── */}
@@ -663,8 +698,9 @@ export default function TimetablePage() {
                       const isSpecial = sc?.isSpecial ?? false;
                       const fixedPeriod = sc?.fixedPeriod ?? 1;
                       const val = periodsPerWeek[sub.id] ?? 0;
-                      const maxPerWeek = days * periods;
-                      const isOver = !isSpecial && val > days * (periods - 1);
+                      const maxPerWeek = days;
+                      // For starred subjects, "over" means > days (can't exceed 1 per day)
+                      const isOver = isSpecial ? val > days : val > days * (periods - 1);
                       const selectedTid = subjectTeacherOverrides[sub.id] || '';
                       return (
                         <div key={sub.id} style={{ display: 'grid', gridTemplateColumns: '1fr 44px 1fr 28px 44px', gap: '4px', marginBottom: '5px', alignItems: 'center', background: isSpecial ? '#FFFBEB' : 'transparent', borderRadius: isSpecial ? '8px' : 0, padding: isSpecial ? '4px 6px' : '0', border: isSpecial ? '1px solid #FDE68A' : 'none' }}>
@@ -673,10 +709,10 @@ export default function TimetablePage() {
                             {sub.name}
                             {isOver && <span style={{ marginLeft: 4, fontSize: '0.6rem', color: '#D97706' }}>⚠</span>}
                           </span>
-                          {/* P/W input — disabled for starred subjects (they fill exactly 1 slot/day) */}
-                          <input type="number" min={0} max={maxPerWeek} value={val} disabled={isSpecial}
-                            onChange={e => { const v = parseInt(e.target.value); setPeriodsPerWeek(p => ({ ...p, [sub.id]: isNaN(v) ? 0 : v })); }}
-                            style={{ padding: '4px 4px', borderRadius: '8px', border: `1px solid ${isOver ? '#FDE68A' : '#E2E8F0'}`, textAlign: 'center', fontSize: '0.78rem', background: isSpecial ? '#F1F5F9' : isOver ? '#FFFBEB' : 'white', width: '100%', boxSizing: 'border-box', opacity: isSpecial ? 0.4 : 1 }} />
+                          {/* P/W input — for starred: how many days/week this priority subject appears */}
+                          <input type="number" min={1} max={isSpecial ? days : maxPerWeek * periods} value={val || (isSpecial ? days : 0)}
+                            onChange={e => { const v = parseInt(e.target.value); setPeriodsPerWeek(p => ({ ...p, [sub.id]: isNaN(v) ? 0 : Math.min(v, isSpecial ? days : days * periods) })); }}
+                            style={{ padding: '4px 4px', borderRadius: '8px', border: `1px solid ${isOver ? '#FCA5A5' : isSpecial ? '#FDE68A' : '#E2E8F0'}`, textAlign: 'center', fontSize: '0.78rem', background: isOver ? '#FEF2F2' : isSpecial ? '#FEF3C7' : 'white', width: '100%', boxSizing: 'border-box', fontWeight: isSpecial ? 700 : 400 }} />
                           <select value={selectedTid}
                             onChange={e => setSubjectTeacherOverrides(o => ({ ...o, [sub.id]: e.target.value }))}
                             style={{ padding: '4px 6px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.72rem', width: '100%', background: 'white', color: selectedTid ? '#0F172A' : '#94A3B8' }}>
@@ -686,13 +722,20 @@ export default function TimetablePage() {
                           {/* Starred toggle */}
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <input type="checkbox" id={`special_${sub.id}`} checked={isSpecial}
-                              onChange={e => setSpecialSubjects(prev => ({ ...prev, [sub.id]: { isSpecial: e.target.checked, fixedPeriod: prev[sub.id]?.fixedPeriod ?? 1 } }))}
+                              onChange={e => {
+                                const checked = e.target.checked;
+                                // Auto-set P/W = days (every day) when first marked as priority
+                                if (checked && !periodsPerWeek[sub.id]) {
+                                  setPeriodsPerWeek(p => ({ ...p, [sub.id]: days }));
+                                }
+                                setSpecialSubjects(prev => ({ ...prev, [sub.id]: { isSpecial: checked, fixedPeriod: prev[sub.id]?.fixedPeriod ?? 1 } }));
+                              }}
                               style={{ width: '14px', height: '14px', cursor: 'pointer', accentColor: '#F59E0B' }} />
                           </div>
-                          {/* Ord input: sort-order among starred subjects */}
+                          {/* Pos input: preferred period position (1 = first morning slot, 2 = second, …) */}
                           <input type="number" min={1} max={periods} value={fixedPeriod} disabled={!isSpecial}
                             onChange={e => { const v = parseInt(e.target.value); setSpecialSubjects(prev => ({ ...prev, [sub.id]: { isSpecial: true, fixedPeriod: isNaN(v) ? 1 : Math.max(v, 1) } })); }}
-                            title="Order among starred subjects — 1 means first starred period, 2 means second, etc."
+                            title="Preferred period position among priority subjects — 1 = earliest morning slot"
                             style={{ padding: '4px 4px', borderRadius: '8px', border: `1px solid ${isSpecial ? '#FDE68A' : '#E2E8F0'}`, textAlign: 'center', fontSize: '0.78rem', background: isSpecial ? '#FEF3C7' : '#F8FAFC', width: '100%', boxSizing: 'border-box', fontWeight: isSpecial ? 700 : 400, opacity: isSpecial ? 1 : 0.35 }} />
                         </div>
                       );
