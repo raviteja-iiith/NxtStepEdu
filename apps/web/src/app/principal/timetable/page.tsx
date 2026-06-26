@@ -241,6 +241,7 @@ export default function TimetablePage() {
   const [activeTab, setActiveTab] = useState<'manual' | 'auto' | 'teacher'>('manual');
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   // Manual edit modal
   const [showModal, setShowModal] = useState<{ day: number; period: number } | null>(null);
@@ -412,6 +413,21 @@ export default function TimetablePage() {
     setConfirming(false);
   };
 
+  const handleClearTimetable = async () => {
+    if (!selectedSection) return;
+    const section = sections.find(s => s.id === selectedSection);
+    const label = section ? `${section.class_name} — ${section.name}` : 'this section';
+    const confirmed = window.confirm(`⚠️ Clear entire timetable for ${label}?\n\nThis will permanently delete all ${slots.length} scheduled period(s). This action cannot be undone.`);
+    if (!confirmed) return;
+    setClearing(true);
+    await supabase.from('timetable').delete().eq('section_id', selectedSection);
+    setSlots([]);
+    setPreview([]);
+    setIsConfirmed(false);
+    await fetchAllSlots();
+    setClearing(false);
+  };
+
   const handleAutoGenerate = () => {
     setGenerating(true);
     const otherSlots = allSlots.filter(s => s.section_id !== selectedSection);
@@ -474,15 +490,22 @@ export default function TimetablePage() {
               {isConfirmed ? '✅ Confirmed' : '🟡 Draft'}
             </span>
             {slots.length > 0 && (
-              isConfirmed ? (
-                <button onClick={handleResetDraft} disabled={confirming} style={{ padding: '8px 20px', borderRadius: '10px', background: 'rgba(255,255,255,0.2)', color: '#fff', border: '1px solid rgba(255,255,255,0.4)', fontWeight: 600, cursor: 'pointer', fontSize: '0.85rem' }}>
-                  {confirming ? '...' : '✏️ Reset to Draft'}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {isConfirmed ? (
+                  <button onClick={handleResetDraft} disabled={confirming} style={{ padding: '8px 20px', borderRadius: '10px', background: 'rgba(255,255,255,0.2)', color: '#fff', border: '1px solid rgba(255,255,255,0.4)', fontWeight: 600, cursor: 'pointer', fontSize: '0.85rem' }}>
+                    {confirming ? '...' : '✏️ Reset to Draft'}
+                  </button>
+                ) : (
+                  <button onClick={handleConfirm} disabled={confirming} style={{ padding: '8px 20px', borderRadius: '10px', background: '#22C55E', color: '#fff', border: 'none', fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem', boxShadow: '0 4px 14px rgba(34,197,94,0.4)' }}>
+                    {confirming ? '...' : '🔒 Confirm Timetable'}
+                  </button>
+                )}
+                <button onClick={handleClearTimetable} disabled={clearing}
+                  title="Delete all periods for this section"
+                  style={{ padding: '8px 16px', borderRadius: '10px', background: 'rgba(239,68,68,0.18)', color: '#FCA5A5', border: '1px solid rgba(239,68,68,0.35)', fontWeight: 700, cursor: clearing ? 'not-allowed' : 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  {clearing ? '⏳' : '🗑️'} {clearing ? 'Clearing...' : 'Clear'}
                 </button>
-              ) : (
-                <button onClick={handleConfirm} disabled={confirming} style={{ padding: '8px 20px', borderRadius: '10px', background: '#22C55E', color: '#fff', border: 'none', fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem', boxShadow: '0 4px 14px rgba(34,197,94,0.4)' }}>
-                  {confirming ? '...' : '🔒 Confirm Timetable'}
-                </button>
-              )
+              </div>
             )}
           </div>
         )}
