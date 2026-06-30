@@ -556,7 +556,7 @@ export default function StudentsPage() {
                     <table style={{ width:'100%', borderCollapse:'collapse', minWidth:900 }}>
                       <thead style={{ background:'#1E3A8A' }}>
                         <tr>
-                          {['Row','Full Name *','Date of Birth *','Gender *','Class Name *','Section Name *','Admission No','Pen Number','Roll Number','Address','Admission Date','Status'].map(h=>(
+                          {['Row','Full Name *','Date of Birth *','Gender *','Class Name *','Section Name *','Admission No','Pen Number','Roll Number','Address','Status'].map(h=>(
                             <th key={h} style={{ padding:'8px 12px', fontSize:11, fontWeight:700, color:'white', textAlign:'left', borderBottom:'1px solid #2563EB', whiteSpace:'nowrap' }}>{h}</th>
                           ))}
                         </tr>
@@ -574,7 +574,6 @@ export default function StudentsPage() {
                             <td style={{ padding:'7px 12px', fontSize:11, color:'#64748B', fontFamily:'monospace' }}>{r.pen_number||'—'}</td>
                             <td style={{ padding:'7px 12px', fontSize:12, color:'#64748B' }}>{r.roll_number??'—'}</td>
                             <td style={{ padding:'7px 12px', fontSize:11, color:'#64748B', maxWidth:150, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.address||'—'}</td>
-                            <td style={{ padding:'7px 12px', fontSize:11, color:'#64748B', fontFamily:'monospace' }}>{r.admission_date}</td>
                             <td style={{ padding:'7px 12px', fontSize:12 }}>
                               {r.error ? <span style={{ color:'#DC2626', fontWeight:600, whiteSpace:'nowrap' }}>{r.error}</span> : <span style={{ color:'#059669', fontWeight:700 }}>✓ Valid</span>}
                             </td>
