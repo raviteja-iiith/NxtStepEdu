@@ -26,13 +26,13 @@ export default function StudentsPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [showProfile, setShowProfile] = useState<Student|null>(null);
   const [showEdit, setShowEdit] = useState<Student|null>(null);
-  const [editForm, setEditForm] = useState({ full_name:'', class_id:'', section_id:'', reason:'' });
+  const [editForm, setEditForm] = useState({ full_name:'', date_of_birth:'', gender:'', blood_group:'', admission_number:'', pen_number:'', roll_number:'', address:'', class_id:'', section_id:'', reason:'' });
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState('');
   const [editSuccess, setEditSuccess] = useState('');
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
-  const [form, setForm] = useState({ full_name:'', date_of_birth:'', gender:'', blood_group:'', class_id:'', section_id:'', roll_number:'', address:'', admission_number:'', admission_date:new Date().toISOString().split('T')[0] });
+  const [form, setForm] = useState({ full_name:'', date_of_birth:'', gender:'', blood_group:'', class_id:'', section_id:'', roll_number:'', address:'', admission_number:'', admission_date:new Date().toISOString().split('T')[0], addParent:false, parentName:'', parentPhone:'', parentRel:'father' });
 
   const [showInactive, setShowInactive] = useState(false);
 
@@ -41,6 +41,7 @@ export default function StudentsPage() {
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkError, setBulkError] = useState('');
   const [bulkSuccess, setBulkSuccess] = useState('');
+  const [parentCredentials, setParentCredentials] = useState<{name:string;phone:string;pin:string}|null>(null);
   const fetchStudents = useCallback(async () => {
     setLoading(true);
     const userId=(await supabase.auth.getUser()).data.user?.id;
@@ -85,6 +86,8 @@ export default function StudentsPage() {
 
   const handleAdd = async () => {
     if (!form.full_name||!form.date_of_birth||!form.gender||!form.class_id||!form.section_id) { setFormError('Name, DOB, gender, class & section required'); return; }
+    if (form.addParent && form.parentPhone && form.parentPhone.replace(/\D/g,'').length !== 10) { setFormError('Parent phone must be exactly 10 digits.'); return; }
+    if (form.addParent && !form.parentName.trim()) { setFormError('Parent name is required when adding parent details.'); return; }
     setSaving(true); setFormError('');
     const userId=(await supabase.auth.getUser()).data.user?.id||'';
     const { data: ur } = await supabase.from('users').select('school_id').eq('id',userId).single();
@@ -97,22 +100,69 @@ export default function StudentsPage() {
     const { data: ins, error } = await supabase.from('students').insert({ full_name:form.full_name, date_of_birth:form.date_of_birth, gender:form.gender, blood_group:form.blood_group||null, class_id:form.class_id, section_id:form.section_id, roll_number:form.roll_number?parseInt(form.roll_number):null, address:form.address||null, admission_number:admNum, admission_date:form.admission_date, academic_year_id:yr?.id||null, school_id:schoolId, is_active:true }).select();
     if (error) { setFormError(`Error: ${error.message}`); setSaving(false); return; }
     if (!ins||ins.length===0) { setFormError('Could not save. Permissions issue.'); setSaving(false); return; }
+    const studentId = ins[0].id;
+
+    // ── Optional parent creation ──────────────────────────────────────────────
+    if (form.addParent && form.parentName.trim() && form.parentPhone) {
+      const phone = form.parentPhone.replace(/\D/g,'');
+      const pin = String(Math.floor(100000 + Math.random() * 900000));
+      try {
+        const res = await fetch('/api/auth/create-user', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email:`${phone}@parent.schoolerp.local`, password:pin, role:'parent', full_name:form.parentName.trim(), phone, username:phone, school_id:schoolId, profile_data:{} }),
+        });
+        const result = await res.json();
+        if (res.ok && result.userId) {
+          await supabase.from('student_parent_links').insert({ student_id:studentId, parent_id:result.userId, relationship:form.parentRel, is_primary_contact:true });
+          setParentCredentials({ name:form.parentName.trim(), phone, pin });
+        } else {
+          setFormError(`Student admitted, but parent account failed: ${result.error||'Unknown error'}`);
+        }
+      } catch { setFormError('Student admitted, but parent account network error.'); }
+    }
+
     setShowAdd(false);
-    setForm({ full_name:'', date_of_birth:'', gender:'', blood_group:'', class_id:'', section_id:'', roll_number:'', address:'', admission_number:'', admission_date:new Date().toISOString().split('T')[0] });
+    setForm({ full_name:'', date_of_birth:'', gender:'', blood_group:'', class_id:'', section_id:'', roll_number:'', address:'', admission_number:'', admission_date:new Date().toISOString().split('T')[0], addParent:false, parentName:'', parentPhone:'', parentRel:'father' });
     fetchStudents(); setSaving(false);
   };
 
   const toggleActive=async(id:string,current:boolean)=>{ await supabase.from('students').update({is_active:!current}).eq('id',id); fetchStudents(); };
 
-  const openEdit=(s:Student)=>{ setShowEdit(s); setEditForm({ full_name:s.full_name, class_id:s.class_id, section_id:s.section_id, reason:'' }); setEditError(''); setEditSuccess(''); };
+  const openEdit=(s:Student)=>{
+    setShowEdit(s);
+    setEditForm({
+      full_name: s.full_name,
+      date_of_birth: s.date_of_birth||'',
+      gender: s.gender||'',
+      blood_group: s.blood_group||'',
+      admission_number: s.admission_number||'',
+      pen_number: (s as any).pen_number||'',
+      roll_number: s.roll_number!=null ? String(s.roll_number) : '',
+      address: (s as any).address||'',
+      class_id: s.class_id,
+      section_id: s.section_id,
+      reason:''
+    });
+    setEditError(''); setEditSuccess('');
+  };
 
   const handleEdit=async()=>{
     if (!showEdit) return;
     if (!editForm.full_name.trim()) { setEditError('Name cannot be empty.'); return; }
+    if (!editForm.gender) { setEditError('Gender is required.'); return; }
     const classChanged=editForm.class_id!==showEdit.class_id||editForm.section_id!==showEdit.section_id;
     if (classChanged && !editForm.reason.trim()) { setEditError('Please provide a reason for the class/section change.'); return; }
     setEditSaving(true); setEditError('');
-    const updates: Record<string,any> = { full_name: editForm.full_name.trim() };
+    const updates: Record<string,any> = {
+      full_name: editForm.full_name.trim(),
+      date_of_birth: editForm.date_of_birth||null,
+      gender: editForm.gender||null,
+      blood_group: editForm.blood_group||null,
+      admission_number: editForm.admission_number||null,
+      pen_number: editForm.pen_number||null,
+      roll_number: editForm.roll_number ? parseInt(editForm.roll_number) : null,
+      address: editForm.address||null,
+    };
     if (classChanged) { updates.class_id=editForm.class_id; updates.section_id=editForm.section_id; }
     const { error } = await supabase.from('students').update(updates).eq('id', showEdit.id);
     if (error) { setEditError(`Save failed: ${error.message}`); setEditSaving(false); return; }
@@ -127,6 +177,27 @@ export default function StudentsPage() {
     a.href = '/Student_Import_Template.xlsx';
     a.download = 'Student_Import_Template.xlsx';
     a.click();
+  };
+
+  // ── Bulk import: re-validate a single row after inline edit ──────────────
+  const validateRow = (row: any): any => {
+    let error = '';
+    const cn = (row.class_name||'').trim();
+    const sn = (row.section_name||'').trim();
+    const foundClass = classes.find(c => c.name.toLowerCase() === cn.toLowerCase());
+    const foundSection = foundClass ? sections.find(s => s.class_id===foundClass.id && s.name.toLowerCase()===sn.toLowerCase()) : null;
+    if (!(row.full_name||'').trim()) error='Missing Full Name';
+    else if (!row.date_of_birth) error='Missing Date of Birth';
+    else if (!['male','female','other'].includes((row.gender||'').toLowerCase())) error=`Invalid gender: '${row.gender}'`;
+    else if (!cn) error='Missing Class Name';
+    else if (!sn) error='Missing Section Name';
+    else if (!foundClass) error=`Class '${cn}' not found`;
+    else if (!foundSection) error=`Section '${sn}' not found in ${cn}`;
+    return { ...row, class_id:foundClass?.id||'', section_id:foundSection?.id||'', error };
+  };
+
+  const handleBulkEdit = (idx: number, field: string, value: string) => {
+    setBulkData(prev => { const u=[...prev]; u[idx]=validateRow({...u[idx],[field]:value}); return u; });
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -401,6 +472,28 @@ export default function StudentsPage() {
                   <div><label style={LS}>Admission Date</label><input type="date" value={form.admission_date} onChange={e=>setForm(f=>({...f,admission_date:e.target.value}))} style={IS}/></div>
                 </div>
                 <div><label style={LS}>Address</label><textarea value={form.address} onChange={e=>setForm(f=>({...f,address:e.target.value}))} rows={2} style={{ ...IS, resize:'none' }}/></div>
+
+                {/* ── Optional Parent Section ── */}
+                <div style={{ borderTop:'1px solid #E2E8F0', paddingTop:14 }}>
+                  <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, fontWeight:700, color:'#1E3A8A' }}>
+                    <input type="checkbox" checked={form.addParent} onChange={e=>setForm(f=>({...f,addParent:e.target.checked}))} style={{ accentColor:'#1E3A8A', cursor:'pointer', width:15, height:15 }}/>
+                    👨‍👩‍👧 Add Parent Details (optional)
+                  </label>
+                  {form.addParent && (
+                    <div style={{ display:'flex', flexDirection:'column', gap:12, marginTop:12 }}>
+                      <div><label style={LS}>Parent Full Name <span style={{color:'#EF4444'}}>*</span></label><input value={form.parentName} onChange={e=>setForm(f=>({...f,parentName:e.target.value}))} placeholder="e.g. Ramakrishna Rao" style={IS}/></div>
+                      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                        <div><label style={LS}>Phone (Login ID) <span style={{color:'#EF4444'}}>*</span></label><input value={form.parentPhone} onChange={e=>setForm(f=>({...f,parentPhone:e.target.value.replace(/\D/g,'').slice(0,10)}))} placeholder="10-digit number" maxLength={10} style={IS}/></div>
+                        <div><label style={LS}>Relationship</label>
+                          <select value={form.parentRel} onChange={e=>setForm(f=>({...f,parentRel:e.target.value}))} style={IS}>
+                            <option value="father">Father</option><option value="mother">Mother</option><option value="guardian">Guardian</option><option value="other">Other</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div style={{ padding:'8px 12px', background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:8, fontSize:12, color:'#92400E' }}>💡 A 6-digit PIN will be auto-generated. Save it from the credentials screen that appears after admission.</div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
             <div style={{ padding:'16px 28px', borderTop:'1px solid #F1F5F9', display:'flex', gap:10, flexShrink:0 }}>
@@ -442,29 +535,61 @@ export default function StudentsPage() {
       {/* Edit Student Modal */}
       {showEdit && (
         <div style={overlay}>
-          <div style={{ ...modal, maxWidth:480 }}>
+          <div style={{ ...modal, maxWidth:520 }}>
             <div style={{ padding:'22px 26px 16px', borderBottom:'1px solid #F1F5F9', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
               <div>
                 <h3 style={{ fontSize:17, fontWeight:800, color:'#0F172A', margin:0 }}>✏️ Edit Student</h3>
-                <p style={{ fontSize:12, color:'#94A3B8', marginTop:3 }}>Correct name or transfer class/section</p>
+                <p style={{ fontSize:12, color:'#94A3B8', marginTop:3 }}>Update any student detail below</p>
               </div>
               <button onClick={()=>setShowEdit(null)} style={{ width:32, height:32, borderRadius:'50%', border:'1px solid #E2E8F0', background:'white', cursor:'pointer', color:'#64748B', fontSize:16, display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
             </div>
 
-            <div style={{ padding:'20px 26px', overflowY:'auto', flex:1, display:'flex', flexDirection:'column', gap:16 }}>
+            <div style={{ padding:'20px 26px', overflowY:'auto', flex:1, display:'flex', flexDirection:'column', gap:14 }}>
               {editError && <div style={{ padding:'10px 14px', background:'#FEF2F2', border:'1px solid #FEE2E2', borderRadius:9, fontSize:13, color:'#DC2626' }}>{editError}</div>}
               {editSuccess && <div style={{ padding:'10px 14px', background:'#F0FDF4', border:'1px solid #BBF7D0', borderRadius:9, fontSize:13, color:'#065F46', fontWeight:600 }}>✅ {editSuccess}</div>}
 
-              {/* Name Correction */}
+              {/* Basic Info */}
               <div style={{ background:'#F8FAFC', border:'1px solid #E2E8F0', borderRadius:12, padding:'14px 16px' }}>
-                <p style={{ fontSize:11, fontWeight:700, color:'#64748B', textTransform:'uppercase', letterSpacing:'0.06em', margin:'0 0 10px' }}>📝 Name Correction</p>
-                <div>
-                  <label style={LS}>Full Name <span style={{color:'#EF4444'}}>*</span></label>
-                  <input value={editForm.full_name} onChange={e=>setEditForm(f=>({...f,full_name:e.target.value}))} style={IS} placeholder="Corrected full name"/>
+                <p style={{ fontSize:11, fontWeight:700, color:'#64748B', textTransform:'uppercase', letterSpacing:'0.06em', margin:'0 0 12px' }}>📝 Basic Information</p>
+                <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                  <div>
+                    <label style={LS}>Full Name <span style={{color:'#EF4444'}}>*</span></label>
+                    <input value={editForm.full_name} onChange={e=>setEditForm(f=>({...f,full_name:e.target.value}))} style={IS} placeholder="Student full name"/>
+                    {editForm.full_name.trim()!==showEdit.full_name && <p style={{ fontSize:11, color:'#F59E0B', marginTop:4, fontWeight:600 }}>⚠ Was: "{showEdit.full_name}"</p>}
+                  </div>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                    <div>
+                      <label style={LS}>Date of Birth</label>
+                      <input type="date" value={editForm.date_of_birth} onChange={e=>setEditForm(f=>({...f,date_of_birth:e.target.value}))} style={IS}/>
+                    </div>
+                    <div>
+                      <label style={LS}>Gender <span style={{color:'#EF4444'}}>*</span></label>
+                      <select value={editForm.gender} onChange={e=>setEditForm(f=>({...f,gender:e.target.value}))} style={IS}>
+                        <option value="">Select...</option><option value="male">Male</option><option value="female">Female</option><option value="other">Other</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label style={LS}>Blood Group</label>
+                    <select value={editForm.blood_group} onChange={e=>setEditForm(f=>({...f,blood_group:e.target.value}))} style={IS}>
+                      <option value="">Select...</option>{['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(bg=><option key={bg} value={bg}>{bg}</option>)}
+                    </select>
+                  </div>
                 </div>
-                {editForm.full_name.trim()!==showEdit.full_name && (
-                  <p style={{ fontSize:11, color:'#F59E0B', marginTop:6, fontWeight:600 }}>⚠ Was: "{showEdit.full_name}"</p>
-                )}
+              </div>
+
+              {/* Academic Info */}
+              <div style={{ background:'#F8FAFC', border:'1px solid #E2E8F0', borderRadius:12, padding:'14px 16px' }}>
+                <p style={{ fontSize:11, fontWeight:700, color:'#64748B', textTransform:'uppercase', letterSpacing:'0.06em', margin:'0 0 12px' }}>📋 Academic Details</p>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                  <div><label style={LS}>Admission No.</label><input value={editForm.admission_number} onChange={e=>setEditForm(f=>({...f,admission_number:e.target.value}))} style={IS} placeholder="e.g. STU-2024-001"/></div>
+                  <div><label style={LS}>Roll Number</label><input type="number" value={editForm.roll_number} onChange={e=>setEditForm(f=>({...f,roll_number:e.target.value}))} style={IS}/></div>
+                  <div><label style={LS}>PEN Number</label><input value={editForm.pen_number} onChange={e=>setEditForm(f=>({...f,pen_number:e.target.value}))} style={IS}/></div>
+                </div>
+                <div style={{ marginTop:10 }}>
+                  <label style={LS}>Address</label>
+                  <textarea value={editForm.address} onChange={e=>setEditForm(f=>({...f,address:e.target.value}))} rows={2} style={{ ...IS, resize:'none' }}/>
+                </div>
               </div>
 
               {/* Class / Section Transfer */}
@@ -562,23 +687,39 @@ export default function StudentsPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {bulkData.map((r, i) => (
+                        {bulkData.map((r, i) => {
+                          const cellIS: React.CSSProperties = { width:'100%', padding:'4px 6px', border:'1px solid #E2E8F0', borderRadius:6, fontSize:11, outline:'none', background:'transparent', fontFamily:'inherit', boxSizing:'border-box' };
+                          const errCellIS: React.CSSProperties = { ...cellIS, borderColor:'#FCA5A5', background:'#FFF1F2' };
+                          const rowSections = sections.filter(s => s.class_id === (classes.find(c=>c.name.toLowerCase()===r.class_name?.toLowerCase())?.id||''));
+                          return (
                           <tr key={i} style={{ borderBottom:'1px solid #F1F5F9', background:r.error?'#FEF2F2':i%2===0?'#F8FAFC':'white' }}>
-                            <td style={{ padding:'7px 12px', fontSize:12, color:'#64748B' }}>{r.rowNum}</td>
-                            <td style={{ padding:'7px 12px', fontSize:12, fontWeight:600, color:'#0F172A', whiteSpace:'nowrap' }}>{r.full_name}</td>
-                            <td style={{ padding:'7px 12px', fontSize:12, color:'#475569', fontFamily:'monospace' }}>{r.date_of_birth}</td>
-                            <td style={{ padding:'7px 12px', fontSize:12, color:'#475569', textTransform:'capitalize' }}>{r.gender}</td>
-                            <td style={{ padding:'7px 12px', fontSize:12, color:'#475569' }}>{r.class_name}</td>
-                            <td style={{ padding:'7px 12px', fontSize:12, color:'#475569' }}>{r.section_name}</td>
-                            <td style={{ padding:'7px 12px', fontSize:11, color:'#64748B', fontFamily:'monospace' }}>{r.admission_number||<span style={{color:'#CBD5E1',fontStyle:'italic'}}>auto</span>}</td>
-                            <td style={{ padding:'7px 12px', fontSize:11, color:'#64748B', fontFamily:'monospace' }}>{r.pen_number||'—'}</td>
-                            <td style={{ padding:'7px 12px', fontSize:12, color:'#64748B' }}>{r.roll_number??'—'}</td>
-                            <td style={{ padding:'7px 12px', fontSize:11, color:'#64748B', maxWidth:150, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.address||'—'}</td>
-                            <td style={{ padding:'7px 12px', fontSize:12 }}>
-                              {r.error ? <span style={{ color:'#DC2626', fontWeight:600, whiteSpace:'nowrap' }}>{r.error}</span> : <span style={{ color:'#059669', fontWeight:700 }}>✓ Valid</span>}
+                            <td style={{ padding:'6px 10px', fontSize:11, color:'#94A3B8', textAlign:'center' }}>{r.rowNum}</td>
+                            <td style={{ padding:'4px 6px', minWidth:140 }}><input value={r.full_name||''} onChange={e=>handleBulkEdit(i,'full_name',e.target.value)} style={r.error&&!r.full_name?errCellIS:cellIS}/></td>
+                            <td style={{ padding:'4px 6px', minWidth:120 }}><input type="date" value={r.date_of_birth||''} onChange={e=>handleBulkEdit(i,'date_of_birth',e.target.value)} style={r.error&&!r.date_of_birth?errCellIS:cellIS}/></td>
+                            <td style={{ padding:'4px 6px', minWidth:90 }}>
+                              <select value={r.gender||''} onChange={e=>handleBulkEdit(i,'gender',e.target.value)} style={cellIS}>
+                                <option value="">--</option><option value="male">Male</option><option value="female">Female</option><option value="other">Other</option>
+                              </select>
                             </td>
-                          </tr>
-                        ))}
+                            <td style={{ padding:'4px 6px', minWidth:80 }}>
+                              <select value={r.class_name||''} onChange={e=>handleBulkEdit(i,'class_name',e.target.value)} style={cellIS}>
+                                <option value="">--</option>{classes.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
+                              </select>
+                            </td>
+                            <td style={{ padding:'4px 6px', minWidth:80 }}>
+                              <select value={r.section_name||''} onChange={e=>handleBulkEdit(i,'section_name',e.target.value)} style={cellIS}>
+                                <option value="">--</option>{rowSections.map(s=><option key={s.id} value={s.name}>{s.name}</option>)}
+                              </select>
+                            </td>
+                            <td style={{ padding:'4px 6px', minWidth:100 }}><input value={r.admission_number||''} onChange={e=>handleBulkEdit(i,'admission_number',e.target.value)} placeholder="auto" style={cellIS}/></td>
+                            <td style={{ padding:'4px 6px', minWidth:100 }}><input value={r.pen_number||''} onChange={e=>handleBulkEdit(i,'pen_number',e.target.value)} style={cellIS}/></td>
+                            <td style={{ padding:'4px 6px', minWidth:70 }}><input type="number" value={r.roll_number??''} onChange={e=>handleBulkEdit(i,'roll_number',e.target.value)} style={cellIS}/></td>
+                            <td style={{ padding:'4px 6px', minWidth:130 }}><input value={r.address||''} onChange={e=>handleBulkEdit(i,'address',e.target.value)} style={cellIS}/></td>
+                            <td style={{ padding:'6px 10px', fontSize:11, whiteSpace:'nowrap' }}>
+                              {r.error ? <span style={{ color:'#DC2626', fontWeight:600 }}>{r.error}</span> : <span style={{ color:'#059669', fontWeight:700 }}>✓ Valid</span>}
+                            </td>
+                          </tr>);
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -595,6 +736,24 @@ export default function StudentsPage() {
                 {bulkLoading?'Importing...':`Import ${bulkData.filter(r=>!r.error).length} Students`}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Parent Credentials Modal ─────────────────────────────────────────── */}
+      {parentCredentials && (
+        <div style={overlay}>
+          <div style={{ width:'100%', maxWidth:400, background:'white', borderRadius:18, boxShadow:'0 24px 64px rgba(0,0,0,0.2)', padding:'32px 28px', textAlign:'center' }}>
+            <div style={{ width:52, height:52, borderRadius:14, background:'#F0FDF4', border:'2px solid #BBF7D0', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 14px', fontSize:24 }}>✅</div>
+            <h3 style={{ fontSize:17, fontWeight:800, color:'#0F172A', margin:'0 0 6px' }}>Student & Parent Added!</h3>
+            <p style={{ fontSize:13, color:'#64748B', margin:'0 0 20px' }}>Parent account created. Share these login credentials with the parent:</p>
+            <div style={{ background:'#F8FAFC', border:'1px solid #E2E8F0', borderRadius:12, padding:'18px 20px', textAlign:'left', marginBottom:20, display:'flex', flexDirection:'column', gap:12 }}>
+              <div><p style={{ fontSize:10, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', margin:0 }}>Parent Name</p><p style={{ fontSize:15, fontWeight:700, color:'#0F172A', margin:'4px 0 0' }}>{parentCredentials.name}</p></div>
+              <div><p style={{ fontSize:10, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', margin:0 }}>Phone / Login ID</p><p style={{ fontSize:16, fontWeight:700, color:'#1E3A8A', margin:'4px 0 0', fontFamily:'monospace', letterSpacing:1 }}>{parentCredentials.phone}</p></div>
+              <div><p style={{ fontSize:10, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', margin:0 }}>Generated PIN</p><p style={{ fontSize:26, fontWeight:800, color:'#7C3AED', margin:'4px 0 0', fontFamily:'monospace', letterSpacing:6 }}>{parentCredentials.pin}</p></div>
+            </div>
+            <p style={{ fontSize:11, color:'#94A3B8', marginBottom:20 }}>⚠ Parent must change PIN on first login. Save these credentials now.</p>
+            <button onClick={()=>setParentCredentials(null)} style={{ width:'100%', padding:12, borderRadius:10, border:'none', background:'linear-gradient(135deg,#1E3A8A,#3B82F6)', color:'white', fontSize:13, fontWeight:700, cursor:'pointer' }}>Got it — Close</button>
           </div>
         </div>
       )}
