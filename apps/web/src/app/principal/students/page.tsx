@@ -81,8 +81,15 @@ export default function StudentsPage() {
   useEffect(() => { fetchStructure(); }, [fetchStructure]);
   useEffect(() => { fetchStudents(); }, [fetchStudents]);
 
-  const filteredSections=sections.filter(s=>!form.class_id||s.class_id===form.class_id);
-  const filterSections2=sections.filter(s=>!filterClass||s.class_id===filterClass);
+  const filteredSections = form.class_id
+    ? sections.filter(s => s.class_id === form.class_id)
+    : [...new Map(sections.map(s => [s.name, s])).values()];
+  const filterSections2 = filterClass
+    ? sections.filter(s => s.class_id === filterClass)
+    : [];
+  const editFilteredSections = editForm.class_id
+    ? sections.filter(s => s.class_id === editForm.class_id)
+    : [...new Map(sections.map(s => [s.name, s])).values()];
 
   const handleAdd = async () => {
     if (!form.full_name||!form.date_of_birth||!form.gender||!form.class_id||!form.section_id) { setFormError('Name, DOB, gender, class & section required'); return; }
@@ -329,7 +336,6 @@ export default function StudentsPage() {
     setTimeout(() => { setShowBulkImport(false); }, 2000);
   };
 
-  const editFilteredSections=sections.filter(s=>!editForm.class_id||s.class_id===editForm.class_id);
   const searched=students.filter(s=>s.full_name.toLowerCase().includes(search.toLowerCase())||(s.admission_number||'').toLowerCase().includes(search.toLowerCase()));
   const genderColors: Record<string,string> = { male:'#EFF6FF', female:'#FDF2F8', other:'#F5F3FF' };
 
@@ -374,9 +380,14 @@ export default function StudentsPage() {
         <select value={filterClass} onChange={e=>{setFilterClass(e.target.value);setFilterSection('');}} style={{ ...IS, width:'auto', minWidth:130 }}>
           <option value="">All Classes</option>{classes.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-        <select value={filterSection} onChange={e=>setFilterSection(e.target.value)} style={{ ...IS, width:'auto', minWidth:130 }}>
-          <option value="">All Sections</option>{filterSections2.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
+        {filterClass && (
+          <select value={filterSection} onChange={e=>setFilterSection(e.target.value)} style={{ ...IS, width:'auto', minWidth:130 }}>
+            <option value="">All Sections</option>{filterSections2.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        )}
+        {(filterClass || filterSection) && (
+          <button onClick={() => { setFilterClass(''); setFilterSection(''); }} style={{ padding:'7px 12px', borderRadius:10, border:'1px solid #FEE2E2', background:'#FEF2F2', color:'#DC2626', fontSize:12, fontWeight:600, cursor:'pointer' }}>✕ Clear</button>
+        )}
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#475569', cursor: 'pointer', background: 'white', border: '1px solid #E2E8F0', padding: '0 14px', borderRadius: 10, fontWeight: 600 }}>
           <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} style={{ cursor: 'pointer', accentColor: '#1E3A8A' }} />
           Show Removed Students
