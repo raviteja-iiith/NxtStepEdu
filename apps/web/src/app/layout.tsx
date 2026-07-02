@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -14,17 +14,18 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: '#1E3A8A',
+};
+
 export const metadata: Metadata = {
   title: "NxtStepEdu — School Management",
   description: "A comprehensive multi-tenant School ERP for Indian K-12 schools.",
   keywords: ["school erp", "school management", "education", "attendance", "fee management"],
-  viewport: {
-    width: 'device-width',
-    initialScale: 1,
-    maximumScale: 1,
-    userScalable: false,
-  },
-  themeColor: '#1E3A8A',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
