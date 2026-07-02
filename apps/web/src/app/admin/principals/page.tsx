@@ -30,6 +30,10 @@ export default function PrincipalsPage() {
   const [form, setForm] = useState({ school_id: '', full_name: '', phone: '', email: '', employee_id: '', qualification: '' });
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
+  // Reset password state
+  const [resetting, setResetting] = useState<string | null>(null);
+  const [resetResult, setResetResult] = useState<{ name: string; username: string; password: string } | null>(null);
+  const [resetError, setResetError] = useState('');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -87,6 +91,25 @@ export default function PrincipalsPage() {
 
   const selectedSchoolCode = schools.find(s => s.id === form.school_id)?.code;
 
+  const handleResetPassword = async (p: Principal) => {
+    setResetting(p.id); setResetError('');
+    const newPwd = generatePassword();
+    // Derive the auth email the same way it was created
+    const schoolCode = p.school?.code || '';
+    const authEmail = `principal.${schoolCode}@schoolerp.local`;
+    try {
+      const res = await fetch('/api/admin/reset-principal-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auth_email: authEmail, new_password: newPwd }),
+      });
+      const result = await res.json();
+      if (!res.ok) { setResetError(result.error || 'Failed to reset password.'); setResetting(null); return; }
+      setResetResult({ name: p.full_name, username: `principal@${schoolCode}`, password: newPwd });
+    } catch { setResetError('Network error. Please try again.'); }
+    setResetting(null);
+  };
+
   return (
     <div className="dashboard-container">
 
@@ -130,8 +153,8 @@ export default function PrincipalsPage() {
       {/* List */}
       <div style={{ background: 'white', borderRadius: 14, border: '1px solid #E8ECF0', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
         {/* Header Row */}
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr 140px 100px 140px', padding: '12px 20px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
-          {['Name', 'School', 'Phone', 'Status', 'Last Login'].map(h => (
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr 140px 100px 140px 120px', padding: '12px 20px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
+          {['Name', 'School', 'Phone', 'Status', 'Last Login', 'Actions'].map(h => (
             <p key={h} style={{ fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>{h}</p>
           ))}
         </div>
@@ -150,7 +173,7 @@ export default function PrincipalsPage() {
           </div>
         ) : (
           filtered.map((p, idx) => (
-            <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr 140px 100px 140px', padding: '14px 20px', borderBottom: idx < filtered.length - 1 ? '1px solid #F8FAFC' : 'none', alignItems: 'center' }}>
+            <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr 140px 100px 140px 120px', padding: '14px 20px', borderBottom: idx < filtered.length - 1 ? '1px solid #F8FAFC' : 'none', alignItems: 'center' }}>
               {/* Name */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg, #1E3A8A, #3B82F6)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
@@ -181,6 +204,16 @@ export default function PrincipalsPage() {
               <p style={{ fontSize: 12, color: '#64748B', margin: 0 }}>
                 {p.last_login_at ? new Date(p.last_login_at).toLocaleDateString('en-IN') : <span style={{ color: '#CBD5E1', fontStyle: 'italic' }}>Never</span>}
               </p>
+              {/* Reset Password */}
+              <button
+                onClick={() => handleResetPassword(p)}
+                disabled={resetting === p.id}
+                title="Reset principal password"
+                style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #FEE2E2', background: resetting === p.id ? '#FEF2F2' : 'white', color: resetting === p.id ? '#94A3B8' : '#DC2626', fontSize: 12, fontWeight: 700, cursor: resetting === p.id ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                {resetting === p.id ? '…' : 'Reset Pwd'}
+              </button>
             </div>
           ))
         )}
@@ -273,6 +306,41 @@ export default function PrincipalsPage() {
             </div>
             <div style={{ padding: '0 28px 24px' }}>
               <button onClick={() => setShowCredentialsModal(null)} style={{ width: '100%', padding: 12, borderRadius: 10, border: 'none', background: 'linear-gradient(135deg, #1E3A8A, #3B82F6)', color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Reset Error Banner */}
+      {resetError && (
+        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 60, background: '#FEF2F2', border: '1px solid #FEE2E2', borderRadius: 12, padding: '12px 20px', fontSize: 13, color: '#DC2626', fontWeight: 600, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', display: 'flex', alignItems: 'center', gap: 10 }}>
+          ⚠ {resetError}
+          <button onClick={() => setResetError('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#DC2626', fontSize: 16, lineHeight: 1 }}>✕</button>
+        </div>
+      )}
+
+      {/* Reset Password Result Modal */}
+      {resetResult && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(4px)' }}>
+          <div style={{ width: '100%', maxWidth: 420, background: 'white', borderRadius: 18, boxShadow: '0 24px 64px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
+            <div style={{ padding: '28px 28px 20px', textAlign: 'center', borderBottom: '1px solid #F1F5F9' }}>
+              <div style={{ width: 52, height: 52, borderRadius: 14, background: '#FFF7ED', border: '1px solid #FED7AA', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', fontSize: 24 }}>🔑</div>
+              <h3 style={{ fontSize: 17, fontWeight: 800, color: '#0F172A', margin: 0 }}>Password Reset!</h3>
+              <p style={{ fontSize: 13, color: '#64748B', marginTop: 5 }}>Share these new credentials with {resetResult.name}</p>
+            </div>
+            <div style={{ padding: '20px 28px' }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>New Login Credentials</p>
+              <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {[{ label: 'Username', value: resetResult.username, color: '#1D4ED8' }, { label: 'New Password', value: resetResult.password, color: '#DC2626' }].map(item => (
+                  <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 13, color: '#64748B' }}>{item.label}</span>
+                    <code style={{ fontSize: 14, fontWeight: 800, color: item.color, background: 'white', border: '1px solid #E2E8F0', padding: '4px 12px', borderRadius: 7, letterSpacing: 1 }}>{item.value}</code>
+                  </div>
+                ))}
+              </div>
+              <p style={{ fontSize: 12, color: '#F59E0B', marginTop: 12, textAlign: 'center' }}>⚠ Save these now — this password cannot be retrieved later.</p>
+            </div>
+            <div style={{ padding: '0 28px 24px' }}>
+              <button onClick={() => setResetResult(null)} style={{ width: '100%', padding: 12, borderRadius: 10, border: 'none', background: 'linear-gradient(135deg, #1E3A8A, #3B82F6)', color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Done</button>
             </div>
           </div>
         </div>
