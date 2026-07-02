@@ -14,6 +14,9 @@ function isArchived(deadline: string) {
   return Date.now() - new Date(deadline).getTime() > SEVEN_DAYS_MS;
 }
 
+const IS: React.CSSProperties = { width:'100%', padding:'9px 13px', border:'1px solid #E2E8F0', borderRadius:9, fontSize:13, outline:'none', background:'white', boxSizing:'border-box', fontFamily:'inherit' };
+const LS: React.CSSProperties = { display:'block', fontSize:11, fontWeight:700, color:'#64748B', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 };
+
 export default function AssignmentsPage() {
   const supabase = createClient();
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -77,13 +80,16 @@ export default function AssignmentsPage() {
   const inputCls = "w-full px-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="dashboard-container">
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:16 }}>
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Assignments</h2>
-          <p className="text-gray-500 text-sm mt-1">Create and manage assignments for your sections</p>
+          <h2 style={{ fontSize:22, fontWeight:800, color:'#0F172A', letterSpacing:'-0.02em', margin:0 }}>Assignments</h2>
+          <p style={{ fontSize:13, color:'#94A3B8', marginTop:4 }}>Create and manage assignments for your sections</p>
         </div>
-        <button onClick={() => setShowAdd(true)} className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white hover:shadow-lg" style={{ background: '#0F766E' }}>+ Create Assignment</button>
+        <button onClick={() => setShowAdd(true)}
+          style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 20px', background:'linear-gradient(135deg,#0F766E,#0D9488)', color:'white', border:'none', borderRadius:10, fontSize:13, fontWeight:700, cursor:'pointer', boxShadow:'0 4px 12px rgba(15,118,110,0.3)', whiteSpace:'nowrap' }}>
+          + Create Assignment
+        </button>
       </div>
 
       {/* Archive toggle */}
@@ -143,25 +149,57 @@ export default function AssignmentsPage() {
       </div>
 
       {showAdd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 animate-scale-in max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6"><h3 className="text-xl font-bold text-gray-900">Create Assignment</h3><button onClick={() => setShowAdd(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button></div>
-            <div className="space-y-4">
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Title *</label><input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Description</label><textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} className={inputCls + ' resize-none'} rows={3} style={{ borderColor: '#E2E8F0' }} /></div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Subject *</label><select value={form.subject_id} onChange={e => setForm(f => ({ ...f, subject_id: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }}><option value="">Select...</option>{subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Section *</label><select value={form.section_id} onChange={e => setForm(f => ({ ...f, section_id: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }}><option value="">Select...</option>{sections.map(s => <option key={s.id} value={s.id}>{s.class_name} - {s.name}</option>)}</select></div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Deadline *</label><input type="date" value={form.deadline} min={new Date().toISOString().split('T')[0]} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Max Marks</label><input type="number" value={form.max_marks} onChange={e => setForm(f => ({ ...f, max_marks: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
-              </div>
-              <div className="flex items-center gap-2"><input type="checkbox" id="pub" checked={form.is_published} onChange={e => setForm(f => ({ ...f, is_published: e.target.checked }))} /><label htmlFor="pub" className="text-sm text-gray-700">Publish immediately</label></div>
+        <div style={{ position:'fixed', inset:0, zIndex:50, display:'flex', alignItems:'center', justifyContent:'center', padding:16, background:'rgba(15,23,42,0.55)', backdropFilter:'blur(4px)' }}>
+          <div style={{ width:'100%', maxWidth:500, background:'white', borderRadius:18, boxShadow:'0 24px 64px rgba(0,0,0,0.2)', display:'flex', flexDirection:'column', maxHeight:'92vh', overflowY:'auto', padding:'32px 32px 28px' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:24 }}>
+              <h3 style={{ fontSize:17, fontWeight:800, color:'#0F172A', margin:0 }}>Create Assignment</h3>
+              <button onClick={() => setShowAdd(false)} style={{ border:'none', background:'transparent', color:'#94A3B8', cursor:'pointer', fontSize:20 }}>✕</button>
             </div>
-            <div className="flex gap-3 pt-6">
-              <button onClick={() => setShowAdd(false)} className="flex-1 py-2.5 rounded-xl text-sm font-medium border text-gray-700" style={{ borderColor: '#E2E8F0' }}>Cancel</button>
-              <button onClick={handleCreate} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: '#0F766E' }}>{saving ? 'Creating...' : 'Create'}</button>
+            <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+              <div>
+                <label style={LS}>Title *</label>
+                <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} style={IS} placeholder="e.g. Chapter 1 Homework" />
+              </div>
+              <div>
+                <label style={LS}>Description</label>
+                <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={{ ...IS, resize:'none' }} rows={3} placeholder="Optional description or instructions..." />
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                <div>
+                  <label style={LS}>Subject *</label>
+                  <select value={form.subject_id} onChange={e => setForm(f => ({ ...f, subject_id: e.target.value }))} style={IS}>
+                    <option value="">Select...</option>
+                    {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={LS}>Section *</label>
+                  <select value={form.section_id} onChange={e => setForm(f => ({ ...f, section_id: e.target.value }))} style={IS}>
+                    <option value="">Select...</option>
+                    {sections.map(s => <option key={s.id} value={s.id}>{s.class_name} - {s.name}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                <div>
+                  <label style={LS}>Deadline *</label>
+                  <input type="date" value={form.deadline} min={new Date().toISOString().split('T')[0]} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} style={IS} />
+                </div>
+                <div>
+                  <label style={LS}>Max Marks</label>
+                  <input type="number" value={form.max_marks} onChange={e => setForm(f => ({ ...f, max_marks: e.target.value }))} style={IS} placeholder="e.g. 100" />
+                </div>
+              </div>
+              <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, color:'#475569', marginTop:4 }}>
+                <input type="checkbox" checked={form.is_published} onChange={e => setForm(f => ({ ...f, is_published: e.target.checked }))} style={{ width:16, height:16, accentColor:'#0F766E', cursor:'pointer' }} />
+                Publish immediately (visible to parents)
+              </label>
+            </div>
+            <div style={{ display:'flex', gap:12, marginTop:28 }}>
+              <button onClick={() => setShowAdd(false)} style={{ flex:1, padding:'11px 16px', borderRadius:10, border:'1px solid #E2E8F0', background:'white', fontSize:13, fontWeight:600, color:'#475569', cursor:'pointer' }}>Cancel</button>
+              <button onClick={handleCreate} disabled={saving} style={{ flex:1, padding:'11px 16px', borderRadius:10, border:'none', background:saving?'#93C5FD':'linear-gradient(135deg,#0F766E,#0D9488)', color:'white', fontSize:13, fontWeight:700, cursor:saving?'not-allowed':'pointer', boxShadow:'0 4px 12px rgba(15,118,110,0.3)' }}>
+                {saving ? 'Creating...' : 'Create Assignment'}
+              </button>
             </div>
           </div>
         </div>

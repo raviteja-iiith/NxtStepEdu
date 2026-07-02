@@ -4,6 +4,9 @@ import { createClient } from '@/lib/supabase/client';
 
 const LEAVE_TYPES = ['sick', 'casual', 'earned', 'emergency', 'maternity', 'paternity', 'other'];
 
+const IS: React.CSSProperties = { width:'100%', padding:'9px 13px', border:'1px solid #E2E8F0', borderRadius:9, fontSize:13, outline:'none', background:'white', boxSizing:'border-box', fontFamily:'inherit' };
+const LS: React.CSSProperties = { display:'block', fontSize:11, fontWeight:700, color:'#64748B', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 };
+
 interface LeaveRequest { id: string; leave_type: string; from_date: string; to_date: string; reason: string; status: string; created_at: string; }
 
 export default function LeavePage() {
@@ -71,10 +74,16 @@ export default function LeavePage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div><h2 className="text-2xl font-bold text-gray-900">Leave Management</h2><p className="text-gray-500 text-sm mt-1">Apply for leave and track approval status</p></div>
-        <button onClick={() => { setShowApply(true); setFormError(''); }} className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white hover:shadow-lg" style={{ background: '#0F766E' }}>+ Apply Leave</button>
+    <div className="dashboard-container">
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:16 }}>
+        <div>
+          <h2 style={{ fontSize:22, fontWeight:800, color:'#0F172A', letterSpacing:'-0.02em', margin:0 }}>Leave Management</h2>
+          <p style={{ fontSize:13, color:'#94A3B8', marginTop:4 }}>Apply for leave and track approval status</p>
+        </div>
+        <button onClick={() => { setShowApply(true); setFormError(''); }}
+          style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 20px', background:'linear-gradient(135deg,#0F766E,#0D9488)', color:'white', border:'none', borderRadius:10, fontSize:13, fontWeight:700, cursor:'pointer', boxShadow:'0 4px 12px rgba(15,118,110,0.3)', whiteSpace:'nowrap' }}>
+          + Apply Leave
+        </button>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -123,24 +132,43 @@ export default function LeavePage() {
       )}
 
       {showApply && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 animate-scale-in">
-            <div className="flex items-center justify-between mb-6"><h3 className="text-xl font-bold text-gray-900">Apply for Leave</h3><button onClick={() => setShowApply(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button></div>
-            {formError && <div className="mb-4 p-3 rounded-lg text-sm" style={{ background: '#FEF2F2', color: '#DC2626' }}>{formError}</div>}
-            <div className="space-y-4">
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Leave Type</label><select value={form.leave_type} onChange={e => setForm(f => ({ ...f, leave_type: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }}>{LEAVE_TYPES.map(t => <option key={t} value={t} className="capitalize">{t}</option>)}</select></div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">From Date *</label><input type="date" value={form.from_date} min={new Date().toISOString().split('T')[0]} onChange={e => setForm(f => ({ ...f, from_date: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">To Date *</label><input type="date" value={form.to_date} min={form.from_date || new Date().toISOString().split('T')[0]} onChange={e => setForm(f => ({ ...f, to_date: e.target.value }))} className={inputCls} style={{ borderColor: '#E2E8F0' }} /></div>
+        <div style={{ position:'fixed', inset:0, zIndex:50, display:'flex', alignItems:'center', justifyContent:'center', padding:16, background:'rgba(15,23,42,0.55)', backdropFilter:'blur(4px)' }}>
+          <div style={{ width:'100%', maxWidth:500, background:'white', borderRadius:18, boxShadow:'0 24px 64px rgba(0,0,0,0.2)', display:'flex', flexDirection:'column', maxHeight:'92vh', overflowY:'auto', padding:'32px 32px 28px' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:24 }}>
+              <h3 style={{ fontSize:17, fontWeight:800, color:'#0F172A', margin:0 }}>Apply for Leave</h3>
+              <button onClick={() => setShowApply(false)} style={{ border:'none', background:'transparent', color:'#94A3B8', cursor:'pointer', fontSize:20 }}>✕</button>
+            </div>
+            {formError && <div style={{ marginBottom:16, padding:'10px 14px', background:'#FEF2F2', border:'1px solid #FEE2E2', borderRadius:9, fontSize:13, color:'#DC2626' }}>{formError}</div>}
+            <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+              <div>
+                <label style={LS}>Leave Type</label>
+                <select value={form.leave_type} onChange={e => setForm(f => ({ ...f, leave_type: e.target.value }))} style={IS}>
+                  {LEAVE_TYPES.map(t => <option key={t} value={t} className="capitalize">{t}</option>)}
+                </select>
               </div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Reason *</label><textarea value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} className={inputCls + ' resize-none'} rows={3} style={{ borderColor: '#E2E8F0' }} placeholder="Briefly explain the reason..." /></div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                <div>
+                  <label style={LS}>From Date *</label>
+                  <input type="date" value={form.from_date} min={new Date().toISOString().split('T')[0]} onChange={e => setForm(f => ({ ...f, from_date: e.target.value }))} style={IS} />
+                </div>
+                <div>
+                  <label style={LS}>To Date *</label>
+                  <input type="date" value={form.to_date} min={form.from_date || new Date().toISOString().split('T')[0]} onChange={e => setForm(f => ({ ...f, to_date: e.target.value }))} style={IS} />
+                </div>
+              </div>
+              <div>
+                <label style={LS}>Reason *</label>
+                <textarea value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} style={{ ...IS, resize:'none' }} rows={3} placeholder="Briefly explain the reason..." />
+              </div>
               {form.from_date && form.to_date && form.to_date >= form.from_date && (
-                <div className="p-3 rounded-lg text-sm text-teal-700" style={{ background: '#F0FDF4' }}>📅 {getDays(form.from_date, form.to_date)} day{getDays(form.from_date, form.to_date) !== 1 ? 's' : ''} of leave requested</div>
+                <div style={{ padding:'10px 14px', borderRadius:9, fontSize:13, color:'#0F766E', background:'#F0FDF4', border:'1px solid #CCFBF1', fontWeight:600 }}>📅 {getDays(form.from_date, form.to_date)} day{getDays(form.from_date, form.to_date) !== 1 ? 's' : ''} of leave requested</div>
               )}
             </div>
-            <div className="flex gap-3 pt-6">
-              <button onClick={() => setShowApply(false)} className="flex-1 py-2.5 rounded-xl text-sm font-medium border text-gray-700" style={{ borderColor: '#E2E8F0' }}>Cancel</button>
-              <button onClick={handleSubmit} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: '#0F766E' }}>{saving ? 'Submitting...' : 'Submit Request'}</button>
+            <div style={{ display:'flex', gap:12, marginTop:28 }}>
+              <button onClick={() => setShowApply(false)} style={{ flex:1, padding:'11px 16px', borderRadius:10, border:'1px solid #E2E8F0', background:'white', fontSize:13, fontWeight:600, color:'#475569', cursor:'pointer' }}>Cancel</button>
+              <button onClick={handleSubmit} disabled={saving} style={{ flex:1, padding:'11px 16px', borderRadius:10, border:'none', background:saving?'#93C5FD':'linear-gradient(135deg,#0F766E,#0D9488)', color:'white', fontSize:13, fontWeight:700, cursor:saving?'not-allowed':'pointer', boxShadow:'0 4px 12px rgba(15,118,110,0.3)' }}>
+                {saving ? 'Submitting...' : 'Submit Request'}
+              </button>
             </div>
           </div>
         </div>

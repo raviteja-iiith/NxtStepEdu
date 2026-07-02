@@ -4,6 +4,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { getTeacherLessonPlans, getTeacherSubjectsAndSections, createLessonPlan, getUserProfile } from '@school-erp/supabase/queries';
 
+const IS: React.CSSProperties = { width:'100%', padding:'9px 13px', border:'1px solid #E2E8F0', borderRadius:9, fontSize:13, outline:'none', background:'white', boxSizing:'border-box', fontFamily:'inherit' };
+const LS: React.CSSProperties = { display:'block', fontSize:11, fontWeight:700, color:'#64748B', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 };
+
 export default function LessonPlansPage() {
   const supabase = createClient();
   const [plans, setPlans] = useState<any[]>([]);
@@ -98,49 +101,73 @@ export default function LessonPlansPage() {
   const inputCls = "w-full px-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div><h2 className="text-2xl font-bold text-gray-900">Lesson Plans</h2><p className="text-gray-500 text-sm mt-1">Weekly lesson planning and syllabus tracking</p></div>
-        <button onClick={() => setShowAdd(!showAdd)} className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white hover:shadow-lg transition-all" style={{ background: '#0F766E' }}>
+    <div className="dashboard-container">
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:16 }}>
+        <div>
+          <h2 style={{ fontSize:22, fontWeight:800, color:'#0F172A', letterSpacing:'-0.02em', margin:0 }}>Lesson Plans</h2>
+          <p style={{ fontSize:13, color:'#94A3B8', marginTop:4 }}>Weekly lesson planning and syllabus tracking</p>
+        </div>
+        <button onClick={() => setShowAdd(!showAdd)}
+          style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 20px', background: showAdd ? '#FEF2F2' : 'linear-gradient(135deg,#0F766E,#0D9488)', color: showAdd ? '#DC2626' : 'white', border: showAdd ? '1px solid #FEE2E2' : 'none', borderRadius:10, fontSize:13, fontWeight:700, cursor:'pointer', boxShadow: showAdd ? 'none' : '0 4px 12px rgba(15,118,110,0.3)', whiteSpace:'nowrap' }}>
           {showAdd ? 'Cancel' : '+ New Lesson Plan'}
         </button>
       </div>
 
       {showAdd && (
-        <div className="bg-white rounded-2xl border p-6 animate-fade-in" style={{ borderColor: '#E2E8F0' }}>
-          <h3 className="font-semibold text-lg mb-4">Create Lesson Plan</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <select className={inputCls} value={form.subject_id} onChange={e => setForm({...form, subject_id: e.target.value})}>
-              <option value="">Select Subject</option>
-              {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-            <select className={inputCls} value={form.section_id} onChange={e => setForm({...form, section_id: e.target.value})}>
-              <option value="">Select Section</option>
-              {sections.map(s => <option key={s.id} value={s.id}>{s.class_name} - {s.name}</option>)}
-            </select>
-            <input
-              type="date" className={inputCls} value={form.week_start_date}
-              onChange={e => {
-                // Always snap to the Monday of the selected week
-                const d = new Date(e.target.value + 'T12:00:00');
-                const day = d.getDay();
-                const diff = day === 0 ? -6 : 1 - day;
-                d.setDate(d.getDate() + diff);
-                setForm({...form, week_start_date: d.toISOString().split('T')[0]});
-              }}
-              placeholder="Week Start (Monday)" title="Select any day — auto-snaps to Monday"
-            />
-            <div className="md:col-span-2">
-              <input type="text" className={inputCls} value={form.topics} onChange={e => setForm({...form, topics: e.target.value})} placeholder="Topics to cover (comma separated)" />
+        <div style={{ background:'white', borderRadius:18, border:'1px solid #E2E8F0', padding:24, display:'flex', flexDirection:'column', gap:16, boxShadow:'0 4px 12px rgba(0,0,0,0.02)' }}>
+          <h3 style={{ fontSize:16, fontWeight:800, color:'#0F172A', margin:0 }}>Create Lesson Plan</h3>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+            <div>
+              <label style={LS}>Subject *</label>
+              <select style={IS} value={form.subject_id} onChange={e => setForm({...form, subject_id: e.target.value})}>
+                <option value="">Select Subject</option>
+                {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
             </div>
-            <div className="md:col-span-2">
-              <textarea className={inputCls} value={form.learning_objectives} onChange={e => setForm({...form, learning_objectives: e.target.value})} placeholder="Learning Objectives" rows={2} />
+            <div>
+              <label style={LS}>Section *</label>
+              <select style={IS} value={form.section_id} onChange={e => setForm({...form, section_id: e.target.value})}>
+                <option value="">Select Section</option>
+                {sections.map(s => <option key={s.id} value={s.id}>{s.class_name} - {s.name}</option>)}
+              </select>
             </div>
-            <textarea className={inputCls} value={form.resources_used} onChange={e => setForm({...form, resources_used: e.target.value})} placeholder="Resources Used" rows={2} />
-            <textarea className={inputCls} value={form.homework_given} onChange={e => setForm({...form, homework_given: e.target.value})} placeholder="Homework Given" rows={2} />
           </div>
-          <div className="mt-6 flex justify-end">
-            <button onClick={handleCreate} disabled={saving} className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: '#0F766E' }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+            <div>
+              <label style={LS}>Week Start (Monday) *</label>
+              <input
+                type="date" style={IS} value={form.week_start_date}
+                onChange={e => {
+                  const d = new Date(e.target.value + 'T12:00:00');
+                  const day = d.getDay();
+                  const diff = day === 0 ? -6 : 1 - day;
+                  d.setDate(d.getDate() + diff);
+                  setForm({...form, week_start_date: d.toISOString().split('T')[0]});
+                }}
+                title="Select any day — auto-snaps to Monday"
+              />
+            </div>
+            <div>
+              <label style={LS}>Topics to Cover *</label>
+              <input type="text" style={IS} value={form.topics} onChange={e => setForm({...form, topics: e.target.value})} placeholder="e.g. Algebra, Trigonometry" />
+            </div>
+          </div>
+          <div>
+            <label style={LS}>Learning Objectives</label>
+            <textarea style={{ ...IS, resize:'none' }} value={form.learning_objectives} onChange={e => setForm({...form, learning_objectives: e.target.value})} placeholder="Objectives..." rows={2} />
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+            <div>
+              <label style={LS}>Resources Used</label>
+              <textarea style={{ ...IS, resize:'none' }} value={form.resources_used} onChange={e => setForm({...form, resources_used: e.target.value})} placeholder="Textbook, PPT, Video..." rows={2} />
+            </div>
+            <div>
+              <label style={LS}>Homework Given</label>
+              <textarea style={{ ...IS, resize:'none' }} value={form.homework_given} onChange={e => setForm({...form, homework_given: e.target.value})} placeholder="Exercises..." rows={2} />
+            </div>
+          </div>
+          <div style={{ display:'flex', justifyContent:'flex-end', marginTop:12 }}>
+            <button onClick={handleCreate} disabled={saving} style={{ padding:'10px 24px', borderRadius:10, border:'none', background:saving?'#93C5FD':'linear-gradient(135deg,#0F766E,#0D9488)', color:'white', fontSize:13, fontWeight:700, cursor:saving?'not-allowed':'pointer', boxShadow:'0 4px 12px rgba(15,118,110,0.3)' }}>
               {saving ? 'Saving...' : 'Save Lesson Plan'}
             </button>
           </div>
