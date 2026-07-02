@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 
 interface ClassItem { id: string; name: string; }
 interface SectionItem { id: string; name: string; class_id: string; }
-interface ExamItem { id: string; name: string; exam_type: string; exam_date: string; total_marks: number; passing_marks: number | null; is_published: boolean; class_id: string | null; section_id: string | null; subject_name?: string; }
+interface ExamItem { id: string; name: string; exam_type: string; exam_date: string; total_marks: number; passing_marks: number | null; is_published: boolean; class_id: string | null; section_id: string | null; subject_id: string | null; subject_name?: string; }
 interface MarkRow { student_id: string; full_name: string; roll_number: number | null; marks_obtained: number | null; is_absent: boolean; remarks: string | null; }
 
 function getGrade(obtained: number, total: number) {
@@ -28,6 +28,7 @@ export default function PrincipalMarksPage() {
   const [results, setResults] = useState<MarkRow[]>([]);
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedSection, setSelectedSection] = useState('');
+  const [selectedSubject, setSelectedSubject] = useState('');
   const [selectedExam, setSelectedExam] = useState('');
   const [loading, setLoading] = useState(false);
   const [initLoading, setInitLoading] = useState(true);
@@ -63,7 +64,7 @@ export default function PrincipalMarksPage() {
       if (selectedSection) q = q.or(`section_id.eq.${selectedSection},section_id.is.null`);
       const { data } = await q;
       setExams((data||[]).map((e: any) => ({ ...e, subject_name: e.subjects?.name })));
-      setSelectedExam(''); setResults([]);
+      setSelectedExam(''); setSelectedSubject(''); setResults([]);
     };
     if (schoolId) fetchExams();
   }, [supabase, selectedClass, selectedSection, schoolId]);
@@ -124,6 +125,10 @@ export default function PrincipalMarksPage() {
 
   const IS: React.CSSProperties = { width:'100%', padding:'10px 14px', border:'1px solid #E2E8F0', borderRadius:10, fontSize:13, outline:'none', background:'white', boxSizing:'border-box' };
   const filteredSections = sections.filter(s => !selectedClass || s.class_id === selectedClass);
+  // Derive distinct subjects from loaded exams for the Subject filter
+  const distinctSubjects = Array.from(new Map(exams.filter(e => e.subject_name && e.subject_id).map(e => [e.subject_id!, { subject_id: e.subject_id!, name: e.subject_name! }])).values());
+  // Filter exams shown in the Exam dropdown by selected subject
+  const filteredExams = selectedSubject ? exams.filter(e => e.subject_id === selectedSubject) : exams;
 
   return (
     <div className="dashboard-container">
@@ -144,10 +149,10 @@ export default function PrincipalMarksPage() {
           {[1,2,3].map(i => <div key={i} style={{ height:44, background:'#F1F5F9', borderRadius:10 }} />)}
         </div>
       ) : (
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 2fr', gap:12 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 2fr', gap:12 }}>
           <div>
             <label style={{ display:'block', fontSize:11, fontWeight:700, color:'#64748B', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>Class</label>
-            <select value={selectedClass} onChange={e => { setSelectedClass(e.target.value); setSelectedSection(''); }} style={IS}>
+            <select value={selectedClass} onChange={e => { setSelectedClass(e.target.value); setSelectedSection(''); setSelectedSubject(''); }} style={IS}>
               <option value="">All Classes</option>
               {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
@@ -160,10 +165,17 @@ export default function PrincipalMarksPage() {
             </select>
           </div>
           <div>
+            <label style={{ display:'block', fontSize:11, fontWeight:700, color:'#64748B', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>Subject</label>
+            <select value={selectedSubject} onChange={e => { setSelectedSubject(e.target.value); setSelectedExam(''); }} disabled={!selectedClass} style={{ ...IS, opacity:selectedClass?1:0.5 }}>
+              <option value="">All Subjects</option>
+              {distinctSubjects.map(s => <option key={s.subject_id ?? ''} value={s.subject_id ?? ''}>{s.name}</option>)}
+            </select>
+          </div>
+          <div>
             <label style={{ display:'block', fontSize:11, fontWeight:700, color:'#64748B', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>Exam</label>
             <select value={selectedExam} onChange={e => setSelectedExam(e.target.value)} disabled={!selectedClass} style={{ ...IS, opacity:selectedClass?1:0.5 }}>
               <option value="">Select Exam...</option>
-              {exams.map(e => <option key={e.id} value={e.id}>{e.name} · {e.subject_name} · {new Date(e.exam_date).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}{!e.is_published?' [DRAFT]':''}</option>)}
+              {filteredExams.map(e => <option key={e.id} value={e.id}>{e.name} · {e.subject_name} · {new Date(e.exam_date).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}{!e.is_published?' [DRAFT]':''}</option>)}
             </select>
           </div>
         </div>

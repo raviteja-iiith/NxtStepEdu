@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
 interface Teacher { id:string; full_name:string; phone:string; email:string|null; is_active:boolean; last_login_at:string|null; username:string; profile?:{ employee_id:string|null; qualification:string|null; specialization:string|null; joining_date:string|null; }; }
+interface ClassItem { id:string; name:string; }
 interface Section { id:string; name:string; class_name:string; class_teacher_id?:string|null; }
 interface Subject { id:string; name:string; class_id:string; }
 interface Assignment { id:string; teacher_id:string; section_id:string; subject_id:string; }
@@ -18,6 +19,8 @@ export default function TeachersPage() {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [filterClass, setFilterClass] = useState('');
+  const [filterSubject, setFilterSubject] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [showAssign, setShowAssign] = useState<string|null>(null);
   const [showCreds, setShowCreds] = useState<{username:string;password:string}|null>(null);
@@ -26,6 +29,8 @@ export default function TeachersPage() {
   const [form, setForm] = useState({ full_name:'', phone:'', email:'', employee_id:'', qualification:'', specialization:'', joining_date:'' });
   const [sections, setSections] = useState<Section[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [allSubjects, setAllSubjects] = useState<Subject[]>([]); // for filter dropdown
+  const [allClasses, setAllClasses] = useState<ClassItem[]>([]); // for filter dropdown
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [selectedSection, setSelectedSection] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('');
@@ -33,6 +38,9 @@ export default function TeachersPage() {
   const [classTeacherMap, setClassTeacherMap] = useState<Record<string, string>>({});
   // Set of teacher_ids who have at least one subject assignment
   const [subjectTeacherSet, setSubjectTeacherSet] = useState<Set<string>>(new Set());
+  // teacher_id → Set<subjectId> and teacher_id → Set<classId> from assignments
+  const [teacherSubjectMap, setTeacherSubjectMap] = useState<Map<string, Set<string>>>(new Map());
+  const [teacherClassMap, setTeacherClassMap] = useState<Map<string, Set<string>>>(new Map());
   // For the Assign modal: which section is this teacher currently class teacher of
   const [classTeacherSection, setClassTeacherSection] = useState(''); // section_id
   const [ctSaving, setCtSaving] = useState(false);
@@ -57,10 +65,35 @@ export default function TeachersPage() {
     });
     setClassTeacherMap(ctMap);
 
-    // Build subject teacher set: teacher_ids with at least one section assignment
+    // Build subject teacher set, and per-teacher subject/class maps
     const { data: asgns } = await supabase.from('teacher_section_assignments')
-      .select('teacher_id').eq('school_id', sid);
+      .select('teacher_id, subject_id, sections(class_id)').eq('school_id', sid);
     setSubjectTeacherSet(new Set((asgns || []).map((a: any) => a.teacher_id as string)));
+
+    const tSubMap = new Map<string, Set<string>>();
+    const tClsMap = new Map<string, Set<string>>();
+    (asgns || []).forEach((a: any) => {
+      if (!tSubMap.has(a.teacher_id)) tSubMap.set(a.teacher_id, new Set());
+      if (a.subject_id) tSubMap.get(a.teacher_id)!.add(a.subject_id);
+      const classId = a.sections?.class_id;
+      if (classId) {
+        if (!tClsMap.has(a.teacher_id)) tClsMap.set(a.teacher_id, new Set());
+        tClsMap.get(a.teacher_id)!.add(classId);
+      }
+    });
+    setTeacherSubjectMap(tSubMap);
+    setTeacherClassMap(tClsMap);
+
+    // Fetch all subjects and classes for filter dropdowns
+    const [{ data: allSub }, { data: yr }] = await Promise.all([
+      supabase.from('subjects').select('id,name,class_id').eq('school_id', sid).order('name'),
+      supabase.from('academic_years').select('id').eq('is_current', true).eq('school_id', sid).maybeSingle(),
+    ]);
+    if (allSub) setAllSubjects(allSub);
+    const { data: allCls } = yr?.id
+      ? await supabase.from('classes').select('id,name').eq('academic_year_id', yr.id).order('numeric_order')
+      : await supabase.from('classes').select('id,name').eq('school_id', sid).order('numeric_order');
+    if (allCls) setAllClasses(allCls);
 
     setLoading(false);
   }, [supabase]);
@@ -149,7 +182,12 @@ export default function TeachersPage() {
     }
     if(showAssign) openAssign(showAssign);
   };
-  const filtered = teachers.filter(t=>t.full_name.toLowerCase().includes(search.toLowerCase())||t.username?.toLowerCase().includes(search.toLowerCase()));
+  const filtered = teachers.filter(t => {
+    const matchSearch = t.full_name.toLowerCase().includes(search.toLowerCase()) || t.username?.toLowerCase().includes(search.toLowerCase());
+    const matchSubject = !filterSubject || (teacherSubjectMap.get(t.id)?.has(filterSubject) ?? false);
+    const matchClass   = !filterClass   || (teacherClassMap.get(t.id)?.has(filterClass) ?? false);
+    return matchSearch && matchSubject && matchClass;
+  });
   const activeCount = teachers.filter(t=>t.is_active).length;
   const classTeacherCount = teachers.filter(t => classTeacherMap[t.id]).length;
   const subjectOnlyCount = teachers.filter(t => !classTeacherMap[t.id] && subjectTeacherSet.has(t.id)).length;
@@ -208,10 +246,23 @@ export default function TeachersPage() {
         </div>
       </div>
 
-      {/* Search */}
-      <div style={{ position:'relative', maxWidth:400 }}>
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)' }}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-        <input type="text" placeholder="Search by name or username..." value={search} onChange={e=>setSearch(e.target.value)} style={{ ...IS, paddingLeft:36 }}/>
+      {/* Search + Filters */}
+      <div style={{ display:'flex', gap:10, flexWrap:'wrap', alignItems:'center' }}>
+        <div style={{ position:'relative', flex:1, minWidth:200 }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)' }}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" placeholder="Search by name or username..." value={search} onChange={e=>setSearch(e.target.value)} style={{ ...IS, paddingLeft:36 }}/>
+        </div>
+        <select value={filterSubject} onChange={e => setFilterSubject(e.target.value)} style={{ ...IS, width:'auto', minWidth:140 }}>
+          <option value="">All Subjects</option>
+          {allSubjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        <select value={filterClass} onChange={e => setFilterClass(e.target.value)} style={{ ...IS, width:'auto', minWidth:120 }}>
+          <option value="">All Classes</option>
+          {allClasses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        {(filterSubject || filterClass) && (
+          <button onClick={() => { setFilterSubject(''); setFilterClass(''); }} style={{ padding:'7px 12px', borderRadius:8, border:'1px solid #FEE2E2', background:'#FEF2F2', color:'#DC2626', fontSize:12, fontWeight:600, cursor:'pointer' }}>✕ Clear</button>
+        )}
       </div>
 
       {/* List */}

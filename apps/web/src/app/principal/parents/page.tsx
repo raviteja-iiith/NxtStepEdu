@@ -5,6 +5,8 @@ import { createClient } from '@/lib/supabase/client';
 import * as XLSX from 'xlsx';
 
 interface Parent { id: string; full_name: string; phone: string | null; email: string | null; is_active: boolean; student_name?: string; }
+interface ClassItem { id: string; name: string; }
+interface SectionItem { id: string; name: string; class_id: string; }
 
 const IS = { width:'100%',padding:'10px 14px',border:'1px solid #E2E8F0',borderRadius:10,fontSize:13,outline:'none',background:'white',boxSizing:'border-box' as const,fontFamily:'inherit' };
 const overlay: React.CSSProperties = { position:'fixed',inset:0,zIndex:50,display:'flex',alignItems:'center',justifyContent:'center',padding:16,background:'rgba(15,23,42,0.55)',backdropFilter:'blur(4px)' };
@@ -297,10 +299,17 @@ function BulkImportModal({ schoolId, onClose, onDone }: { schoolId: string; onCl
 export default function PrincipalParentsPage() {
   const supabase = createClient();
   const [parents, setParents] = useState<Parent[]>([]);
+  const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [sections, setSections] = useState<SectionItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [filterClass, setFilterClass] = useState('');
+  const [filterSection, setFilterSection] = useState('');
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [schoolId, setSchoolId] = useState('');
+  // parentId → Set<classId> and parentId → Set<sectionId> (from student links)
+  const [parentClassMap, setParentClassMap] = useState<Map<string, Set<string>>>(new Map());
+  const [parentSectionMap, setParentSectionMap] = useState<Map<string, Set<string>>>(new Map());
 
   const fetchParents = useCallback(async () => {
     setLoading(true);
@@ -309,24 +318,65 @@ export default function PrincipalParentsPage() {
     const { data: cu } = await supabase.from('users').select('school_id').eq('id', userId).single();
     if (!cu?.school_id) { setLoading(false); return; }
     setSchoolId(cu.school_id);
+
+    // Load classes and sections
+    const { data: yr } = await supabase.from('academic_years').select('id').eq('is_current', true).eq('school_id', cu.school_id).maybeSingle();
+    const [{ data: cls }, { data: sec }] = await Promise.all([
+      yr?.id ? supabase.from('classes').select('id,name').eq('academic_year_id', yr.id).order('numeric_order') : supabase.from('classes').select('id,name').eq('school_id', cu.school_id).order('numeric_order'),
+      yr?.id ? supabase.from('sections').select('id,name,class_id').eq('academic_year_id', yr.id) : supabase.from('sections').select('id,name,class_id').eq('school_id', cu.school_id),
+    ]);
+    if (cls) setClasses(cls);
+    if (sec) setSections(sec);
+
+    // Load parents
     const { data } = await supabase.from('users').select('id, full_name, phone, email, is_active').eq('school_id', cu.school_id).eq('role', 'parent').order('full_name');
     if (data) {
       const ids = data.map((p: any) => p.id);
-      const { data: links } = await supabase.from('student_parent_links').select('parent_id, students(full_name)').in('parent_id', ids);
-      const map: Record<string,string> = {};
-      if (links) links.forEach((l: any) => { map[l.parent_id] = l.students?.full_name || ''; });
-      setParents(data.map((p: any) => ({ ...p, student_name: map[p.id] || '' })));
+      // Fetch student-parent links with student class/section data
+      const { data: links } = await supabase
+        .from('student_parent_links')
+        .select('parent_id, students(full_name, class_id, section_id)')
+        .in('parent_id', ids);
+      const nameMap: Record<string, string> = {};
+      const classMap = new Map<string, Set<string>>();
+      const sectionMap = new Map<string, Set<string>>();
+      if (links) {
+        links.forEach((l: any) => {
+          const pid = l.parent_id;
+          const st = l.students;
+          if (!nameMap[pid] && st?.full_name) nameMap[pid] = st.full_name;
+          if (st?.class_id) {
+            if (!classMap.has(pid)) classMap.set(pid, new Set());
+            classMap.get(pid)!.add(st.class_id);
+          }
+          if (st?.section_id) {
+            if (!sectionMap.has(pid)) sectionMap.set(pid, new Set());
+            sectionMap.get(pid)!.add(st.section_id);
+          }
+        });
+      }
+      setParentClassMap(classMap);
+      setParentSectionMap(sectionMap);
+      setParents(data.map((p: any) => ({ ...p, student_name: nameMap[p.id] || '' })));
     }
     setLoading(false);
   }, [supabase]);
 
   useEffect(() => { fetchParents(); }, [fetchParents]);
 
-  const filtered = parents.filter(p =>
-    p.full_name.toLowerCase().includes(search.toLowerCase()) ||
-    (p.phone||'').includes(search) ||
-    (p.student_name||'').toLowerCase().includes(search.toLowerCase())
-  );
+  const filtSections = sections.filter(s => s.class_id === filterClass);
+
+  const filtered = parents.filter(p => {
+    // Text search
+    const matchSearch = p.full_name.toLowerCase().includes(search.toLowerCase()) ||
+      (p.phone||'').includes(search) ||
+      (p.student_name||'').toLowerCase().includes(search.toLowerCase());
+    // Class filter
+    const matchClass = !filterClass || (parentClassMap.get(p.id)?.has(filterClass) ?? false);
+    // Section filter
+    const matchSection = !filterSection || (parentSectionMap.get(p.id)?.has(filterSection) ?? false);
+    return matchSearch && matchClass && matchSection;
+  });
   const activeCount = parents.filter(p => p.is_active).length;
 
   return (
@@ -359,12 +409,27 @@ export default function PrincipalParentsPage() {
         ))}
       </div>
 
-      {/* Search */}
-      <div style={{ position:'relative', maxWidth:400 }}>
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)' }}>
-          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-        </svg>
-        <input type="text" placeholder="Search by name, phone or student..." value={search} onChange={e=>setSearch(e.target.value)} style={{ ...IS, paddingLeft:36 }}/>
+      {/* Search + Class/Section filter bar */}
+      <div style={{ display:'flex', gap:10, flexWrap:'wrap', alignItems:'center' }}>
+        <div style={{ position:'relative', flex:1, minWidth:200 }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)' }}>
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <input type="text" placeholder="Search by name, phone or student..." value={search} onChange={e=>setSearch(e.target.value)} style={{ ...IS, paddingLeft:36 }}/>
+        </div>
+        <select value={filterClass} onChange={e => { setFilterClass(e.target.value); setFilterSection(''); }} style={{ ...IS, width:'auto', minWidth:130 }}>
+          <option value="">All Classes</option>
+          {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        {filterClass && (
+          <select value={filterSection} onChange={e => setFilterSection(e.target.value)} style={{ ...IS, width:'auto', minWidth:120 }}>
+            <option value="">All Sections</option>
+            {filtSections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        )}
+        {(filterClass || filterSection) && (
+          <button onClick={() => { setFilterClass(''); setFilterSection(''); }} style={{ padding:'7px 12px', borderRadius:8, border:'1px solid #FEE2E2', background:'#FEF2F2', color:'#DC2626', fontSize:12, fontWeight:600, cursor:'pointer' }}>✕ Clear</button>
+        )}
       </div>
 
       {/* List */}

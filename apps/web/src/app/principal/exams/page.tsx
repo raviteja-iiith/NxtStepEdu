@@ -39,7 +39,12 @@ export default function ExamsPage() {
   const [showAdd,setShowAdd]   = useState(false);
   const [saving,setSaving]     = useState(false);
   const [formError,setFormError] = useState('');
-  const [filterType,setFilterType] = useState('');
+  const [filterType,setFilterType]       = useState('');
+  const [filterClass,setFilterClass]     = useState('');
+  const [filterSection,setFilterSection] = useState('');
+  const [filterDateFrom,setFilterDateFrom] = useState('');
+  const [filterDateTo,setFilterDateTo]   = useState('');
+  const [filterStatus,setFilterStatus]   = useState(''); // '' | 'draft' | 'published'
   const [schoolId,setSchoolId] = useState('');
   const [ayId,setAyId]         = useState('');
   const [form,setForm]         = useState(BLANK_FORM);
@@ -54,11 +59,17 @@ export default function ExamsPage() {
     if (!u?.school_id) { setLoading(false); return; }
     setSchoolId(u.school_id);
     let q = supabase.from('exams').select('*,classes(name),subjects(name)').eq('school_id',u.school_id).order('exam_date',{ascending:false});
-    if (filterType) q = q.eq('exam_type',filterType);
+    if (filterType)     q = q.eq('exam_type', filterType);
+    if (filterClass)    q = q.eq('class_id', filterClass);
+    if (filterSection)  q = q.eq('section_id', filterSection);
+    if (filterDateFrom) q = q.gte('exam_date', filterDateFrom);
+    if (filterDateTo)   q = q.lte('exam_date', filterDateTo);
+    if (filterStatus === 'published') q = q.eq('is_published', true);
+    if (filterStatus === 'draft')     q = q.eq('is_published', false);
     const { data } = await q;
     if (data) setExams(data.map((e:any) => ({ ...e, class_name:e.classes?.name, subject_name:e.subjects?.name })));
     setLoading(false);
-  }, [supabase,filterType]);
+  }, [supabase, filterType, filterClass, filterSection, filterDateFrom, filterDateTo, filterStatus]);
 
   const fetchStructure = useCallback(async () => {
     const uid = (await supabase.auth.getUser()).data.user?.id;
@@ -87,7 +98,13 @@ export default function ExamsPage() {
   // Show subjects that match the selected class OR have no class restriction (null = school-wide).
   // Strict equality (===) was silently hiding subjects created without a class_id.
   const filtSubs = subjects.filter(s => !form.class_id || !s.class_id || s.class_id === form.class_id);
-  const filtSecs = sections.filter(s => !form.class_id || s.class_id === form.class_id);
+  // When a class is selected → show all sections of that class.
+  // When no class is selected → deduplicate by section name so we don't show A,A,A,B,B,B.
+  const filtSecs = form.class_id
+    ? sections.filter(s => s.class_id === form.class_id)
+    : [...new Map(sections.map(s => [s.name, s])).values()];
+  // Sections for the filter bar (class-filtered)
+  const filterBarSecs = filterClass ? sections.filter(s => s.class_id === filterClass) : [];
 
   const handleCreate = async () => {
     if (!form.name || !form.class_id || !form.exam_date) { setFormError('Exam name, class, and date are required.'); return; }
@@ -184,12 +201,36 @@ export default function ExamsPage() {
       </div>
 
       {/* Filter bar */}
-      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-        <select value={filterType} onChange={e => setFilterType(e.target.value)} style={{ ...IS, width:'auto', minWidth:140 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+        <select value={filterType} onChange={e => setFilterType(e.target.value)} style={{ ...IS, width:'auto', minWidth:130 }}>
           <option value="">All Types</option>
           {EXAM_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
         </select>
-        <span style={{ fontSize:13, color:'#94A3B8' }}>{groups.length} exam{groups.length!==1?'s':''}</span>
+        <select value={filterClass} onChange={e => { setFilterClass(e.target.value); setFilterSection(''); }} style={{ ...IS, width:'auto', minWidth:120 }}>
+          <option value="">All Classes</option>
+          {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        {filterClass && (
+          <select value={filterSection} onChange={e => setFilterSection(e.target.value)} style={{ ...IS, width:'auto', minWidth:110 }}>
+            <option value="">All Sections</option>
+            {filterBarSecs.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        )}
+        <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)} title="From date" style={{ ...IS, width:'auto' }} />
+        <span style={{ fontSize:12, color:'#94A3B8' }}>→</span>
+        <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} title="To date" style={{ ...IS, width:'auto' }} />
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ ...IS, width:'auto', minWidth:120 }}>
+          <option value="">All Status</option>
+          <option value="published">Published</option>
+          <option value="draft">Draft</option>
+        </select>
+        {(filterType || filterClass || filterSection || filterDateFrom || filterDateTo || filterStatus) && (
+          <button
+            onClick={() => { setFilterType(''); setFilterClass(''); setFilterSection(''); setFilterDateFrom(''); setFilterDateTo(''); setFilterStatus(''); }}
+            style={{ padding:'7px 12px', borderRadius:8, border:'1px solid #FEE2E2', background:'#FEF2F2', color:'#DC2626', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap' }}
+          >✕ Clear</button>
+        )}
+        <span style={{ fontSize:13, color:'#94A3B8', marginLeft:4 }}>{groups.length} exam{groups.length!==1?'s':''}</span>
       </div>
 
       {/* List */}

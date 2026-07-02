@@ -1,6 +1,8 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+
 
 interface ClassItem { id:string; name:string; }
 interface SectionItem { id:string; name:string; class_id:string; }
@@ -25,6 +27,7 @@ function groupByExam(rows: ExamRow[]) {
 
 export default function MultiMarksEntry() {
   const supabase = createClient();
+  const router = useRouter();
   const [classes,  setClasses]   = useState<ClassItem[]>([]);
   const [sections, setSections]  = useState<SectionItem[]>([]);
   const [allExams, setAllExams]  = useState<ExamRow[]>([]);
@@ -153,9 +156,17 @@ export default function MultiMarksEntry() {
   return (
     <div className="dashboard-container">
       {/* Header */}
-      <div>
-        <h2 style={{ fontSize:22, fontWeight:800, color:'#0F172A', letterSpacing:'-0.02em', margin:0 }}>📝 Multi-Subject Marks Entry</h2>
-        <p style={{ fontSize:13, color:'#94A3B8', marginTop:4 }}>Enter marks for all subjects of an exam in one grid</p>
+      <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+        <button
+          onClick={() => router.push('/principal/marks')}
+          style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', background:'white', border:'1px solid #E2E8F0', borderRadius:9, fontSize:13, fontWeight:600, color:'#475569', cursor:'pointer' }}
+        >
+          ← Results View
+        </button>
+        <div>
+          <h2 style={{ fontSize:22, fontWeight:800, color:'#0F172A', letterSpacing:'-0.02em', margin:0 }}>📝 Multi-Subject Marks Entry</h2>
+          <p style={{ fontSize:13, color:'#94A3B8', marginTop:4 }}>Enter marks for all subjects of an exam in one grid</p>
+        </div>
       </div>
 
       {/* Selectors */}
