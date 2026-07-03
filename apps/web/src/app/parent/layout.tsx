@@ -386,7 +386,7 @@ function ParentLayoutInner({ children }: { children: React.ReactNode }) {
           );
         })}
       </nav>
-      {showChangePwd && <ChangePasswordModal accentColor="#7C3AED" onClose={() => setShowChangePwd(false)} />}
+      {showChangePwd && <ChangePasswordModal accentColor="#7C3AED" role="parent" onClose={() => setShowChangePwd(false)} />}
     </div>
   );
 }

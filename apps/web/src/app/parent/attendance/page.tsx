@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useParent } from '@/context/ParentContext';
+import { useRealtimeTable } from '@/hooks/useRealtimeTable';
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -42,6 +43,8 @@ export default function ParentAttendancePage() {
     if (!childLoading && studentId) fetchAttendance();
     else if (!childLoading && !studentId) setLoading(false);
   }, [fetchAttendance, studentId, childLoading]);
+
+  useRealtimeTable('attendance', studentId ? `student_id=eq.${studentId}` : null, fetchAttendance);
 
   const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
   const firstDay    = new Date(selectedYear, selectedMonth, 1).getDay();

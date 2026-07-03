@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useRealtimeTable } from '@/hooks/useRealtimeTable';
 
 interface Section { id:string; name:string; class_teacher_id:string|null; teacher_name?:string; }
 interface ClassItem { id:string; name:string; numeric_order:number|null; sections:Section[]; }
@@ -32,7 +33,7 @@ export default function PrincipalClassesPage() {
 
   // Add Class modal
   const [showAddClass, setShowAddClass] = useState(false);
-  const [classForm, setClassForm] = useState({ name:'', numeric_order:'' });
+  const [classForm, setClassForm] = useState({ name:'' });
   const [classError, setClassError] = useState('');
 
   // Add Section modal
@@ -43,6 +44,7 @@ export default function PrincipalClassesPage() {
   // Assign class teacher inline
   const [editingSection, setEditingSection] = useState<string|null>(null);
   const [editTeacher, setEditTeacher] = useState('');
+  const [editTeacherError, setEditTeacherError] = useState('');
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -86,27 +88,68 @@ export default function PrincipalClassesPage() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  // Real-time updates for classes and sections
+  useRealtimeTable('classes', schoolId ? `school_id=eq.${schoolId}` : null, fetchAll);
+  useRealtimeTable('sections', schoolId ? `school_id=eq.${schoolId}` : null, fetchAll);
+
+  // Extract numeric order from class name (e.g. "10th" → 10, "Class 6" → 6)
+  const extractNumericOrder = (name: string): number | null => {
+    const match = name.match(/(\d+)/);
+    return match ? parseInt(match[1]) : null;
+  };
+
+  // Check if a teacher is already assigned as class teacher in any section
+  const getTeacherAssignment = (teacherId: string, excludeSectionId?: string): { className: string; sectionName: string } | null => {
+    for (const cls of classes) {
+      for (const sec of cls.sections) {
+        if (sec.class_teacher_id === teacherId && sec.id !== excludeSectionId) {
+          return { className: cls.name, sectionName: sec.name };
+        }
+      }
+    }
+    return null;
+  };
+
   // Create class
   const handleAddClass = async () => {
-    if (!classForm.name.trim()) { setClassError('Class name is required'); return; }
+    const trimmedName = classForm.name.trim();
+    if (!trimmedName) { setClassError('Class name is required'); return; }
+    // Check for duplicate class name (case-insensitive)
+    const duplicate = classes.find(c => c.name.toLowerCase() === trimmedName.toLowerCase());
+    if (duplicate) { setClassError(`"${trimmedName}" class already exists.`); return; }
     setSaving(true); setClassError('');
     const { error } = await supabase.from('classes').insert({
-      name: classForm.name.trim(),
-      numeric_order: classForm.numeric_order ? parseInt(classForm.numeric_order) : null,
+      name: trimmedName,
+      numeric_order: extractNumericOrder(trimmedName),
       school_id: schoolId,
       academic_year_id: academicYearId,
     });
     if (error) { setClassError(error.message); setSaving(false); return; }
-    setShowAddClass(false); setClassForm({ name:'', numeric_order:'' });
+    setShowAddClass(false); setClassForm({ name:'' });
     fetchAll(); setSaving(false);
   };
 
   // Create section inside a class
   const handleAddSection = async (classId: string) => {
-    if (!sectionForm.name.trim()) { setSectionError('Section name is required'); return; }
+    const trimmedName = sectionForm.name.trim();
+    if (!trimmedName) { setSectionError('Section name is required'); return; }
+    // Check for duplicate section name within the same class
+    const parentClass = classes.find(c => c.id === classId);
+    if (parentClass) {
+      const dupSection = parentClass.sections.find(s => s.name.toLowerCase() === trimmedName.toLowerCase());
+      if (dupSection) { setSectionError(`Section "${trimmedName}" already exists in ${parentClass.name}.`); return; }
+    }
+    // Check teacher uniqueness
+    if (sectionForm.class_teacher_id) {
+      const existing = getTeacherAssignment(sectionForm.class_teacher_id);
+      if (existing) {
+        setSectionError(`This teacher is already assigned to ${existing.className} – Section ${existing.sectionName}. Remove the existing assignment or choose a different teacher.`);
+        return;
+      }
+    }
     setSaving(true); setSectionError('');
     const { error } = await supabase.from('sections').insert({
-      name: sectionForm.name.trim(),
+      name: trimmedName,
       class_id: classId,
       class_teacher_id: sectionForm.class_teacher_id || null,
       school_id: schoolId,
@@ -119,6 +162,15 @@ export default function PrincipalClassesPage() {
 
   // Assign class teacher to section
   const handleAssignClassTeacher = async (sectionId: string) => {
+    // Check teacher uniqueness (only if assigning, not removing)
+    if (editTeacher) {
+      const existing = getTeacherAssignment(editTeacher, sectionId);
+      if (existing) {
+        setEditTeacherError(`This teacher is already assigned to ${existing.className} – Section ${existing.sectionName}. Remove the existing assignment or choose a different teacher.`);
+        return;
+      }
+    }
+    setEditTeacherError('');
     setSaving(true);
     await supabase.from('sections').update({ class_teacher_id: editTeacher || null }).eq('id', sectionId);
     setEditingSection(null); setEditTeacher('');
@@ -241,15 +293,18 @@ export default function PrincipalClassesPage() {
 
                     {/* Class Teacher */}
                     {editingSection === sec.id ? (
-                      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                        <select value={editTeacher} onChange={e => setEditTeacher(e.target.value)} style={{ ...IS, padding:'7px 10px', fontSize:12, flex:1 }}>
-                          <option value="">— Remove teacher —</option>
-                          {teachers.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
-                        </select>
-                        <button onClick={() => handleAssignClassTeacher(sec.id)} disabled={saving} style={{ padding:'7px 12px', borderRadius:8, border:'none', background:'#1D4ED8', color:'white', fontSize:12, fontWeight:700, cursor:'pointer', flexShrink:0 }}>
-                          {saving?'…':'Save'}
-                        </button>
-                        <button onClick={() => { setEditingSection(null); setEditTeacher(''); }} style={{ padding:'7px 10px', borderRadius:8, border:'1px solid #E2E8F0', background:'white', fontSize:12, color:'#64748B', cursor:'pointer', flexShrink:0 }}>✕</button>
+                      <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                          <select value={editTeacher} onChange={e => { setEditTeacher(e.target.value); setEditTeacherError(''); }} style={{ ...IS, padding:'7px 10px', fontSize:12, flex:1 }}>
+                            <option value="">— Remove teacher —</option>
+                            {teachers.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+                          </select>
+                          <button onClick={() => handleAssignClassTeacher(sec.id)} disabled={saving} style={{ padding:'7px 12px', borderRadius:8, border:'none', background:'#1D4ED8', color:'white', fontSize:12, fontWeight:700, cursor:'pointer', flexShrink:0 }}>
+                            {saving?'…':'Save'}
+                          </button>
+                          <button onClick={() => { setEditingSection(null); setEditTeacher(''); setEditTeacherError(''); }} style={{ padding:'7px 10px', borderRadius:8, border:'1px solid #E2E8F0', background:'white', fontSize:12, color:'#64748B', cursor:'pointer', flexShrink:0 }}>✕</button>
+                        </div>
+                        {editTeacherError && <p style={{ fontSize:11, color:'#DC2626', margin:0, padding:'0 2px' }}>{editTeacherError}</p>}
                       </div>
                     ) : (
                       <div style={{ display:'flex', alignItems:'center', gap:8 }}>
@@ -257,7 +312,7 @@ export default function PrincipalClassesPage() {
                         <span style={{ fontSize:13, color:sec.teacher_name?'#334155':'#CBD5E1', fontStyle:sec.teacher_name?'normal':'italic', fontWeight:sec.teacher_name?600:400 }}>
                           {sec.teacher_name ? `${sec.teacher_name}` : 'No class teacher'}
                         </span>
-                        <button onClick={() => { setEditingSection(sec.id); setEditTeacher(sec.class_teacher_id||''); }}
+                        <button onClick={() => { setEditingSection(sec.id); setEditTeacher(sec.class_teacher_id||''); setEditTeacherError(''); }}
                           style={{ fontSize:11, fontWeight:700, padding:'3px 9px', borderRadius:6, border:'1px solid #DBEAFE', background:'#EFF6FF', color:'#1D4ED8', cursor:'pointer', flexShrink:0 }}>
                           {sec.teacher_name ? 'Change' : 'Assign'}
                         </button>
@@ -294,13 +349,9 @@ export default function PrincipalClassesPage() {
               <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
                 <div>
                   <label style={LS}>Class Name <span style={{color:'#EF4444'}}>*</span></label>
-                  <input value={classForm.name} onChange={e => setClassForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Class 6 or Grade 10" style={IS} autoFocus
+                  <input value={classForm.name} onChange={e => setClassForm(f=>({...f,name:e.target.value}))} placeholder="e.g. 1st, 2nd, 10th" style={IS} autoFocus
                     onKeyDown={e => e.key==='Enter' && handleAddClass()}/>
-                </div>
-                <div>
-                  <label style={LS}>Display Order</label>
-                  <input type="number" value={classForm.numeric_order} onChange={e => setClassForm(f=>({...f,numeric_order:e.target.value}))} placeholder="e.g. 6 (for sorting)" style={IS}/>
-                  <p style={{ fontSize:11, color:'#94A3B8', marginTop:5 }}>Used to sort classes in the correct order</p>
+                  <p style={{ fontSize:11, color:'#94A3B8', marginTop:5 }}>The class number (e.g. 10 from "10th") is used automatically for sorting</p>
                 </div>
               </div>
             </div>

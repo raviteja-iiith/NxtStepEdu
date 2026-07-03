@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
-
 import { getTeacherAssignments, getTeacherSubjectsAndSections, createAssignment } from '@school-erp/supabase/queries';
 import { getUserProfile } from '@school-erp/supabase/queries';
+import { useRealtimeTable } from '@/hooks/useRealtimeTable';
 
 interface Assignment { id: string; title: string; description: string | null; deadline: string; max_marks: number | null; is_published: boolean; subject_name?: string; section_name?: string; }
 
@@ -53,6 +53,9 @@ export default function AssignmentsPage() {
   }, []); // supabase client is stable, don't include in deps
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // We could filter by teacher_id using postgres_changes, or just watch all assignments and let it refetch if needed.
+  useRealtimeTable('assignments', null, fetchAll);
 
   const handleCreate = async () => {
     if (!form.title || !form.subject_id || !form.section_id || !form.deadline) return;

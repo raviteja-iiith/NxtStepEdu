@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useParent, ChildInfo } from '@/context/ParentContext';
+import { useRealtimeTable } from '@/hooks/useRealtimeTable';
 
 interface Exam { id: string; name: string; exam_type: string; exam_date: string; total_marks: number; is_published: boolean; subject_name?: string; }
 interface Mark { id: string; marks_obtained: number | null; is_absent: boolean; remarks: string | null; exam: Exam | null; }
@@ -84,6 +85,10 @@ export default function AcademicsPage() {
   }, [supabase, selectedChild]);
 
   useEffect(() => { if (selectedChild) fetchData(); }, [fetchData, selectedChild]);
+
+  useRealtimeTable('exams', selectedChild?.section_id ? `section_id=eq.${selectedChild.section_id}` : null, fetchData);
+  useRealtimeTable('marks', selectedChild?.student_id ? `student_id=eq.${selectedChild.student_id}` : null, fetchData);
+  useRealtimeTable('assignments', selectedChild?.section_id ? `section_id=eq.${selectedChild.section_id}` : null, fetchData);
 
   const TABS = [
     { key: 'marks' as const, label: '📊 Results' },

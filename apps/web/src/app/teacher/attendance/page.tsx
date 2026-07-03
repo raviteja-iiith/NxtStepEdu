@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { getSectionStudents, getStudentAttendance, getUserProfile } from '@school-erp/supabase/queries';
 import { createNotification } from '@/components/NotificationBell';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { useRealtimeTable } from '@/hooks/useRealtimeTable';
 
 interface Student { id: string; full_name: string; roll_number: number | null; }
 interface Section { id: string; name: string; class_name: string; }
@@ -81,6 +82,8 @@ export default function AttendancePage() {
 
   useEffect(() => { fetchSections(); }, [fetchSections]);
   useEffect(() => { fetchStudents(); }, [fetchStudents]);
+
+  useRealtimeTable('attendance', selectedSection ? `section_id=eq.${selectedSection}` : null, fetchStudents);
 
   const markAll = (status: Status) => {
     const map: Record<string, Status> = {};

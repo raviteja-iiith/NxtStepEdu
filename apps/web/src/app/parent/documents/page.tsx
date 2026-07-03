@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useRealtimeTable } from '@/hooks/useRealtimeTable';
 
 interface DocRequest {
   id: string;
@@ -61,6 +62,9 @@ export default function DocumentsPage() {
   }, [supabase]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Use the logged-in user's ID directly if we had it, but for simplicity we can watch the student_id or school_id, or just no filter
+  useRealtimeTable('document_requests', studentId ? `student_id=eq.${studentId}` : null, fetchData);
 
   const handleSubmit = async () => {
     setFormError('');

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useParent } from '@/context/ParentContext';
+import { useRealtimeTable } from '@/hooks/useRealtimeTable';
 
 interface Fee {
   id: string;
@@ -266,6 +267,11 @@ export default function ParentFeesPage() {
     if (!childLoading && selectedChild) fetchFees();
     else if (!childLoading && !selectedChild) setLoading(false);
   }, [fetchFees, selectedChild, childLoading]);
+
+  useRealtimeTable('fees', selectedChild?.student_id ? `student_id=eq.${selectedChild.student_id}` : null, fetchFees);
+  // We can't easily filter fee_payments by student_id via postgres_changes since fee_payments only has fee_id.
+  // We can either listen to all fee_payments (no filter) or not. Let's just listen to all and let it trigger a re-fetch.
+  useRealtimeTable('fee_payments', null, fetchFees);
 
   // Compute actual due from live payment data — do NOT trust the stale DB status field
   const totalPending = fees.reduce((a, f) => {

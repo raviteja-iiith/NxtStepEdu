@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { getPrincipalDashboardStats } from '@school-erp/supabase/queries';
 import { getUserProfile } from '@school-erp/supabase/queries';
+import { useRealtimeTable } from '@/hooks/useRealtimeTable';
 
 export default function PrincipalDashboard() {
   const supabase = createClient();
@@ -46,6 +47,12 @@ export default function PrincipalDashboard() {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Real-time synchronization
+  useRealtimeTable('announcements', schoolId ? `school_id=eq.${schoolId}` : null, fetchData);
+  useRealtimeTable('leave_requests', schoolId ? `school_id=eq.${schoolId}` : null, fetchData);
+  useRealtimeTable('fees', null, fetchData);
+  useRealtimeTable('attendance', schoolId ? `school_id=eq.${schoolId}` : null, fetchData);
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';

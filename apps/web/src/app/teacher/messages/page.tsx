@@ -3,7 +3,24 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { getMessageContacts, getMessages, sendMessage } from '@school-erp/supabase/queries';
+import type { ContactWithMeta } from '@school-erp/supabase/queries';
 import { useIsMobile } from '@/hooks/useIsMobile';
+
+function formatRelativeTime(iso: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return 'Just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay === 1) return 'Yesterday';
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return d.toLocaleDateString([], { day: 'numeric', month: 'short' });
+}
 
 const AVATAR_COLORS = [
   { bg: '#EFF6FF', color: '#1D4ED8' },
@@ -16,9 +33,9 @@ const AVATAR_COLORS = [
 
 export default function TeacherMessagesPage() {
   const supabase = createClient();
-  const [contacts, setContacts] = useState<any[]>([]);
+  const [contacts, setContacts] = useState<ContactWithMeta[]>([]);
   const [messages, setMessages] = useState<any[]>([]);
-  const [selectedContact, setSelectedContact] = useState<any | null>(null);
+  const [selectedContact, setSelectedContact] = useState<ContactWithMeta | null>(null);
   const [userId, setUserId] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
@@ -34,12 +51,31 @@ export default function TeacherMessagesPage() {
     if (user) {
       setUserId(user.id);
       const data = await getMessageContacts(supabase, user.id, 'teacher');
-      setContacts(data);
+      setContacts(data as ContactWithMeta[]);
     }
     setLoading(false);
   }, [supabase]);
 
   useEffect(() => { fetchContacts(); }, [fetchContacts]);
+
+  // Real-time subscription for contact list reordering (any new incoming message)
+  useEffect(() => {
+    if (!userId) return;
+    const channel = supabase
+      .channel(`contacts_teacher_${userId}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+        filter: `receiver_id=eq.${userId}`,
+      }, () => {
+        // Re-fetch contacts to reorder by latest message
+        fetchContacts();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [userId, supabase, fetchContacts]);
 
   useEffect(() => {
     if (!selectedContact || !userId) return;
@@ -52,6 +88,8 @@ export default function TeacherMessagesPage() {
       await supabase.from('messages')
         .update({ is_read: true, read_at: new Date().toISOString() })
         .eq('receiver_id', userId).eq('sender_id', selectedContact.id).eq('is_read', false);
+      // Update unread count locally
+      setContacts(prev => prev.map(c => c.id === selectedContact.id ? { ...c, unread_count: 0 } : c));
     };
     fetchMsgs();
     const channel = supabase
@@ -60,6 +98,10 @@ export default function TeacherMessagesPage() {
         if (payload.new.sender_id === selectedContact.id) {
           setMessages(prev => [...prev, payload.new]);
           scrollToBottom();
+          // Mark as read immediately
+          supabase.from('messages')
+            .update({ is_read: true, read_at: new Date().toISOString() })
+            .eq('id', payload.new.id);
         }
       }).subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -80,6 +122,21 @@ export default function TeacherMessagesPage() {
       const { data: u } = await supabase.from('users').select('school_id').eq('id', userId).single();
       const sent = await sendMessage(supabase, { school_id: u?.school_id, sender_id: userId, receiver_id: selectedContact.id, content });
       setMessages(prev => prev.map(m => m.id === tempMsg.id ? sent : m));
+      // Move this contact to top of contacts list locally
+      setContacts(prev => {
+        const updated = prev.map(c =>
+          c.id === selectedContact.id
+            ? { ...c, last_message_at: sent.created_at, last_message_preview: content }
+            : c
+        );
+        updated.sort((a, b) => {
+          if (a.last_message_at && b.last_message_at) return b.last_message_at.localeCompare(a.last_message_at);
+          if (a.last_message_at && !b.last_message_at) return -1;
+          if (!a.last_message_at && b.last_message_at) return 1;
+          return a.full_name.localeCompare(b.full_name);
+        });
+        return updated;
+      });
     } catch { setMessages(prev => prev.filter(m => m.id !== tempMsg.id)); }
     setSending(false);
     inputRef.current?.focus();
@@ -155,7 +212,7 @@ export default function TeacherMessagesPage() {
                     onClick={() => setSelectedContact(c)}
                     style={{
                       width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-                      padding: '13px 20px', border: 'none', textAlign: 'left', cursor: 'pointer',
+                      padding: '13px 20px', borderTop: 'none', borderRight: 'none', borderBottom: 'none', textAlign: 'left', cursor: 'pointer',
                       background: isActive ? 'linear-gradient(135deg,#EFF6FF,#DBEAFE)' : 'transparent',
                       borderLeft: isActive ? '3px solid #3B82F6' : '3px solid transparent',
                       transition: 'all 0.15s',
@@ -163,12 +220,24 @@ export default function TeacherMessagesPage() {
                     onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = '#F1F5F9'; }}
                     onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
                   >
-                    <div style={{ width: 40, height: 40, borderRadius: 12, background: isActive ? '#BFDBFE' : ac.bg, color: isActive ? '#1D4ED8' : ac.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, flexShrink: 0 }}>
-                      {c.full_name.charAt(0).toUpperCase()}
+                    <div style={{ position: 'relative', flexShrink: 0 }}>
+                      <div style={{ width: 40, height: 40, borderRadius: 12, background: isActive ? '#BFDBFE' : ac.bg, color: isActive ? '#1D4ED8' : ac.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800 }}>
+                        {c.full_name.trim().charAt(0).toUpperCase() || '?'}
+                      </div>
+                      {c.unread_count > 0 && (
+                        <div style={{ position: 'absolute', top: -4, right: -4, minWidth: 18, height: 18, borderRadius: 99, background: '#DC2626', color: 'white', fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', border: '2px solid white' }}>{c.unread_count}</div>
+                      )}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: 13, fontWeight: 700, color: isActive ? '#1E40AF' : '#0F172A', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.full_name}</p>
-                      <p style={{ fontSize: 11, color: '#94A3B8', marginTop: 1 }}>Parent</p>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
+                        <p style={{ fontSize: 13, fontWeight: c.unread_count > 0 ? 800 : 700, color: isActive ? '#1E40AF' : '#0F172A', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.full_name}</p>
+                        {c.last_message_at && (
+                          <span style={{ fontSize: 10, color: c.unread_count > 0 ? '#3B82F6' : '#94A3B8', fontWeight: c.unread_count > 0 ? 700 : 500, flexShrink: 0 }}>{formatRelativeTime(c.last_message_at)}</span>
+                        )}
+                      </div>
+                      <p style={{ fontSize: 11, color: c.unread_count > 0 ? '#334155' : '#94A3B8', margin: '1px 0 0', fontWeight: c.unread_count > 0 ? 600 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {c.last_message_preview || 'Parent'}
+                      </p>
                     </div>
                     {isActive && <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22C55E', flexShrink: 0 }} />}
                   </button>
@@ -196,7 +265,7 @@ export default function TeacherMessagesPage() {
                     <button onClick={() => setSelectedContact(null)} style={{ background: '#F1F5F9', border: 'none', borderRadius: 10, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 18, color: '#475569', flexShrink: 0 }}>←</button>
                   )}
                   <div style={{ width: 42, height: 42, borderRadius: 13, background: '#DBEAFE', color: '#1D4ED8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 800, flexShrink: 0 }}>
-                    {selectedContact.full_name.charAt(0).toUpperCase()}
+                    {selectedContact.full_name.trim().charAt(0).toUpperCase() || '?'}
                   </div>
                   <div style={{ flex: 1 }}>
                     <p style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: 0 }}>{selectedContact.full_name}</p>
@@ -234,7 +303,7 @@ export default function TeacherMessagesPage() {
                           <div key={m.id} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start', marginBottom: 6 }}>
                             {!isMe && (
                               <div style={{ width: 28, height: 28, borderRadius: 9, background: '#DBEAFE', color: '#1D4ED8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, flexShrink: 0, marginRight: 8, alignSelf: 'flex-end' }}>
-                                {selectedContact.full_name.charAt(0).toUpperCase()}
+                                {selectedContact.full_name.trim().charAt(0).toUpperCase() || '?'}
                               </div>
                             )}
                             <div style={{

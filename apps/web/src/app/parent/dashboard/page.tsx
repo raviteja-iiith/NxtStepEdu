@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useParent } from '@/context/ParentContext';
+import { useRealtimeTable } from '@/hooks/useRealtimeTable';
 
 interface Announcement {
   id: string;
@@ -42,20 +43,23 @@ export default function ParentDashboard() {
   }, []);
 
   // fetch announcements whenever schoolId is ready
-  useEffect(() => {
+  const fetchAnnouncements = useCallback(async () => {
     if (!schoolId) return;
-    const fetchAnnouncements = async () => {
-      const { data } = await supabase
-        .from('announcements')
-        .select('id, title, content, target_audience, is_urgent, created_at')
-        .eq('school_id', schoolId)
-        .in('target_audience', ['all', 'parents'])
-        .order('created_at', { ascending: false })
-        .limit(5);
-      if (data) setAnnouncements(data as Announcement[]);
-    };
+    const { data } = await supabase
+      .from('announcements')
+      .select('id, title, content, target_audience, is_urgent, created_at')
+      .eq('school_id', schoolId)
+      .in('target_audience', ['all', 'parents'])
+      .order('created_at', { ascending: false })
+      .limit(5);
+    if (data) setAnnouncements(data as Announcement[]);
+  }, [schoolId, supabase]);
+
+  useEffect(() => {
     fetchAnnouncements();
-  }, [schoolId]);
+  }, [fetchAnnouncements]);
+
+  useRealtimeTable('announcements', schoolId ? `school_id=eq.${schoolId}` : null, fetchAnnouncements);
 
   const fetchStats = useCallback(async () => {
     if (!selectedChild) return;
@@ -105,6 +109,9 @@ export default function ParentDashboard() {
     if (!childLoading && selectedChild) fetchStats();
     else if (!childLoading && !selectedChild) setLoading(false);
   }, [fetchStats, selectedChild, childLoading]);
+
+  useRealtimeTable('attendance', selectedChild ? `student_id=eq.${selectedChild.student_id}` : null, fetchStats);
+  useRealtimeTable('fees', selectedChild ? `student_id=eq.${selectedChild.student_id}` : null, fetchStats);
 
   const cards = [
     { label: "Today's Status",  value: stats.attendanceToday,    icon: '✅', grad: 'linear-gradient(135deg,#16A34A,#22C55E)', light: '#F0FDF4', border: '#BBF7D0', desc: 'Real-time attendance' },
