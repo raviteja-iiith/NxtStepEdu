@@ -104,11 +104,11 @@ export default function TeachersPage() {
     if (!form.full_name||!form.phone) { setFormError('Name and phone required'); return; }
     setSaving(true); setFormError('');
     const empId = form.employee_id||`T${String(teachers.length+1).padStart(3,'0')}`;
-    const firstName = form.full_name.split(' ')[0].toLowerCase();
+    const namePart = form.full_name.trim().split(/\s+/).map(n => n.toLowerCase()).join('.');
     const { data: ud } = await supabase.from('users').select('school_id').eq('id',(await supabase.auth.getUser()).data.user?.id||'').single();
     let schoolCode='school';
     if (ud?.school_id) { const { data: sc } = await supabase.from('schools').select('code').eq('id',ud.school_id).single(); if(sc) schoolCode=sc.code; }
-    const username=`${firstName}.${empId.toLowerCase()}@${schoolCode}`;
+    const username=`${namePart}.${empId.toLowerCase()}@${schoolCode}`;
     const chars='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
     const password=Array.from({length:8},()=>chars[Math.floor(Math.random()*chars.length)]).join('');
     try {
