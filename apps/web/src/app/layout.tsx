@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import CapacitorProvider from "@/components/CapacitorProvider";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -42,6 +43,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
       <body className="antialiased" style={{ fontFamily: "var(--font-inter), system-ui, sans-serif" }}>
+        <CapacitorProvider />
         {children}
       </body>
     </html>

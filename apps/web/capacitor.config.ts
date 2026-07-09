@@ -20,6 +20,7 @@ const config: CapacitorConfig = {
     allowMixedContent: false,
     captureInput: true,
     webContentsDebuggingEnabled: false,  // set true for debug builds
+    backgroundColor: '#1E3A8A',  // match splash screen while WebView loads
   },
 
   plugins: {

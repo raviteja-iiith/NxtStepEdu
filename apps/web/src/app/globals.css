@@ -104,6 +104,11 @@ body {
   to { opacity: 1; transform: scale(1); }
 }
 
+@keyframes slideUpPanel {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
 @keyframes float {
   0%, 100% { transform: translateY(0px); }
   50% { transform: translateY(-6px); }
@@ -129,6 +134,7 @@ body {
 .animate-slide-in-left { animation: slideInLeft 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
 .animate-slide-in-right { animation: slideInRight 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
 .animate-scale-in { animation: scaleIn 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+.animate-slide-up { animation: slideUpPanel 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
 .animate-float { animation: float 3s ease-in-out infinite; }
 
 .stagger-1 { animation-delay: 0.05s; }
@@ -1450,6 +1456,118 @@ html, body {
   div[style*="gap: 10"][style*="flexShrink: 0"],
   div[style*="gap:10"][style*="flexShrink:0"] {
     flex-wrap: wrap !important;
+  }
+}
+
+/* ============================================================
+   CAPACITOR / NATIVE APP — Mobile Usability Enhancements
+   Makes the web app feel like a native mobile application.
+   ============================================================ */
+
+/* ── Disable text selection on interactive elements ──
+   Native apps don't let you select button labels, nav items, etc. */
+button,
+a,
+[role="button"],
+nav,
+header,
+.portal-sidebar,
+.portal-topbar,
+.bottom-tab-bar,
+.page-header-row,
+.page-header,
+label,
+.badge,
+.stat-cards-container,
+.three-col-stats,
+.dashboard-banner {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Allow text selection only on actual content areas */
+p, span, td, th, li, pre, code, input, textarea, select {
+  -webkit-user-select: auto;
+  user-select: auto;
+}
+
+/* ── Disable pull-to-refresh / overscroll bounce ──
+   Prevents accidental page refresh when scrolling up at top */
+html, body {
+  overscroll-behavior-y: contain;
+}
+
+/* ── Disable long-press context menu on images and links ── */
+img, a, button, [role="button"] {
+  -webkit-touch-callout: none;
+}
+
+/* ── Smooth momentum scrolling everywhere ── */
+* {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── Tap highlight — instant visual feedback on touch ──
+   Native apps show immediate feedback, web defaults to 300ms delay */
+button, a, [role="button"], .bottom-tab-item, .sidebar-nav-item {
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0.08);
+  touch-action: manipulation; /* removes 300ms click delay */
+}
+
+/* ── Active states for touch — instant press feedback ── */
+@media (hover: none) and (pointer: coarse) {
+  button:active:not(:disabled),
+  a:active,
+  [role="button"]:active {
+    transform: scale(0.97);
+    opacity: 0.85;
+    transition: all 0.08s ease;
+  }
+
+  /* Nav items */
+  .bottom-tab-item:active {
+    transform: scale(0.92);
+    opacity: 0.7;
+    transition: all 0.08s ease;
+  }
+
+  /* Cards */
+  .card:active, .card-elevated:active, .metric-card:active {
+    transform: scale(0.98);
+    transition: transform 0.1s ease;
+  }
+}
+
+/* ── Prevent image dragging (native feel) ── */
+img {
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+
+/* ── Fix for Capacitor status bar overlap ──
+   Ensure content doesn't go behind the status bar */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .portal-topbar {
+    padding-top: env(safe-area-inset-top) !important;
+  }
+  .portal-sidebar {
+    padding-top: env(safe-area-inset-top) !important;
+  }
+}
+
+/* ── Disable rubber-band scrolling on the body (iOS WebView) ── */
+@media (max-width: 768px) {
+  body {
+    position: fixed;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+  body > div, body > main, #__next {
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
   }
 }
 

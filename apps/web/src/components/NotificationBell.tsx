@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 // ── Notification type icons & colors ────────────────────────────────────────
 const TYPE_CFG: Record<string, { icon: string; color: string; bg: string; border: string }> = {
@@ -43,6 +44,7 @@ export default function NotificationBell({ accentColor = '#1E3A8A' }: Props) {
   const [notifs,  setNotifs]  = useState<Notif[]>([]);
   const [loading, setLoading] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
 
   const unreadCount = notifs.filter(n => !n.is_read).length;
 
@@ -64,14 +66,15 @@ export default function NotificationBell({ accentColor = '#1E3A8A' }: Props) {
     return () => clearInterval(interval);
   }, [fetchNotifs]);
 
-  // Close on outside click
+  // Close on outside click (desktop only — mobile uses overlay)
   useEffect(() => {
+    if (isMobile) return;
     const handler = (e: MouseEvent) => {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, []);
+  }, [isMobile]);
 
   const markRead = async (id: string) => {
     setNotifs(n => n.map(x => x.id === id ? { ...x, is_read: true } : x));
@@ -89,6 +92,85 @@ export default function NotificationBell({ accentColor = '#1E3A8A' }: Props) {
     setNotifs(n => n.filter(x => x.id !== id));
     await supabase.from('notifications').delete().eq('id', id);
   };
+
+  // ── Notification list content (shared between mobile and desktop) ──
+  const renderPanel = () => (
+    <>
+      {/* Header */}
+      <div style={{ padding: '14px 18px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: `linear-gradient(135deg,${accentColor}10,${accentColor}05)`, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 15 }}>🔔</span>
+          <p style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: 0 }}>Notifications</p>
+          {unreadCount > 0 && <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: accentColor, color: 'white' }}>{unreadCount} new</span>}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {unreadCount > 0 && (
+            <button onClick={markAllRead} style={{ fontSize: 11, fontWeight: 700, color: accentColor, background: 'none', border: 'none', cursor: 'pointer', padding: '3px 8px', borderRadius: 6 }}>
+              Mark all read
+            </button>
+          )}
+          {isMobile && (
+            <button onClick={() => setOpen(false)} style={{ width: 30, height: 30, borderRadius: '50%', border: '1px solid #E2E8F0', background: 'white', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748B' }}>
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* List */}
+      <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        {loading ? (
+          <div style={{ padding: 24, textAlign: 'center' }}>
+            <p style={{ fontSize: 13, color: '#94A3B8' }}>Loading...</p>
+          </div>
+        ) : notifs.length === 0 ? (
+          <div style={{ padding: '40px 24px', textAlign: 'center' }}>
+            <p style={{ fontSize: 28, margin: '0 0 10px' }}>🔕</p>
+            <p style={{ fontSize: 14, fontWeight: 700, color: '#475569', margin: 0 }}>All caught up!</p>
+            <p style={{ fontSize: 12, color: '#94A3B8', marginTop: 4 }}>No notifications yet</p>
+          </div>
+        ) : notifs.map((n, i) => {
+          const cfg = TYPE_CFG[n.type] || TYPE_CFG.announcement;
+          return (
+            <div key={n.id}
+              style={{ padding: '12px 18px', borderBottom: i < notifs.length - 1 ? '1px solid #F8FAFC' : 'none', background: n.is_read ? 'white' : `${cfg.bg}`, display: 'flex', gap: 12, alignItems: 'flex-start', cursor: 'pointer', transition: 'background 0.15s' }}
+              onClick={() => { markRead(n.id); if (n.link) window.location.href = n.link; }}
+            >
+              {/* Icon */}
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: cfg.bg, border: `1px solid ${cfg.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>
+                {cfg.icon}
+              </div>
+              {/* Content */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 }}>
+                  <p style={{ fontSize: 13, fontWeight: n.is_read ? 500 : 700, color: '#0F172A', margin: 0, lineHeight: 1.4 }}>{n.title}</p>
+                  {!n.is_read && <span style={{ width: 8, height: 8, borderRadius: '50%', background: accentColor, flexShrink: 0, marginTop: 4 }} />}
+                </div>
+                {n.body && <p style={{ fontSize: 12, color: '#64748B', margin: '3px 0 0', lineHeight: 1.5 }}>{n.body}</p>}
+                <p style={{ fontSize: 11, color: '#94A3B8', margin: '5px 0 0', fontWeight: 500 }}>{timeAgo(n.created_at)}</p>
+              </div>
+              {/* Delete */}
+              <button onClick={e => { e.stopPropagation(); deleteNotif(n.id); }}
+                style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid #E2E8F0', background: 'white', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', flexShrink: 0, marginTop: 2 }}>
+                ✕
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Footer */}
+      {notifs.length > 0 && (
+        <div style={{ padding: '10px 18px', borderTop: '1px solid #F1F5F9', background: '#FAFAFA', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, paddingBottom: isMobile ? 'max(10px, env(safe-area-inset-bottom))' : '10px' }}>
+          <p style={{ fontSize: 11, color: '#94A3B8', margin: 0 }}>{notifs.length} notifications total</p>
+          <button onClick={() => { setNotifs([]); supabase.from('notifications').delete().neq('id', ''); }}
+            style={{ fontSize: 11, color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+            Clear all
+          </button>
+        </div>
+      )}
+    </>
+  );
 
   return (
     <div ref={panelRef} style={{ position: 'relative' }}>
@@ -108,75 +190,46 @@ export default function NotificationBell({ accentColor = '#1E3A8A' }: Props) {
         )}
       </button>
 
-      {/* Dropdown panel */}
-      {open && (
-        <div className="notification-panel" style={{ position: 'absolute', right: 0, top: 46, width: 380, maxWidth: 'calc(100vw - 32px)', background: 'white', borderRadius: 16, boxShadow: '0 20px 60px rgba(0,0,0,0.18)', border: '1px solid #E8ECF0', zIndex: 100, overflow: 'hidden' }}>
-          {/* Header */}
-          <div style={{ padding: '14px 18px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: `linear-gradient(135deg,${accentColor}10,${accentColor}05)` }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 15 }}>🔔</span>
-              <p style={{ fontSize: 14, fontWeight: 800, color: '#0F172A', margin: 0 }}>Notifications</p>
-              {unreadCount > 0 && <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: accentColor, color: 'white' }}>{unreadCount} new</span>}
+      {/* MOBILE: Full-screen overlay panel */}
+      {open && isMobile && (
+        <>
+          {/* Backdrop */}
+          <div
+            onClick={() => setOpen(false)}
+            style={{
+              position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.5)',
+              zIndex: 200, backdropFilter: 'blur(4px)',
+            }}
+          />
+          {/* Panel — slides up from bottom */}
+          <div style={{
+            position: 'fixed', left: 0, right: 0, bottom: 0,
+            zIndex: 201, background: 'white',
+            borderRadius: '20px 20px 0 0',
+            boxShadow: '0 -8px 40px rgba(0,0,0,0.2)',
+            maxHeight: '85vh',
+            display: 'flex', flexDirection: 'column',
+            animation: 'slideUpPanel 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards',
+          }}>
+            {/* Drag handle */}
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 2px' }}>
+              <div style={{ width: 36, height: 4, borderRadius: 99, background: '#CBD5E1' }} />
             </div>
-            {unreadCount > 0 && (
-              <button onClick={markAllRead} style={{ fontSize: 11, fontWeight: 700, color: accentColor, background: 'none', border: 'none', cursor: 'pointer', padding: '3px 8px', borderRadius: 6 }}>
-                Mark all read
-              </button>
-            )}
+            {renderPanel()}
           </div>
+        </>
+      )}
 
-          {/* List */}
-          <div style={{ maxHeight: 440, overflowY: 'auto' }}>
-            {loading ? (
-              <div style={{ padding: 24, textAlign: 'center' }}>
-                <p style={{ fontSize: 13, color: '#94A3B8' }}>Loading...</p>
-              </div>
-            ) : notifs.length === 0 ? (
-              <div style={{ padding: '40px 24px', textAlign: 'center' }}>
-                <p style={{ fontSize: 28, margin: '0 0 10px' }}>🔕</p>
-                <p style={{ fontSize: 14, fontWeight: 700, color: '#475569', margin: 0 }}>All caught up!</p>
-                <p style={{ fontSize: 12, color: '#94A3B8', marginTop: 4 }}>No notifications yet</p>
-              </div>
-            ) : notifs.map((n, i) => {
-              const cfg = TYPE_CFG[n.type] || TYPE_CFG.announcement;
-              return (
-                <div key={n.id}
-                  style={{ padding: '12px 18px', borderBottom: i < notifs.length - 1 ? '1px solid #F8FAFC' : 'none', background: n.is_read ? 'white' : `${cfg.bg}`, display: 'flex', gap: 12, alignItems: 'flex-start', cursor: 'pointer', transition: 'background 0.15s' }}
-                  onClick={() => { markRead(n.id); if (n.link) window.location.href = n.link; }}
-                >
-                  {/* Icon */}
-                  <div style={{ width: 36, height: 36, borderRadius: 10, background: cfg.bg, border: `1px solid ${cfg.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>
-                    {cfg.icon}
-                  </div>
-                  {/* Content */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 }}>
-                      <p style={{ fontSize: 13, fontWeight: n.is_read ? 500 : 700, color: '#0F172A', margin: 0, lineHeight: 1.4 }}>{n.title}</p>
-                      {!n.is_read && <span style={{ width: 8, height: 8, borderRadius: '50%', background: accentColor, flexShrink: 0, marginTop: 4 }} />}
-                    </div>
-                    {n.body && <p style={{ fontSize: 12, color: '#64748B', margin: '3px 0 0', lineHeight: 1.5 }}>{n.body}</p>}
-                    <p style={{ fontSize: 11, color: '#94A3B8', margin: '5px 0 0', fontWeight: 500 }}>{timeAgo(n.created_at)}</p>
-                  </div>
-                  {/* Delete */}
-                  <button onClick={e => { e.stopPropagation(); deleteNotif(n.id); }}
-                    style={{ width: 22, height: 22, borderRadius: '50%', border: '1px solid #E2E8F0', background: 'white', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', flexShrink: 0, marginTop: 2 }}>
-                    ✕
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Footer */}
-          {notifs.length > 0 && (
-            <div style={{ padding: '10px 18px', borderTop: '1px solid #F1F5F9', background: '#FAFAFA', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <p style={{ fontSize: 11, color: '#94A3B8', margin: 0 }}>{notifs.length} notifications total</p>
-              <button onClick={() => { setNotifs([]); supabase.from('notifications').delete().neq('id', ''); }}
-                style={{ fontSize: 11, color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
-                Clear all
-              </button>
-            </div>
-          )}
+      {/* DESKTOP: Dropdown panel */}
+      {open && !isMobile && (
+        <div style={{
+          position: 'absolute', right: 0, top: 46, width: 380,
+          maxWidth: 'calc(100vw - 32px)', background: 'white',
+          borderRadius: 16, boxShadow: '0 20px 60px rgba(0,0,0,0.18)',
+          border: '1px solid #E8ECF0', zIndex: 100, overflow: 'hidden',
+          maxHeight: 520, display: 'flex', flexDirection: 'column',
+        }}>
+          {renderPanel()}
         </div>
       )}
     </div>
