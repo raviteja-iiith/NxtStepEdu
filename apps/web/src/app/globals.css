@@ -1492,7 +1492,8 @@ p, span, td, th, li, pre, code, input, textarea, select {
 }
 
 /* ── Disable pull-to-refresh / overscroll bounce ──
-   Prevents accidental page refresh when scrolling up at top */
+   Works on both web (Chrome/Firefox) and Android WebView.
+   On iOS Safari it has no effect (iOS handles overscroll natively). */
 html, body {
   overscroll-behavior-y: contain;
 }
@@ -1502,9 +1503,12 @@ img, a, button, [role="button"] {
   -webkit-touch-callout: none;
 }
 
-/* ── Smooth momentum scrolling everywhere ── */
-* {
-  -webkit-overflow-scrolling: touch;
+/* ── Smooth momentum scrolling — touch devices only ──
+   Only apply on touch screens to avoid side effects on desktop web. */
+@media (pointer: coarse) {
+  * {
+    -webkit-overflow-scrolling: touch;
+  }
 }
 
 /* ── Tap highlight — instant visual feedback on touch ──
@@ -1544,30 +1548,22 @@ img {
   user-drag: none;
 }
 
-/* ── Fix for Capacitor status bar overlap ──
-   Ensure content doesn't go behind the status bar */
-@supports (padding-top: env(safe-area-inset-top)) {
-  .portal-topbar {
-    padding-top: env(safe-area-inset-top) !important;
-  }
-  .portal-sidebar {
-    padding-top: env(safe-area-inset-top) !important;
-  }
-}
-
-/* ── Disable rubber-band scrolling on the body (iOS WebView) ── */
+/* ── Fix for Capacitor / notch status bar overlap ──
+   Only applies when safe-area-inset-top is actually set (native WebView),
+   AND only on mobile viewport. On desktop web env() = 0 so this is a no-op. */
 @media (max-width: 768px) {
-  body {
-    position: fixed;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-  }
-  body > div, body > main, #__next {
-    height: 100%;
-    overflow-y: auto;
-    overflow-x: hidden;
-    -webkit-overflow-scrolling: touch;
+  @supports (padding-top: env(safe-area-inset-top)) {
+    .portal-topbar {
+      padding-top: env(safe-area-inset-top) !important;
+      height: calc(64px + env(safe-area-inset-top)) !important;
+      align-items: flex-end !important;
+      padding-bottom: 0 !important;
+    }
+    .portal-sidebar {
+      padding-top: env(safe-area-inset-top) !important;
+    }
   }
 }
 
+/* NOTE: body position:fixed was removed — it broke scrolling on mobile.
+   Pull-to-refresh is already prevented by overscroll-behavior-y: contain above. */
