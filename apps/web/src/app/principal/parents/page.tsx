@@ -28,7 +28,7 @@ function downloadCredentials(creds: { name: string; phone: string; pin: string }
 function BulkImportModal({ schoolId, onClose, onDone }: { schoolId: string; onClose: () => void; onDone: () => void }) {
   const supabase = createClient();
 
-  // Parsed rows from Sheet 3 (parents) and Sheet 4 (links)
+  // Parsed rows from parents sheet and links sheet
   const [parentRows, setParentRows] = useState<any[]>([]);
   const [linkRows, setLinkRows] = useState<any[]>([]);
 
@@ -52,6 +52,23 @@ function BulkImportModal({ schoolId, onClose, onDone }: { schoolId: string; onCl
     })();
   }, [supabase, schoolId]);
 
+  const handleDownloadParentTemplate = () => {
+    // Sheet 1: Parents
+    const pHeader = [['Parent Full Name', 'Phone Number (10-digit)', 'Relationship (father/mother/guardian/other)']];
+    const pSample = [['Ramakrishna Rao', '9876543210', 'father'], ['Lakshmi Devi', '9123456789', 'mother']];
+    const pWs = XLSX.utils.aoa_to_sheet([...pHeader, ...pSample]);
+    pWs['!cols'] = [{ wch: 22 }, { wch: 22 }, { wch: 40 }];
+    // Sheet 2: Links
+    const lHeader = [['Student Admission No', 'Parent Phone No']];
+    const lSample = [['STU-2025-0001', '9876543210'], ['STU-2025-0002', '9123456789']];
+    const lWs = XLSX.utils.aoa_to_sheet([...lHeader, ...lSample]);
+    lWs['!cols'] = [{ wch: 22 }, { wch: 18 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, pWs, 'Parents');
+    XLSX.utils.book_append_sheet(wb, lWs, 'Parent-Student Links');
+    XLSX.writeFile(wb, 'Parent_Import_Template.xlsx');
+  };
+
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -61,44 +78,45 @@ function BulkImportModal({ schoolId, onClose, onDone }: { schoolId: string; onCl
       try {
         const wb = XLSX.read(evt.target?.result, { type: 'binary' });
 
-        // ── Parse Sheet 3: Parents ──
-        const pSheetName = wb.SheetNames.find(n => n.toLowerCase().includes('parent')) ?? wb.SheetNames[2] ?? wb.SheetNames[0];
+        // ── Parse Sheet 1: Parents ──
+        const pSheetName = wb.SheetNames.find(n => n.toLowerCase().includes('parent')) ?? wb.SheetNames[0];
         const pData: any[] = XLSX.utils.sheet_to_json(wb.Sheets[pSheetName] ?? {});
         const parsedParents = pData.map((row: any, idx: number) => {
           let err = '';
-          const name = String(row['Parent Full Name *'] ?? row['Parent Full Name'] ?? '').trim();
-          const phone = String(row['Phone Number *\n(10-digit — used as LOGIN ID)'] ?? row['Phone Number *'] ?? row['Phone Number'] ?? '').trim().replace(/\D/g, '');
-          const rel = String(row['Relationship *\n(father/mother/guardian/other)'] ?? row['Relationship *'] ?? row['Relationship'] ?? '').trim().toLowerCase();
-          const occupation = String(row['Occupation'] ?? '').trim();
-          const address = String(row['Address'] ?? '').trim();
-          const emergency = String(row['Emergency Contact No.'] ?? row['Emergency Contact'] ?? '').trim();
-          const primary = String(row['Is Primary Contact?\n(yes/no)'] ?? row['Is Primary Contact?'] ?? 'yes').trim().toLowerCase();
+          const getVal = (keywords: string[]) => {
+            const key = Object.keys(row).find(k => keywords.some(kw => k.toLowerCase().includes(kw.toLowerCase())));
+            return key ? row[key] : undefined;
+          };
+          const name = String(getVal(['parent full name', 'parent name', 'full name', 'name']) ?? '').trim();
+          const phone = String(getVal(['phone number', 'phone', 'mobile']) ?? '').trim().replace(/\D/g, '');
+          const rel = String(getVal(['relationship', 'relation']) ?? '').trim().toLowerCase();
 
           if (!name) err = 'Missing Parent Name';
           else if (phone.length !== 10) err = 'Phone must be 10 digits';
           else if (!['father','mother','guardian','other'].includes(rel)) err = `Invalid relationship: '${rel}'`;
 
-          return { rowNum: idx + 2, name, phone, rel, occupation, address, emergency, isPrimary: primary === 'yes', err };
+          return { rowNum: idx + 2, name, phone, rel, err };
         });
         setParentRows(parsedParents);
 
-        // ── Parse Sheet 4: Links ──
-        const lSheetName = wb.SheetNames.find(n => n.toLowerCase().includes('link')) ?? wb.SheetNames[3];
+        // ── Parse Sheet 2: Links ──
+        const lSheetName = wb.SheetNames.find(n => n.toLowerCase().includes('link')) ?? wb.SheetNames[1];
         if (lSheetName && wb.Sheets[lSheetName]) {
           const lData: any[] = XLSX.utils.sheet_to_json(wb.Sheets[lSheetName]);
           const parsedLinks = lData.map((row: any, idx: number) => {
             let err = '';
-            const admNo = String(row['Student Admission No *'] ?? row['Student Admission No'] ?? '').trim();
-            const phone = String(row['Parent Phone No *\n(must match Sheet 3)'] ?? row['Parent Phone No *'] ?? row['Parent Phone No'] ?? row['Parent Phone'] ?? '').trim().replace(/\D/g, '');
-            const rel = String(row['Relationship *\n(father/mother/guardian/other)'] ?? row['Relationship *'] ?? row['Relationship'] ?? '').trim().toLowerCase();
-            const primary = String(row['Is Primary Contact?\n(yes/no)'] ?? row['Is Primary Contact?'] ?? 'yes').trim().toLowerCase();
+            const getVal = (keywords: string[]) => {
+              const key = Object.keys(row).find(k => keywords.some(kw => k.toLowerCase().includes(kw.toLowerCase())));
+              return key ? row[key] : undefined;
+            };
+            const admNo = String(getVal(['admission no', 'student admission', 'admission']) ?? '').trim();
+            const phone = String(getVal(['parent phone', 'phone']) ?? '').trim().replace(/\D/g, '');
 
             if (!admNo) err = 'Missing Admission No';
             else if (!studentMap.has(admNo)) err = `Admission No '${admNo}' not found`;
             else if (phone.length !== 10) err = 'Phone must be 10 digits';
-            else if (!['father','mother','guardian','other'].includes(rel)) err = `Invalid relationship: '${rel}'`;
 
-            return { rowNum: idx + 2, admNo, phone, rel, isPrimary: primary === 'yes', studentId: studentMap.get(admNo) ?? '', err };
+            return { rowNum: idx + 2, admNo, phone, studentId: studentMap.get(admNo) ?? '', err };
           });
           setLinkRows(parsedLinks);
         }
@@ -133,7 +151,7 @@ function BulkImportModal({ schoolId, onClose, onDone }: { schoolId: string; onCl
             phone: r.phone,
             username: r.phone,
             school_id: schoolId,
-            profile_data: { occupation: r.occupation || null, address: r.address || null, emergency_contact: r.emergency || null },
+            profile_data: {},
           }),
         });
         const result = await res.json();
@@ -155,11 +173,14 @@ function BulkImportModal({ schoolId, onClose, onDone }: { schoolId: string; onCl
         parentId = existingUser?.id;
       }
       if (!parentId) { setError(prev => prev + `\nLink row ${r.rowNum}: Parent with phone ${r.phone} not found`); continue; }
+      // Find the relationship from the parent row with matching phone
+      const matchedParent = parentRows.find(p => p.phone === r.phone);
+      const rel = matchedParent?.rel || 'guardian';
       await supabase.from('student_parent_links').insert({
         student_id: r.studentId,
         parent_id: parentId,
-        relationship: r.rel,
-        is_primary_contact: r.isPrimary,
+        relationship: rel,
+        is_primary_contact: true,
       }).select().maybeSingle();
     }
 
@@ -186,7 +207,7 @@ function BulkImportModal({ schoolId, onClose, onDone }: { schoolId: string; onCl
         <div style={{ padding:'22px 28px 16px', borderBottom:'1px solid #F1F5F9', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
           <div>
             <h3 style={{ fontSize:17, fontWeight:800, color:'#0F172A', margin:0 }}>📥 Bulk Import Parents</h3>
-            <p style={{ fontSize:12, color:'#94A3B8', marginTop:3 }}>Imports Sheet 3 (Parents) + Sheet 4 (Links) from the master template</p>
+            <p style={{ fontSize:12, color:'#94A3B8', marginTop:3 }}>Import parents (Sheet 1) and link them to students (Sheet 2)</p>
           </div>
           <button onClick={onClose} style={{ width:32, height:32, borderRadius:'50%', border:'1px solid #E2E8F0', background:'white', cursor:'pointer', color:'#64748B', fontSize:16 }}>✕</button>
         </div>
@@ -197,16 +218,22 @@ function BulkImportModal({ schoolId, onClose, onDone }: { schoolId: string; onCl
 
           {step === 'upload' && (
             <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-              <div style={{ padding:18, background:'#F8FAFC', borderRadius:12, border:'1px dashed #CBD5E1' }}>
-                <p style={{ fontSize:14, fontWeight:700, color:'#0F172A', margin:'0 0 4px' }}>Upload Master Template</p>
-                <p style={{ fontSize:12, color:'#64748B', margin:'0 0 12px' }}>
-                  Upload the full <strong>Student_Import_Template.xlsx</strong>. The system will automatically read Sheet 3 (Parents) and Sheet 4 (Parent-Student Links).
-                  {mapLoaded ? <><br/><span style={{ color:'#059669', fontWeight:600 }}>✓ {studentMap.size} students loaded for link validation</span></> : ' Loading students…'}
-                </p>
-                <label style={{ display:'inline-block', padding:'8px 18px', background:'linear-gradient(135deg,#7C3AED,#A855F7)', border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'white', cursor:'pointer' }}>
-                  Select Excel File
-                  <input type="file" accept=".xlsx,.xls" onChange={handleFile} style={{ display:'none' }} disabled={!mapLoaded} />
-                </label>
+              <div style={{ display:'flex', gap:14 }}>
+                <div style={{ flex:1, padding:18, background:'#F8FAFC', borderRadius:12, border:'1px dashed #CBD5E1' }}>
+                  <p style={{ fontSize:14, fontWeight:700, color:'#0F172A', margin:'0 0 4px' }}>1. Download Template</p>
+                  <p style={{ fontSize:12, color:'#64748B', margin:'0 0 12px' }}>3 columns for parents + 2 columns for student links.</p>
+                  <button onClick={handleDownloadParentTemplate} style={{ padding:'8px 18px', background:'white', border:'1px solid #CBD5E1', borderRadius:8, fontSize:13, fontWeight:600, color:'#334155', cursor:'pointer' }}>Download .xlsx</button>
+                </div>
+                <div style={{ flex:1, padding:18, background:'#F5F3FF', borderRadius:12, border:'1px dashed #C4B5FD' }}>
+                  <p style={{ fontSize:14, fontWeight:700, color:'#7C3AED', margin:'0 0 4px' }}>2. Upload Filled Template</p>
+                  <p style={{ fontSize:12, color:'#8B5CF6', margin:'0 0 12px' }}>
+                    {mapLoaded ? <><span style={{ color:'#059669', fontWeight:600 }}>✓ {studentMap.size} students loaded</span> for link validation</> : 'Loading students…'}
+                  </p>
+                  <label style={{ display:'inline-block', padding:'8px 18px', background:'linear-gradient(135deg,#7C3AED,#A855F7)', border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'white', cursor:'pointer' }}>
+                    Select Excel File
+                    <input type="file" accept=".xlsx,.xls" onChange={handleFile} style={{ display:'none' }} disabled={!mapLoaded} />
+                  </label>
+                </div>
               </div>
               <div style={{ padding:'12px 16px', background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:9, fontSize:12, color:'#92400E' }}>
                 💡 After import, a <strong>Parent_Credentials.xlsx</strong> file will be auto-downloaded containing each parent's Phone Number and auto-generated PIN. Share these with parents — they must change their PIN on first login.
@@ -245,12 +272,12 @@ function BulkImportModal({ schoolId, onClose, onDone }: { schoolId: string; onCl
               {linkRows.length > 0 && (
                 <div>
                   <p style={{ fontSize:13, fontWeight:700, color:'#0F766E', marginBottom:8 }}>
-                    🔗 Parent-Student Links (Sheet 4) — {validLinks} valid, {linkRows.length - validLinks} invalid
+                    🔗 Parent-Student Links (Sheet 2) — {validLinks} valid, {linkRows.length - validLinks} invalid
                   </p>
                   <div style={{ border:'1px solid #E2E8F0', borderRadius:8, overflow:'hidden', overflowX:'auto' }}>
-                    <table style={{ width:'100%', borderCollapse:'collapse', minWidth:500 }}>
+                    <table style={{ width:'100%', borderCollapse:'collapse', minWidth:400 }}>
                       <thead style={{ background:'#F8FAFC' }}>
-                        <tr>{['Row','Admission No','Parent Phone','Relationship','Primary?','Status'].map(h => <th key={h} style={{ padding:'7px 12px', fontSize:11, fontWeight:700, color:'#64748B', textAlign:'left', borderBottom:'1px solid #E2E8F0' }}>{h}</th>)}</tr>
+                        <tr>{['Row','Admission No','Parent Phone','Status'].map(h => <th key={h} style={{ padding:'7px 12px', fontSize:11, fontWeight:700, color:'#64748B', textAlign:'left', borderBottom:'1px solid #E2E8F0' }}>{h}</th>)}</tr>
                       </thead>
                       <tbody>
                         {linkRows.map((r, i) => (
@@ -258,8 +285,6 @@ function BulkImportModal({ schoolId, onClose, onDone }: { schoolId: string; onCl
                             <td style={{ padding:'6px 12px', fontSize:12 }}>{r.rowNum}</td>
                             <td style={{ padding:'6px 12px', fontSize:12, fontFamily:'monospace' }}>{r.admNo}</td>
                             <td style={{ padding:'6px 12px', fontSize:12, fontFamily:'monospace' }}>{r.phone}</td>
-                            <td style={{ padding:'6px 12px', fontSize:12 }}>{r.rel}</td>
-                            <td style={{ padding:'6px 12px', fontSize:12 }}>{r.isPrimary ? 'Yes' : 'No'}</td>
                             <td style={{ padding:'6px 12px', fontSize:12 }}>{r.err ? <span style={{ color:'#DC2626', fontWeight:600 }}>{r.err}</span> : <span style={{ color:'#059669', fontWeight:700 }}>✓ Valid</span>}</td>
                           </tr>
                         ))}

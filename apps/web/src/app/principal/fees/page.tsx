@@ -1452,9 +1452,6 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
 // ═══════════════════════════════════════════════════════════════════════════════
 // TAB 4 — IMPORT FEES FROM EXCEL
 // ═══════════════════════════════════════════════════════════════════════════════
-const VALID_FEE_TYPES = ['tuition','transport','hostel','examination','activity','library','uniform','miscellaneous'];
-const VALID_FEE_STATUSES = ['pending','paid','partially_paid','overdue','waived'];
-
 function TabImportFees({ schoolId, academicYearId }: { schoolId: string; academicYearId: string }) {
   const supabase = createClient();
   const [rows, setRows] = useState<any[]>([]);
@@ -1476,6 +1473,16 @@ function TabImportFees({ schoolId, academicYearId }: { schoolId: string; academi
     })();
   }, [supabase, schoolId]);
 
+  const handleDownloadFeeTemplate = () => {
+    const header = [['Admission No', 'Total Fee Amount (₹)', 'Amount Paid (₹)', 'Due Date (YYYY-MM-DD)']];
+    const sample = [['STU-2025-0001', 15000, 5000, '2025-09-30'], ['STU-2025-0002', 12000, 12000, '2025-09-30']];
+    const ws = XLSX.utils.aoa_to_sheet([...header, ...sample]);
+    ws['!cols'] = [{ wch: 18 }, { wch: 22 }, { wch: 18 }, { wch: 22 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Student Fees');
+    XLSX.writeFile(wb, 'Fee_Import_Template.xlsx');
+  };
+
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1484,19 +1491,19 @@ function TabImportFees({ schoolId, academicYearId }: { schoolId: string; academi
     reader.onload = (evt) => {
       try {
         const wb = XLSX.read(evt.target?.result, { type: 'binary' });
-        // Try to find the fees sheet (sheet index 1, or named "2. Student Fees")
-        const wsName = wb.SheetNames.find(n => n.toLowerCase().includes('fee')) ?? wb.SheetNames[1] ?? wb.SheetNames[0];
+        const wsName = wb.SheetNames.find(n => n.toLowerCase().includes('fee')) ?? wb.SheetNames[0];
         const ws = wb.Sheets[wsName];
         const data: any[] = XLSX.utils.sheet_to_json(ws);
         const parsed = data.map((row: any, idx: number) => {
           let err = '';
-          const admNo = String(row['Admission No *'] ?? row['Admission No'] ?? '').trim();
-          const feeType = String(row['Fee Type *\n(tuition/transport/hostel/\nexamination/activity/\nlibrary/uniform/miscellaneous)'] ?? row['Fee Type *'] ?? row['Fee Type'] ?? '').trim().toLowerCase();
-          const feeLabel = String(row['Fee Label *'] ?? row['Fee Label'] ?? '').trim();
-          const totalFee = parseFloat(row['Total Fee Amount (₹) *'] ?? row['Total Fee Amount'] ?? 0);
-          const amtPaid = parseFloat(row['Amount Paid (₹)'] ?? row['Amount Paid'] ?? 0);
-          const status = String(row['Fee Status *\n(pending/paid/\npartially_paid/overdue/waived)'] ?? row['Fee Status *'] ?? row['Fee Status'] ?? 'pending').trim().toLowerCase();
-          let dueDate = String(row['Due Date *\n(YYYY-MM-DD)'] ?? row['Due Date *'] ?? row['Due Date'] ?? '').trim();
+          const getVal = (keywords: string[]) => {
+            const key = Object.keys(row).find(k => keywords.some(kw => k.toLowerCase().includes(kw.toLowerCase())));
+            return key ? row[key] : undefined;
+          };
+          const admNo = String(getVal(['admission no', 'admission']) ?? '').trim();
+          const totalFee = parseFloat(getVal(['total fee', 'fee amount']) ?? 0);
+          const amtPaid = parseFloat(getVal(['amount paid', 'paid']) ?? 0);
+          let dueDate = String(getVal(['due date']) ?? '').trim();
 
           // Normalize date if it's an Excel serial number
           const dueDateNum = parseFloat(dueDate);
@@ -1505,15 +1512,15 @@ function TabImportFees({ schoolId, academicYearId }: { schoolId: string; academi
             dueDate = d.toISOString().split('T')[0];
           }
 
+          // Auto-derive status
+          const status = !isNaN(amtPaid) && amtPaid >= totalFee ? 'paid' : !isNaN(amtPaid) && amtPaid > 0 ? 'partially_paid' : 'pending';
+
           if (!admNo) err = 'Missing Admission No';
-          else if (!feeLabel) err = 'Missing Fee Label';
           else if (!totalFee || isNaN(totalFee) || totalFee <= 0) err = 'Invalid Total Fee';
-          else if (!VALID_FEE_TYPES.includes(feeType)) err = `Invalid fee type: '${feeType}'`;
-          else if (!VALID_FEE_STATUSES.includes(status)) err = `Invalid status: '${status}'`;
           else if (!dueDate) err = 'Missing Due Date';
           else if (!studentMap.has(admNo)) err = `Admission No '${admNo}' not found`;
 
-          return { rowNum: idx + 2, admNo, feeType, feeLabel, totalFee, amtPaid: isNaN(amtPaid) ? 0 : amtPaid, status, dueDate, studentId: studentMap.get(admNo) ?? '', err };
+          return { rowNum: idx + 2, admNo, totalFee, amtPaid: isNaN(amtPaid) ? 0 : amtPaid, status, dueDate, studentId: studentMap.get(admNo) ?? '', err };
         });
         setRows(parsed);
       } catch { setError('Failed to parse file. Ensure it matches the template.'); }
@@ -1567,8 +1574,8 @@ function TabImportFees({ schoolId, academicYearId }: { schoolId: string; academi
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         <div style={{ padding: 18, background: '#F8FAFC', borderRadius: 12, border: '1px dashed #CBD5E1' }}>
           <p style={{ fontSize: 14, fontWeight: 700, color: '#0F172A', margin: '0 0 4px' }}>1. Download Template</p>
-          <p style={{ fontSize: 12, color: '#64748B', margin: '0 0 12px' }}>Use Sheet 2 (Student Fees) from the master template.</p>
-          <a href="/Student_Import_Template.xlsx" download style={{ display: 'inline-block', padding: '7px 14px', background: 'white', border: '1px solid #CBD5E1', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#334155', textDecoration: 'none', cursor: 'pointer' }}>Download .xlsx</a>
+          <p style={{ fontSize: 12, color: '#64748B', margin: '0 0 12px' }}>4 simple columns: Admission No, Total Fee, Amount Paid, Due Date.</p>
+          <button onClick={handleDownloadFeeTemplate} style={{ display: 'inline-block', padding: '7px 14px', background: 'white', border: '1px solid #CBD5E1', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#334155', cursor: 'pointer' }}>Download .xlsx</button>
         </div>
         <div style={{ padding: 18, background: '#EFF6FF', borderRadius: 12, border: '1px dashed #93C5FD' }}>
           <p style={{ fontSize: 14, fontWeight: 700, color: '#1D4ED8', margin: '0 0 4px' }}>2. Upload Fee Data</p>
@@ -1589,10 +1596,10 @@ function TabImportFees({ schoolId, academicYearId }: { schoolId: string; academi
             Preview — {validCount} valid, {invalidCount} invalid
           </p>
           <div style={{ border: '1px solid #E2E8F0', borderRadius: 8, overflow: 'hidden', overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 500 }}>
               <thead style={{ background: '#F8FAFC' }}>
                 <tr>
-                  {['Row','Admission No','Fee Label','Fee Type','Total (₹)','Paid (₹)','Status','Due Date','Valid?'].map(h => (
+                  {['Row','Admission No','Total (₹)','Paid (₹)','Due Date','Status','Valid?'].map(h => (
                     <th key={h} style={{ padding: '8px 12px', fontSize: 11, fontWeight: 700, color: '#64748B', textAlign: 'left', borderBottom: '1px solid #E2E8F0' }}>{h}</th>
                   ))}
                 </tr>
@@ -1602,12 +1609,14 @@ function TabImportFees({ schoolId, academicYearId }: { schoolId: string; academi
                   <tr key={i} style={{ background: r.err ? '#FEF2F2' : (i % 2 === 0 ? '#F8FAFC' : 'white'), borderBottom: '1px solid #F1F5F9' }}>
                     <td style={{ padding: '7px 12px', fontSize: 12 }}>{r.rowNum}</td>
                     <td style={{ padding: '7px 12px', fontSize: 12, fontFamily: 'monospace' }}>{r.admNo}</td>
-                    <td style={{ padding: '7px 12px', fontSize: 12 }}>{r.feeLabel}</td>
-                    <td style={{ padding: '7px 12px', fontSize: 12 }}>{r.feeType}</td>
                     <td style={{ padding: '7px 12px', fontSize: 12, fontWeight: 600 }}>₹{r.totalFee?.toLocaleString('en-IN')}</td>
                     <td style={{ padding: '7px 12px', fontSize: 12 }}>₹{r.amtPaid?.toLocaleString('en-IN')}</td>
-                    <td style={{ padding: '7px 12px', fontSize: 12 }}>{r.status}</td>
                     <td style={{ padding: '7px 12px', fontSize: 12 }}>{r.dueDate}</td>
+                    <td style={{ padding: '7px 12px', fontSize: 12 }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: r.status === 'paid' ? '#DCFCE7' : r.status === 'partially_paid' ? '#FEF3C7' : '#FEF2F2', color: r.status === 'paid' ? '#15803D' : r.status === 'partially_paid' ? '#92400E' : '#DC2626' }}>
+                        {r.status}
+                      </span>
+                    </td>
                     <td style={{ padding: '7px 12px', fontSize: 12 }}>
                       {r.err ? <span style={{ color: '#DC2626', fontWeight: 600 }}>{r.err}</span> : <span style={{ color: '#059669', fontWeight: 700 }}>✓ Valid</span>}
                     </td>

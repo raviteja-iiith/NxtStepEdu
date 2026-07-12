@@ -180,10 +180,13 @@ export default function StudentsPage() {
   };
 
   const handleDownloadTemplate = () => {
-    const a = document.createElement('a');
-    a.href = '/Student_Import_Template.xlsx';
-    a.download = 'Student_Import_Template.xlsx';
-    a.click();
+    const header = [['Full Name', 'Date of Birth (DD/MM/YYYY)', 'Gender (male/female/other)', 'Class Name', 'Section Name', 'Roll Number']];
+    const sample = [['Rahul Kumar', '15/06/2012', 'male', '6', 'A', 1], ['Priya Sharma', '22/03/2013', 'female', '7', 'B', 2]];
+    const ws = XLSX.utils.aoa_to_sheet([...header, ...sample]);
+    ws['!cols'] = [{ wch: 22 }, { wch: 24 }, { wch: 24 }, { wch: 12 }, { wch: 14 }, { wch: 12 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Students');
+    XLSX.writeFile(wb, 'Student_Import_Template.xlsx');
   };
 
   // ── Bulk import: re-validate a single row after inline edit ──────────────
@@ -243,16 +246,9 @@ export default function StudentsPage() {
           const gender = String(getVal(['gender']) ?? '').trim().toLowerCase();
           const className = String(getVal(['class name']) ?? '').trim();
           const sectionName = String(getVal(['section name']) ?? '').trim();
-          const admNo = String(getVal(['admission no']) ?? '').trim();
-          const penNumber = String(getVal(['pen number']) ?? '').trim() || null;
           
-          const rawRoll = getVal(['roll number']);
+          const rawRoll = getVal(['roll number', 'roll no']);
           const rollNumber = rawRoll ? parseInt(String(rawRoll)) : null;
-
-          const address = String(getVal(['address']) ?? '').trim() || null;
-
-          let admDate = String(getVal(['admission date']) ?? '').trim();
-          if (!admDate) admDate = new Date().toISOString().split('T')[0];
 
           // Validate
           if (!name) error = 'Missing Full Name';
@@ -278,11 +274,7 @@ export default function StudentsPage() {
             section_id: foundSection?.id || '',
             class_name: className,
             section_name: sectionName,
-            admission_number: admNo || null,
-            pen_number: penNumber,
             roll_number: rollNumber,
-            address,
-            admission_date: admDate,
             error,
           };
         });
@@ -316,11 +308,9 @@ export default function StudentsPage() {
         gender: r.gender,
         class_id: r.class_id,
         section_id: r.section_id,
-        admission_number: r.admission_number || `STU-${year}-${String(currentCount).padStart(4,'0')}`,
-        pen_number: r.pen_number || null,
+        admission_number: `STU-${year}-${String(currentCount).padStart(4,'0')}`,
         roll_number: r.roll_number ?? null,
-        address: r.address ?? null,
-        admission_date: r.admission_date || new Date().toISOString().split('T')[0],
+        admission_date: new Date().toISOString().split('T')[0],
         academic_year_id: yr?.id || null,
         school_id: schoolId,
         is_active: true,
@@ -689,10 +679,10 @@ export default function StudentsPage() {
                     Preview — {bulkData.filter(r=>!r.error).length} valid, {bulkData.filter(r=>r.error).length} invalid (of {bulkData.length} rows)
                   </p>
                   <div style={{ border:'1px solid #E2E8F0', borderRadius:8, overflow:'hidden', overflowX:'auto' }}>
-                    <table style={{ width:'100%', borderCollapse:'collapse', minWidth:900 }}>
+                    <table style={{ width:'100%', borderCollapse:'collapse', minWidth:700 }}>
                       <thead style={{ background:'#1E3A8A' }}>
                         <tr>
-                          {['Row','Full Name *','Date of Birth *','Gender *','Class Name *','Section Name *','Admission No','Pen Number','Roll Number','Address','Status'].map(h=>(
+                          {['Row','Full Name *','Date of Birth *','Gender *','Class Name *','Section Name *','Roll No','Status'].map(h=>(
                             <th key={h} style={{ padding:'8px 12px', fontSize:11, fontWeight:700, color:'white', textAlign:'left', borderBottom:'1px solid #2563EB', whiteSpace:'nowrap' }}>{h}</th>
                           ))}
                         </tr>
@@ -722,10 +712,7 @@ export default function StudentsPage() {
                                 <option value="">--</option>{rowSections.map(s=><option key={s.id} value={s.name}>{s.name}</option>)}
                               </select>
                             </td>
-                            <td style={{ padding:'4px 6px', minWidth:100 }}><input value={r.admission_number||''} onChange={e=>handleBulkEdit(i,'admission_number',e.target.value)} placeholder="auto" style={cellIS}/></td>
-                            <td style={{ padding:'4px 6px', minWidth:100 }}><input value={r.pen_number||''} onChange={e=>handleBulkEdit(i,'pen_number',e.target.value)} style={cellIS}/></td>
                             <td style={{ padding:'4px 6px', minWidth:70 }}><input type="number" value={r.roll_number??''} onChange={e=>handleBulkEdit(i,'roll_number',e.target.value)} style={cellIS}/></td>
-                            <td style={{ padding:'4px 6px', minWidth:130 }}><input value={r.address||''} onChange={e=>handleBulkEdit(i,'address',e.target.value)} style={cellIS}/></td>
                             <td style={{ padding:'6px 10px', fontSize:11, whiteSpace:'nowrap' }}>
                               {r.error ? <span style={{ color:'#DC2626', fontWeight:600 }}>{r.error}</span> : <span style={{ color:'#059669', fontWeight:700 }}>✓ Valid</span>}
                             </td>
