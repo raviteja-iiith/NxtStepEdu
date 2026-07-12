@@ -89,9 +89,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
         style={{ width: isMobile ? '280px' : (collapsed ? '68px' : '256px'), background: 'linear-gradient(180deg, #042F2E 0%, #0F4C47 100%)', boxShadow: '4px 0 24px rgba(0,0,0,0.15)' }}>
         <div style={{ padding: collapsed ? '20px 14px' : '20px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)', minHeight: 72 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, overflow: 'hidden' }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #0D9488, #14B8A6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(20,184,166,0.3)' }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
-            </div>
+            <img src="/logo.png" alt="Logo" style={{ width: 36, height: 36, borderRadius: 10, objectFit: 'contain', flexShrink: 0 }} />
             {!collapsed && (
               <div style={{ overflow: 'hidden', flex: 1 }}>
                 <p style={{ color: 'white', fontWeight: 700, fontSize: 14, lineHeight: 1.2 }}>NxtStepEdu</p>
@@ -174,7 +172,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
             </div>
           </div>
         </header>
-        <div className="portal-main-content content-page" style={{ padding: isMobile ? '16px' : '32px', flex: 1 }}>{children}</div>
+        <div className="portal-main-content content-page" style={{ padding: isMobile ? '16px' : '32px' }}>{children}</div>
       </main>
       {showChangePwd && <ChangePasswordModal accentColor="#0F766E" onClose={() => setShowChangePwd(false)} />}
     </div>

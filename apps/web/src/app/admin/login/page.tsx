@@ -73,9 +73,7 @@ export default function AdminLoginPage() {
         <div className="w-full max-w-md animate-scale-in">
           {/* Logo */}
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl mb-6 text-4xl shadow-[0_0_40px_rgba(59,130,246,0.3)] border border-white/10" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05))', backdropFilter: 'blur(20px)' }}>
-              🛡️
-            </div>
+            <img src="/logo.png" alt="Logo" className="w-20 h-20 rounded-2xl mb-6 mx-auto object-contain shadow-[0_0_40px_rgba(59,130,246,0.3)] border border-white/10" />
             <h1 className="text-3xl font-extrabold text-white tracking-tight mb-2">Admin Portal</h1>
             <p className="text-blue-300 font-medium tracking-wide uppercase text-xs">Super Administrator Access</p>
           </div>

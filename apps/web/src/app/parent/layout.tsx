@@ -292,9 +292,7 @@ function ParentLayoutInner({ children }: { children: React.ReactNode }) {
         style={{ width: isMobile ? '280px' : (collapsed ? '68px' : '256px'), background: 'linear-gradient(180deg, #1E1035 0%, #2D1B69 100%)', boxShadow: '4px 0 24px rgba(0,0,0,0.15)' }}>
         <div style={{ padding: collapsed ? '20px 14px' : '20px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)', minHeight: 72 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, overflow: 'hidden' }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #7C3AED, #A855F7)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(124,58,237,0.3)' }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            </div>
+            <img src="/logo.png" alt="Logo" style={{ width: 36, height: 36, borderRadius: 10, objectFit: 'contain', flexShrink: 0 }} />
             {!collapsed && (
               <div style={{ overflow: 'hidden', flex: 1 }}>
                 <p style={{ color: 'white', fontWeight: 700, fontSize: 14, lineHeight: 1.2 }}>NxtStepEdu</p>
@@ -371,7 +369,7 @@ function ParentLayoutInner({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </header>
-        <div className="parent-main-content content-page" style={{ padding: isMobile ? '16px' : '40px 48px', paddingBottom: isMobile ? 'calc(80px + env(safe-area-inset-bottom))' : '40px', flex: 1, maxWidth: 1280 }}>{children}</div>
+        <div className="parent-main-content content-page" style={{ padding: isMobile ? '16px' : '40px 48px', paddingBottom: isMobile ? 'calc(80px + env(safe-area-inset-bottom))' : '40px', maxWidth: 1280 }}>{children}</div>
       </main>
 
       {/* Bottom Tab Bar — mobile parent portal */}

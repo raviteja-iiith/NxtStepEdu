@@ -173,9 +173,7 @@ export default function LoginPage() {
       <div className="login-branding">
         <div className="login-brand-inner">
           <div className="logo-group" style={{ marginBottom: 32 }}>
-            <div className="logo-icon">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-            </div>
+            <img src="/logo.png" alt="Logo" style={{ width: 36, height: 36, borderRadius: 10, objectFit: 'contain' }} />
             <span className="logo-text">NxtStepEdu</span>
           </div>
           <h2 className="login-brand-title">
