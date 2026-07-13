@@ -759,7 +759,7 @@ body {
    Login Page
    ============================================================ */
 
-.login-page { min-height: 100vh; display: flex; position: relative; background: #030712; color: white; overflow: hidden; }
+.login-page { min-height: 100vh; display: flex; position: relative; background: #030712; color: white; overflow-x: hidden; overflow-y: auto; }
 .login-branding { display: none; }
 @media (min-width: 1024px) { .login-branding { display: flex; width: 45%; align-items: center; justify-content: center; padding: 48px; position: relative; z-index: 1; } }
 .login-brand-inner { max-width: 420px; }
@@ -986,11 +986,13 @@ body {
 }
 
 /* ── Capacitor / PWA safe areas ── */
-body {
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
+/* Only apply safe area insets on mobile to avoid breaking scroll on desktop.
+   The portal topbar and bottom tab bar already handle their own safe areas. */
+@media (max-width: 768px) {
+  body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
 }
 
 /* ── Mobile stat cards (2-col instead of 4-col) ── */
@@ -1204,10 +1206,12 @@ body {
    Targets inline style grids/tables across all portals
    ============================================================ */
 
-/* Prevent horizontal scroll on the whole page */
-html, body {
+/* Prevent horizontal scroll on the whole page.
+   IMPORTANT: Do NOT set overflow-y on html or body — it creates a non-viewport
+   scroll container which breaks native scrolling on mobile WebView/Chrome.
+   The browser's default viewport scrolling handles vertical scroll correctly. */
+body {
   overflow-x: hidden;
-  max-width: 100vw;
 }
 
 @media (max-width: 768px) {
@@ -1496,6 +1500,7 @@ p, span, td, th, li, pre, code, input, textarea, select {
    On iOS Safari it has no effect (iOS handles overscroll natively). */
 html, body {
   overscroll-behavior-y: contain;
+  /* DO NOT add position:fixed or overflow:hidden here — it breaks scrolling */
 }
 
 /* ── Disable long-press context menu on images and links ── */
