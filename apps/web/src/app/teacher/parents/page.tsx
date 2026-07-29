@@ -27,6 +27,8 @@ export default function TeacherParentsPage() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
   const [showCreds, setShowCreds] = useState<{ phone: string; pin: string; name: string } | null>(null);
+  const [existingParent, setExistingParent] = useState<{ id: string; full_name: string } | null>(null);
+  const [phoneLooking, setPhoneLooking] = useState(false);
   const [search, setSearch] = useState('');
   const [showLinkModal, setShowLinkModal] = useState<{ parentId: string; parentName: string } | null>(null);
   const [linkStudentId, setLinkStudentId] = useState('');
@@ -97,37 +99,75 @@ export default function TeacherParentsPage() {
 
   useEffect(() => { fetchParentsAndStudents(); }, [fetchParentsAndStudents]);
 
+  // ── Auto-detect existing parent when phone reaches 10 digits ────────────────
+  useEffect(() => {
+    if (form.phone.length !== 10) { setExistingParent(null); return; }
+    let cancelled = false;
+    (async () => {
+      setPhoneLooking(true);
+      const userId = (await supabase.auth.getUser()).data.user?.id || '';
+      const { data: userData } = await supabase.from('users').select('school_id').eq('id', userId).single();
+      if (!userData?.school_id) { setPhoneLooking(false); return; }
+
+      const { data } = await supabase.from('users')
+        .select('id, full_name')
+        .eq('phone', form.phone).eq('school_id', userData.school_id).eq('role', 'parent')
+        .maybeSingle();
+
+      if (!cancelled) {
+        if (data) {
+          setExistingParent({ id: data.id, full_name: data.full_name });
+          setForm(f => ({ ...f, full_name: data.full_name }));
+        } else {
+          setExistingParent(null);
+        }
+        setPhoneLooking(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [form.phone, supabase]);
+
   const handleAddParent = async () => {
-    if (!form.full_name || !form.phone || !selectedStudentId) { setFormError('All fields are required'); return; }
+    if (!form.phone || !selectedStudentId) { setFormError('Phone and student details are required'); return; }
     if (form.phone.length !== 10) { setFormError('Phone must be 10 digits'); return; }
+    if (!existingParent && !form.full_name) { setFormError('Parent full name is required'); return; }
     setSaving(true); setFormError('');
 
-    const pin = String(Math.floor(100000 + Math.random() * 900000));
     const userId = (await supabase.auth.getUser()).data.user?.id || '';
     const { data: userData } = await supabase.from('users').select('school_id').eq('id', userId).single();
 
     try {
-      const res = await fetch('/api/auth/create-user', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: `${form.phone}@parent.schoolerp.local`, password: pin, role: 'parent', full_name: form.full_name, phone: form.phone, username: form.phone, school_id: userData?.school_id }),
-      });
-      const result = await res.json();
-      if (!res.ok) { setFormError(result.error || 'Failed to create parent account'); setSaving(false); return; }
+      let parentId = existingParent?.id || '';
+      let pin = '';
 
-      const newParentId: string = result.userId;
-      if (!newParentId) { setFormError('Parent created but no userId returned — contact admin.'); setSaving(false); return; }
+      if (!existingParent) {
+        pin = String(Math.floor(100000 + Math.random() * 900000));
+        const res = await fetch('/api/auth/create-user', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: `${form.phone}@parent.schoolerp.local`, password: pin, role: 'parent', full_name: form.full_name, phone: form.phone, username: form.phone, school_id: userData?.school_id }),
+        });
+        const result = await res.json();
+        if (!res.ok) { setFormError(result.error || 'Failed to create parent account'); setSaving(false); return; }
+
+        parentId = result.userId;
+        if (!parentId) { setFormError('Parent created but no userId returned — contact admin.'); setSaving(false); return; }
+      }
 
       const { error: linkError } = await supabase.from('student_parent_links').insert({
-        parent_id: newParentId, student_id: selectedStudentId, relationship: form.relationship || 'guardian', is_primary_contact: true, created_by: userId,
+        parent_id: parentId, student_id: selectedStudentId, relationship: form.relationship || 'guardian', is_primary_contact: true, created_by: userId,
       });
 
       if (linkError) {
-        setFormError(`Parent account created but linking failed: ${linkError.message}. Please link manually from the student profile.`);
+        setFormError(`${existingParent ? 'Linking' : 'Parent account created but linking'} failed: ${linkError.message}`);
         setSaving(false); fetchParentsAndStudents(); return;
       }
 
-      setShowAddModal(false); setShowCreds({ phone: form.phone, pin, name: form.full_name });
-      setForm({ full_name: '', phone: '', relationship: 'guardian' }); setSelectedStudentId(''); fetchParentsAndStudents();
+      setShowAddModal(false);
+      if (!existingParent) {
+        setShowCreds({ phone: form.phone, pin, name: form.full_name });
+      }
+      setForm({ full_name: '', phone: '', relationship: 'guardian' }); setSelectedStudentId(''); setExistingParent(null);
+      fetchParentsAndStudents();
     } catch (err: any) { setFormError(`Network error: ${err?.message || 'Please try again.'}`); }
     setSaving(false);
   };
@@ -153,7 +193,7 @@ export default function TeacherParentsPage() {
           <h2 style={{ fontSize: 24, fontWeight: 800, color: '#0F172A', margin: 0, letterSpacing: '-0.02em' }}>Parent Management</h2>
           <p style={{ fontSize: 14, color: '#64748B', margin: '4px 0 0 0' }}>Manage parents and link them to students in your classes ({parents.length} total)</p>
         </div>
-        <button onClick={() => { setShowAddModal(true); setFormError(''); }} 
+        <button onClick={() => { setShowAddModal(true); setFormError(''); setExistingParent(null); setForm({ full_name: '', phone: '', relationship: 'guardian' }); setSelectedStudentId(''); }} 
           style={{ width: isMobile ? '100%' : 'auto', padding: '12px 24px', borderRadius: 12, fontSize: 14, fontWeight: 700, color: 'white', background: 'linear-gradient(135deg, #0F766E 0%, #0D9488 100%)', border: 'none', cursor: 'pointer', boxShadow: '0 4px 12px rgba(15, 118, 110, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Add New Parent
@@ -310,8 +350,8 @@ export default function TeacherParentsPage() {
           <div style={{ width: '100%', maxWidth: 440, background: 'white', borderRadius: 24, boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', overflow: 'hidden' }}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #E2E8F0', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#0F172A' }}>Add Parent Account</h3>
-                <p style={{ margin: '4px 0 0 0', fontSize: 12, color: '#64748B' }}>Create and link a new parent</p>
+                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#0F172A' }}>{existingParent ? '🔗 Link Parent to Student' : 'Add Parent Account'}</h3>
+                <p style={{ margin: '4px 0 0 0', fontSize: 12, color: '#64748B' }}>{existingParent ? 'Parent account exists — linking to selected student' : 'Create and link a new parent'}</p>
               </div>
               <button onClick={() => setShowAddModal(false)} style={{ width: 32, height: 32, borderRadius: '50%', background: 'white', border: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', cursor: 'pointer' }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -325,6 +365,16 @@ export default function TeacherParentsPage() {
                   {formError}
                 </div>
               )}
+
+              {existingParent && (
+                <div style={{ marginBottom: 20, padding: '12px 16px', borderRadius: 12, background: '#F0FDF4', border: '1px solid #BBF7D0', display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg,#16A34A,#4ADE80)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 14, fontWeight: 800, flexShrink: 0 }}>{existingParent.full_name.charAt(0).toUpperCase()}</div>
+                  <div>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#065F46' }}>✅ Parent <strong>{existingParent.full_name}</strong> already exists</p>
+                    <p style={{ margin: '2px 0 0', fontSize: 11, color: '#16A34A' }}>No new account needed — will create link to student</p>
+                  </div>
+                </div>
+              )}
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <div>
@@ -336,14 +386,23 @@ export default function TeacherParentsPage() {
                 </div>
                 
                 <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Parent Full Name *</label>
-                  <input value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} placeholder="e.g. Ramesh Sharma" style={{ width: '100%', padding: '12px 16px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, fontSize: 14, fontWeight: 600, color: '#0F172A', outline: 'none' }} />
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Parent Full Name {existingParent ? '' : '*'}</label>
+                  <input
+                    value={form.full_name}
+                    onChange={e => { if (!existingParent) setForm(f => ({ ...f, full_name: e.target.value })); }}
+                    placeholder={existingParent ? '' : 'e.g. Ramesh Sharma'}
+                    readOnly={!!existingParent}
+                    style={{ width: '100%', padding: '12px 16px', background: existingParent ? '#F1F5F9' : '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, fontSize: 14, fontWeight: 600, color: existingParent ? '#64748B' : '#0F172A', outline: 'none', cursor: existingParent ? 'not-allowed' : 'text' }}
+                  />
                 </div>
                 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                   <div>
                     <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Mobile Number *</label>
-                    <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))} maxLength={10} placeholder="10 digits" style={{ width: '100%', padding: '12px 16px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, fontSize: 14, fontWeight: 600, color: '#0F172A', outline: 'none', fontFamily: 'monospace' }} />
+                    <div style={{ position: 'relative' }}>
+                      <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))} maxLength={10} placeholder="10 digits" style={{ width: '100%', padding: '12px 16px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, fontSize: 14, fontWeight: 600, color: '#0F172A', outline: 'none', fontFamily: 'monospace' }} />
+                      {phoneLooking && <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: '#94A3B8' }}>Checking...</span>}
+                    </div>
                   </div>
                   <div>
                     <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Relationship *</label>
@@ -356,16 +415,18 @@ export default function TeacherParentsPage() {
                   </div>
                 </div>
                 
-                <div style={{ padding: 14, marginTop: 8, borderRadius: 12, border: '1px solid #CCFBF1', background: '#F0FDFA', color: '#115E59', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                  <svg style={{ flexShrink: 0, marginTop: 2, color: '#0D9488' }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                  <p style={{ margin: 0, fontSize: 12, fontWeight: 600, lineHeight: 1.5 }}>A secure 6-digit PIN will be generated automatically and the parent will be linked to this student instantly.</p>
-                </div>
+                {!existingParent && (
+                  <div style={{ padding: 14, marginTop: 8, borderRadius: 12, border: '1px solid #CCFBF1', background: '#F0FDFA', color: '#115E59', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                    <svg style={{ flexShrink: 0, marginTop: 2, color: '#0D9488' }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    <p style={{ margin: 0, fontSize: 12, fontWeight: 600, lineHeight: 1.5 }}>A secure 6-digit PIN will be generated automatically and the parent will be linked to this student instantly.</p>
+                  </div>
+                )}
               </div>
               
               <div style={{ display: 'flex', gap: 12, marginTop: 32 }}>
                 <button onClick={() => setShowAddModal(false)} style={{ flex: 1, padding: 14, borderRadius: 12, fontSize: 14, fontWeight: 800, border: '1px solid #E2E8F0', color: '#475569', background: 'white', cursor: 'pointer' }}>Cancel</button>
-                <button onClick={handleAddParent} disabled={saving} style={{ flex: 1, padding: 14, borderRadius: 12, fontSize: 14, fontWeight: 800, color: 'white', background: 'linear-gradient(135deg, #0F766E 0%, #0D9488 100%)', border: 'none', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: '0 4px 12px rgba(15, 118, 110, 0.2)' }}>
-                  {saving ? 'Creating...' : 'Create & Link'}
+                <button onClick={handleAddParent} disabled={saving} style={{ flex: 1, padding: 14, borderRadius: 12, fontSize: 14, fontWeight: 800, color: 'white', background: existingParent ? 'linear-gradient(135deg,#1D4ED8,#3B82F6)' : 'linear-gradient(135deg, #0F766E 0%, #0D9488 100%)', border: 'none', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: existingParent ? '0 4px 12px rgba(29,78,216,0.2)' : '0 4px 12px rgba(15, 118, 110, 0.2)' }}>
+                  {saving ? 'Processing...' : existingParent ? '🔗 Link to Student' : 'Create & Link'}
                 </button>
               </div>
             </div>

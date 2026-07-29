@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { useParent } from '@/context/ParentContext';
 import { analyzeStudent } from '@/lib/performance/engine';
 import type { StudentAnalysis, PerformanceCategory } from '@/lib/performance/types';
 import {
@@ -27,6 +28,7 @@ const TREND_ICON: Record<string, string> = {
 export default function ParentAnalysisPage() {
   const router = useRouter();
   const supabase = createClient();
+  const { selectedChild, loading: childLoading } = useParent();
   const [analysis, setAnalysis] = useState<StudentAnalysis | null>(null);
   const [rawMarks, setRawMarks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,25 +36,13 @@ export default function ParentAnalysisPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'charts' | 'remarks'>('overview');
 
   const fetchAnalysis = useCallback(async () => {
+    if (!selectedChild) { setLoading(false); return; }
     setLoading(true);
     try {
-      const userId = (await supabase.auth.getUser()).data.user?.id;
-      if (!userId) { setError('Not logged in.'); setLoading(false); return; }
-
-      // Get parent's linked child
-      const { data: links } = await supabase
-        .from('student_parent_links')
-        .select('student_id, students(full_name, section_id, sections(name), classes(name))')
-        .eq('parent_id', userId)
-        .limit(1);
-
-      if (!links || links.length === 0) { setError('No linked student found.'); setLoading(false); return; }
-
-      const link = links[0] as any;
-      const studentId = link.student_id;
-      const studentName = link.students?.full_name || 'Student';
-      const className = link.students?.classes?.name || '';
-      const sectionName = link.students?.sections?.name || '';
+      const studentId = selectedChild.student_id;
+      const studentName = selectedChild.student_name;
+      const className = selectedChild.class_name;
+      const sectionName = selectedChild.section_name;
 
       const { data: marks } = await supabase
         .from('marks')
@@ -72,9 +62,11 @@ export default function ParentAnalysisPage() {
       setAnalysis(result);
     } catch (e: any) { setError(e.message || 'Unexpected error.'); }
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, selectedChild]);
 
-  useEffect(() => { fetchAnalysis(); }, [fetchAnalysis]);
+  useEffect(() => {
+    if (!childLoading) fetchAnalysis();
+  }, [fetchAnalysis, childLoading]);
 
   if (loading) return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>

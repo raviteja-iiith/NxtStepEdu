@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useParent } from '@/context/ParentContext';
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const SHORT_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -16,6 +17,7 @@ const typeColors: Record<string, { bg: string; color: string }> = {
 
 export default function CalendarPage() {
   const supabase = createClient();
+  const { selectedChild, loading: childLoading } = useParent();
   const today = new Date();
   const [month, setMonth] = useState(today.getMonth());
   const [year, setYear] = useState(today.getFullYear());
@@ -30,17 +32,13 @@ export default function CalendarPage() {
     const { data: u } = await supabase.from('users').select('school_id').eq('id', userId).single();
     if (!u?.school_id) { setLoading(false); return; }
 
-    // Get student's section via parent link
-    const { data: link } = await supabase.from('student_parent_links')
-      .select('student_id, students(section_id)').eq('parent_id', userId).limit(1).maybeSingle();
-
     const startDate = `${year}-${String(month + 1).padStart(2, '0')}-01`;
     const endDate = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`;
 
     const all: CalEvent[] = [];
 
-    // Fetch exams for this section this month
-    const sectionId = (link?.students as any)?.section_id;
+    // Use the selected child's section_id from context instead of hardcoded limit(1)
+    const sectionId = selectedChild?.section_id;
     if (sectionId) {
       const { data: exams } = await supabase.from('exams')
         .select('name, exam_date, subjects(name)')
@@ -59,7 +57,7 @@ export default function CalendarPage() {
 
     setEvents(all);
     setLoading(false);
-  }, [supabase, month, year]);
+  }, [supabase, month, year, selectedChild]);
 
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
 

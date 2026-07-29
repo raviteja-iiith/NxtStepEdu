@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.nxtstep.edu',
+  appId: 'nxtstepedu.com',
   appName: 'NxtStepEdu',
   webDir: 'out',
 

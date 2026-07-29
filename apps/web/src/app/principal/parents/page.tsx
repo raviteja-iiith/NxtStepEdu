@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import * as XLSX from 'xlsx';
 
@@ -10,6 +10,113 @@ interface SectionItem { id: string; name: string; class_id: string; }
 
 const IS = { width:'100%',padding:'10px 14px',border:'1px solid #E2E8F0',borderRadius:10,fontSize:13,outline:'none',background:'white',boxSizing:'border-box' as const,fontFamily:'inherit' };
 const overlay: React.CSSProperties = { position:'fixed',inset:0,zIndex:50,display:'flex',alignItems:'center',justifyContent:'center',padding:16,background:'rgba(15,23,42,0.55)',backdropFilter:'blur(4px)' };
+
+// ── Searchable Student Picker ────────────────────────────────────────────────
+interface StudentOption { id: string; full_name: string; section_name: string; class_name: string; }
+
+function StudentSearchPicker({ students, value, onChange, placeholder }: {
+  students: StudentOption[];
+  value: string;
+  onChange: (id: string) => void;
+  placeholder?: string;
+}) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Sync display text when value changes externally (e.g. reset)
+  const selected = students.find(s => s.id === value);
+  const displayText = selected ? `${selected.full_name} (${selected.class_name} – ${selected.section_name})` : '';
+
+  useEffect(() => {
+    if (!value) setQuery('');
+  }, [value]);
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const q = query.toLowerCase();
+  const filtered = q.length === 0 ? students.slice(0, 8) : students.filter(s =>
+    s.full_name.toLowerCase().includes(q) ||
+    s.class_name.toLowerCase().includes(q) ||
+    s.section_name.toLowerCase().includes(q)
+  ).slice(0, 8);
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <div style={{ position: 'relative' }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+        </svg>
+        <input
+          type="text"
+          value={open ? query : (value ? displayText : query)}
+          onChange={e => { setQuery(e.target.value); onChange(''); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          placeholder={placeholder || 'Type to search student...'}
+          style={{ ...IS, background: '#F8FAFC', paddingLeft: 36 }}
+        />
+        {value && (
+          <button onClick={() => { onChange(''); setQuery(''); }} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer', fontSize: 14, padding: 2 }} title="Clear">
+            ✕
+          </button>
+        )}
+      </div>
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 100,
+          background: 'white', border: '1px solid #E2E8F0', borderRadius: 12,
+          boxShadow: '0 12px 40px rgba(0,0,0,0.15)', maxHeight: 260, overflowY: 'auto',
+        }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: '16px 14px', textAlign: 'center', color: '#94A3B8', fontSize: 13 }}>
+              {q ? `No students matching "${q}"` : 'No students available'}
+            </div>
+          ) : filtered.map(s => (
+            <button
+              key={s.id}
+              onClick={() => { onChange(s.id); setQuery(''); setOpen(false); }}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                padding: '10px 14px', border: 'none', borderBottom: '1px solid #F8FAFC',
+                background: s.id === value ? '#EFF6FF' : 'white',
+                cursor: 'pointer', textAlign: 'left', transition: 'background 0.1s',
+              }}
+              onMouseEnter={e => { if (s.id !== value) e.currentTarget.style.background = '#F8FAFC'; }}
+              onMouseLeave={e => { if (s.id !== value) e.currentTarget.style.background = 'white'; }}
+            >
+              <div style={{
+                width: 32, height: 32, borderRadius: 10, flexShrink: 0,
+                background: s.id === value ? 'linear-gradient(135deg,#3B82F6,#1D4ED8)' : '#F1F5F9',
+                color: s.id === value ? 'white' : '#64748B',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 12, fontWeight: 800,
+              }}>
+                {s.full_name.charAt(0).toUpperCase()}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.full_name}</p>
+                <p style={{ margin: '2px 0 0', fontSize: 11, color: '#64748B' }}>{s.class_name} – {s.section_name}</p>
+              </div>
+              {s.id === value && (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              )}
+            </button>
+          ))}
+          {q.length === 0 && students.length > 8 && (
+            <p style={{ padding: '8px 14px', margin: 0, fontSize: 11, color: '#94A3B8', textAlign: 'center', borderTop: '1px solid #F1F5F9' }}>Type to search {students.length} students…</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Credentials Download ─────────────────────────────────────────────────────
 function downloadCredentials(creds: { name: string; phone: string; pin: string }[]) {
@@ -336,6 +443,23 @@ export default function PrincipalParentsPage() {
   const [parentClassMap, setParentClassMap] = useState<Map<string, Set<string>>>(new Map());
   const [parentSectionMap, setParentSectionMap] = useState<Map<string, Set<string>>>(new Map());
 
+  // ── Add Single Parent state ────────────────────────────────────────────────
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [allStudents, setAllStudents] = useState<{ id: string; full_name: string; section_name: string; class_name: string }[]>([]);
+  const [selectedStudentId, setSelectedStudentId] = useState('');
+  const [addForm, setAddForm] = useState({ full_name: '', phone: '', relationship: 'guardian' });
+  const [addSaving, setAddSaving] = useState(false);
+  const [addError, setAddError] = useState('');
+  const [showCreds, setShowCreds] = useState<{ phone: string; pin: string; name: string } | null>(null);
+  const [existingParent, setExistingParent] = useState<{ id: string; full_name: string } | null>(null);
+  const [phoneLooking, setPhoneLooking] = useState(false);
+  // ── Link existing parent to another student ────────────────────────────────
+  const [showLinkModal, setShowLinkModal] = useState<{ parentId: string; parentName: string } | null>(null);
+  const [linkStudentId, setLinkStudentId] = useState('');
+  const [linkRelationship, setLinkRelationship] = useState('guardian');
+  const [linking, setLinking] = useState(false);
+  const [linkError, setLinkError] = useState('');
+
   const fetchParents = useCallback(async () => {
     setLoading(true);
     const userId = (await supabase.auth.getUser()).data.user?.id;
@@ -389,6 +513,105 @@ export default function PrincipalParentsPage() {
 
   useEffect(() => { fetchParents(); }, [fetchParents]);
 
+  // Load all students for add/link dropdowns when schoolId is ready
+  useEffect(() => {
+    if (!schoolId) return;
+    (async () => {
+      const { data } = await supabase.from('students')
+        .select('id, full_name, sections(name, classes(name))')
+        .eq('school_id', schoolId).eq('is_active', true).order('full_name');
+      if (data) setAllStudents(data.map((s: any) => ({
+        id: s.id,
+        full_name: s.full_name,
+        section_name: (s.sections as any)?.name || '',
+        class_name: (s.sections as any)?.classes?.name || '',
+      })));
+    })();
+  }, [supabase, schoolId]);
+
+  // ── Auto-detect existing parent when phone reaches 10 digits ────────────────
+  useEffect(() => {
+    if (addForm.phone.length !== 10 || !schoolId) { setExistingParent(null); return; }
+    let cancelled = false;
+    (async () => {
+      setPhoneLooking(true);
+      const { data } = await supabase.from('users')
+        .select('id, full_name')
+        .eq('phone', addForm.phone).eq('school_id', schoolId).eq('role', 'parent')
+        .maybeSingle();
+      if (!cancelled) {
+        if (data) {
+          setExistingParent({ id: data.id, full_name: data.full_name });
+          setAddForm(f => ({ ...f, full_name: data.full_name }));
+        } else {
+          setExistingParent(null);
+        }
+        setPhoneLooking(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [addForm.phone, schoolId, supabase]);
+
+  // ── Add parent handler (smart: creates new OR links existing) ───────────
+  const handleAddParent = async () => {
+    if (!addForm.phone || !selectedStudentId) { setAddError('Phone and student are required'); return; }
+    if (addForm.phone.length !== 10) { setAddError('Phone must be 10 digits'); return; }
+    if (!existingParent && !addForm.full_name) { setAddError('Parent name is required'); return; }
+    setAddSaving(true); setAddError('');
+
+    const userId = (await supabase.auth.getUser()).data.user?.id || '';
+
+    try {
+      let parentId = existingParent?.id || '';
+      let pin = '';
+
+      // Only create a new account if no existing parent was detected
+      if (!existingParent) {
+        pin = String(Math.floor(100000 + Math.random() * 900000));
+        const res = await fetch('/api/auth/create-user', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: `${addForm.phone}@parent.schoolerp.local`, password: pin, role: 'parent', full_name: addForm.full_name, phone: addForm.phone, username: addForm.phone, school_id: schoolId }),
+        });
+        const result = await res.json();
+        if (!res.ok) { setAddError(result.error || 'Failed to create parent account'); setAddSaving(false); return; }
+        parentId = result.userId;
+        if (!parentId) { setAddError('Parent created but no userId returned.'); setAddSaving(false); return; }
+      }
+
+      // Create the student-parent link
+      const { error: linkErr } = await supabase.from('student_parent_links').insert({
+        parent_id: parentId, student_id: selectedStudentId, relationship: addForm.relationship || 'guardian', is_primary_contact: true, created_by: userId,
+      });
+
+      if (linkErr) {
+        setAddError(`${existingParent ? 'Linking' : 'Parent created but linking'} failed: ${linkErr.message}`);
+        setAddSaving(false); fetchParents(); return;
+      }
+
+      setShowAddModal(false);
+      // Only show credentials for NEW accounts
+      if (!existingParent) {
+        setShowCreds({ phone: addForm.phone, pin, name: addForm.full_name });
+      }
+      setAddForm({ full_name: '', phone: '', relationship: 'guardian' }); setSelectedStudentId(''); setExistingParent(null);
+      fetchParents();
+    } catch (err: any) { setAddError(`Network error: ${err?.message || 'Please try again.'}`); }
+    setAddSaving(false);
+  };
+
+  // ── Link existing parent to another student handler ────────────────────
+  const handleLinkExisting = async () => {
+    if (!showLinkModal || !linkStudentId) { setLinkError('Please select a student'); return; }
+    setLinking(true); setLinkError('');
+    const userId = (await supabase.auth.getUser()).data.user?.id || '';
+    const { error } = await supabase.from('student_parent_links').insert({
+      parent_id: showLinkModal.parentId, student_id: linkStudentId, relationship: linkRelationship || 'guardian', is_primary_contact: true, created_by: userId,
+    });
+    if (error) { setLinkError(error.message); setLinking(false); return; }
+    setShowLinkModal(null); setLinkStudentId(''); setLinkRelationship('guardian');
+    fetchParents(); setLinking(false);
+  };
+
   const filtSections = sections.filter(s => s.class_id === filterClass);
 
   const filtered = parents.filter(p => {
@@ -411,12 +634,21 @@ export default function PrincipalParentsPage() {
           <h2 style={{ fontSize:22, fontWeight:800, color:'#0F172A', letterSpacing:'-0.02em', margin:0 }}>Parent Management</h2>
           <p style={{ fontSize:13, color:'#94A3B8', marginTop:4 }}>Parents linked to students in your school</p>
         </div>
-        <button
-          onClick={() => setShowBulkImport(true)}
-          style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 20px', background:'linear-gradient(135deg,#7C3AED,#A855F7)', color:'white', border:'none', borderRadius:10, fontSize:13, fontWeight:700, cursor:'pointer', boxShadow:'0 4px 12px rgba(124,58,237,0.3)', whiteSpace:'nowrap' }}
-        >
-          <span style={{ fontSize:16 }}>⬇</span> Bulk Import
-        </button>
+        <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+          <button
+            onClick={() => { setShowAddModal(true); setAddError(''); setExistingParent(null); setAddForm({ full_name: '', phone: '', relationship: 'guardian' }); setSelectedStudentId(''); }}
+            style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 20px', background:'linear-gradient(135deg,#0F766E,#0D9488)', color:'white', border:'none', borderRadius:10, fontSize:13, fontWeight:700, cursor:'pointer', boxShadow:'0 4px 12px rgba(15,118,110,0.25)', whiteSpace:'nowrap' }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Parent
+          </button>
+          <button
+            onClick={() => setShowBulkImport(true)}
+            style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 20px', background:'linear-gradient(135deg,#7C3AED,#A855F7)', color:'white', border:'none', borderRadius:10, fontSize:13, fontWeight:700, cursor:'pointer', boxShadow:'0 4px 12px rgba(124,58,237,0.3)', whiteSpace:'nowrap' }}
+          >
+            <span style={{ fontSize:16 }}>⬇</span> Bulk Import
+          </button>
+        </div>
       </div>
 
       {/* Stat Cards */}
@@ -486,10 +718,17 @@ export default function PrincipalParentsPage() {
             </div>
             <p style={{ fontSize:13, color:'#475569', margin:0, fontFamily:'monospace' }}>{p.phone||'—'}</p>
             <p style={{ fontSize:13, color:p.student_name?'#334155':'#CBD5E1', margin:0, fontStyle:p.student_name?'normal':'italic' }}>{p.student_name||'Not linked'}</p>
-            <span style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:99, background:p.is_active?'#F0FDF4':'#FEF2F2', color:p.is_active?'#16A34A':'#DC2626', width:'fit-content' }}>
-              <span style={{ width:6, height:6, borderRadius:'50%', background:p.is_active?'#16A34A':'#DC2626' }}/>
-              {p.is_active?'Active':'Inactive'}
-            </span>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <span style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:99, background:p.is_active?'#F0FDF4':'#FEF2F2', color:p.is_active?'#16A34A':'#DC2626', width:'fit-content' }}>
+                <span style={{ width:6, height:6, borderRadius:'50%', background:p.is_active?'#16A34A':'#DC2626' }}/>
+                {p.is_active?'Active':'Inactive'}
+              </span>
+              <button onClick={() => { setShowLinkModal({ parentId: p.id, parentName: p.full_name }); setLinkError(''); setLinkStudentId(''); }}
+                title="Link to another student"
+                style={{ padding:'4px 10px', borderRadius:8, background:'#EFF6FF', border:'1px solid #BFDBFE', color:'#1D4ED8', fontSize:11, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap' }}>
+                🔗 Link
+              </button>
+            </div>
           </div>
         ))}
       </div>
@@ -500,6 +739,143 @@ export default function PrincipalParentsPage() {
           onClose={() => setShowBulkImport(false)}
           onDone={() => { setShowBulkImport(false); fetchParents(); }}
         />
+      )}
+
+      {/* ── Add Single Parent Modal ─────────────────────────────────────────── */}
+      {showAddModal && (
+        <div style={overlay}>
+          <div style={{ width:'100%', maxWidth:440, background:'white', borderRadius:20, boxShadow:'0 25px 50px rgba(0,0,0,0.25)', overflow:'hidden' }}>
+             <div style={{ padding:'20px 24px', borderBottom:'1px solid #E2E8F0', background:'#F8FAFC', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <div>
+                <h3 style={{ margin:0, fontSize:18, fontWeight:800, color:'#0F172A' }}>{existingParent ? '🔗 Link Parent to Student' : 'Add Parent Account'}</h3>
+                <p style={{ margin:'4px 0 0', fontSize:12, color:'#64748B' }}>{existingParent ? 'This parent already exists — just linking' : 'Create and link a new parent'}</p>
+              </div>
+              <button onClick={() => setShowAddModal(false)} style={{ width:32, height:32, borderRadius:'50%', background:'white', border:'1px solid #E2E8F0', display:'flex', alignItems:'center', justifyContent:'center', color:'#94A3B8', cursor:'pointer', fontSize:14 }}>✕</button>
+            </div>
+            <div style={{ padding:24 }}>
+              {addError && <div style={{ marginBottom:16, padding:'10px 14px', borderRadius:10, background:'#FEF2F2', color:'#DC2626', border:'1px solid #FECACA', fontSize:13, fontWeight:600 }}>{addError}</div>}
+              {existingParent && (
+                <div style={{ marginBottom:16, padding:'12px 16px', borderRadius:12, background:'#F0FDF4', border:'1px solid #BBF7D0', display:'flex', alignItems:'center', gap:12 }}>
+                  <div style={{ width:36, height:36, borderRadius:10, background:'linear-gradient(135deg,#16A34A,#4ADE80)', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontSize:14, fontWeight:800, flexShrink:0 }}>{existingParent.full_name.charAt(0).toUpperCase()}</div>
+                  <div>
+                    <p style={{ margin:0, fontSize:13, fontWeight:700, color:'#065F46' }}>✅ Parent <strong>{existingParent.full_name}</strong> already exists</p>
+                    <p style={{ margin:'2px 0 0', fontSize:11, color:'#16A34A' }}>No new account needed — will only create a link to the selected student</p>
+                  </div>
+                </div>
+              )}
+              <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+                <div>
+                  <label style={{ display:'block', fontSize:12, fontWeight:700, color:'#334155', marginBottom:6, textTransform:'uppercase', letterSpacing:'0.05em' }}>Search & Select Student *</label>
+                  <StudentSearchPicker students={allStudents} value={selectedStudentId} onChange={setSelectedStudentId} placeholder="Type student name, class, or section…" />
+                </div>
+                <div>
+                  <label style={{ display:'block', fontSize:12, fontWeight:700, color:'#334155', marginBottom:6, textTransform:'uppercase', letterSpacing:'0.05em' }}>Parent Full Name {existingParent ? '' : '*'}</label>
+                  <input
+                    value={addForm.full_name}
+                    onChange={e => { if (!existingParent) setAddForm(f => ({ ...f, full_name: e.target.value })); }}
+                    placeholder={existingParent ? '' : 'e.g. Ramesh Sharma'}
+                    readOnly={!!existingParent}
+                    style={{ ...IS, background: existingParent ? '#F1F5F9' : '#F8FAFC', color: existingParent ? '#64748B' : '#0F172A', cursor: existingParent ? 'not-allowed' : 'text' }}
+                  />
+                </div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
+                  <div>
+                    <label style={{ display:'block', fontSize:12, fontWeight:700, color:'#334155', marginBottom:6, textTransform:'uppercase', letterSpacing:'0.05em' }}>Mobile Number *</label>
+                    <div style={{ position:'relative' }}>
+                      <input value={addForm.phone} onChange={e => setAddForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))} maxLength={10} placeholder="10 digits" style={{ ...IS, background:'#F8FAFC', fontFamily:'monospace' }} />
+                      {phoneLooking && <span style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', fontSize:11, color:'#94A3B8' }}>Checking…</span>}
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ display:'block', fontSize:12, fontWeight:700, color:'#334155', marginBottom:6, textTransform:'uppercase', letterSpacing:'0.05em' }}>Relationship *</label>
+                    <select value={addForm.relationship} onChange={e => setAddForm(f => ({ ...f, relationship: e.target.value }))} style={{ ...IS, background:'#F8FAFC' }}>
+                      <option value="father">Father</option>
+                      <option value="mother">Mother</option>
+                      <option value="guardian">Guardian</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                </div>
+                {!existingParent && (
+                  <div style={{ padding:'12px 14px', borderRadius:10, border:'1px solid #CCFBF1', background:'#F0FDFA', color:'#115E59', fontSize:12, fontWeight:600, lineHeight:1.5 }}>
+                    ✅ A secure 6-digit PIN will be auto-generated. The parent will be linked to this student instantly.
+                  </div>
+                )}
+              </div>
+              <div style={{ display:'flex', gap:10, marginTop:24 }}>
+                <button onClick={() => setShowAddModal(false)} style={{ flex:1, padding:12, borderRadius:10, border:'1px solid #E2E8F0', background:'white', fontSize:13, fontWeight:700, color:'#475569', cursor:'pointer' }}>Cancel</button>
+                <button onClick={handleAddParent} disabled={addSaving} style={{ flex:1, padding:12, borderRadius:10, border:'none', background: addSaving ? '#A7F3D0' : existingParent ? 'linear-gradient(135deg,#1D4ED8,#3B82F6)' : 'linear-gradient(135deg,#0F766E,#0D9488)', color:'white', fontSize:13, fontWeight:700, cursor: addSaving ? 'not-allowed' : 'pointer', boxShadow: existingParent ? '0 4px 12px rgba(29,78,216,0.2)' : '0 4px 12px rgba(15,118,110,0.2)' }}>
+                  {addSaving ? 'Processing…' : existingParent ? '🔗 Link to Student' : 'Create & Link'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Credentials Modal ───────────────────────────────────────────────── */}
+      {showCreds && (
+        <div style={overlay}>
+          <div style={{ width:'100%', maxWidth:380, background:'white', borderRadius:20, boxShadow:'0 25px 50px rgba(0,0,0,0.25)', overflow:'hidden', textAlign:'center', position:'relative' }}>
+            <div style={{ position:'absolute', top:0, left:0, width:'100%', height:6, background:'linear-gradient(to right,#14B8A6,#10B981)' }} />
+            <div style={{ padding:32 }}>
+              <div style={{ width:72, height:72, margin:'0 auto 20px', background:'#F0FDFA', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid #CCFBF1', fontSize:32 }}>🎉</div>
+              <h3 style={{ margin:'0 0 8px', fontSize:20, fontWeight:800, color:'#0F172A' }}>Parent Created!</h3>
+              <p style={{ margin:'0 0 20px', fontSize:14, color:'#475569' }}><strong>{showCreds.name}</strong> has been created and linked.</p>
+              <div style={{ background:'#F8FAFC', border:'1px solid #E2E8F0', borderRadius:14, padding:18, textAlign:'left', marginBottom:20 }}>
+                <div style={{ marginBottom:14 }}>
+                  <p style={{ margin:'0 0 4px', fontSize:11, fontWeight:700, color:'#64748B', textTransform:'uppercase' }}>Login Phone</p>
+                  <p style={{ margin:0, fontFamily:'monospace', fontSize:16, fontWeight:800, color:'#0F172A' }}>{showCreds.phone}</p>
+                </div>
+                <div>
+                  <p style={{ margin:'0 0 4px', fontSize:11, fontWeight:700, color:'#64748B', textTransform:'uppercase' }}>Generated PIN</p>
+                  <p style={{ margin:0, fontFamily:'monospace', fontSize:22, fontWeight:800, color:'#0F766E', letterSpacing:6 }}>{showCreds.pin}</p>
+                </div>
+              </div>
+              <p style={{ margin:'0 0 20px', fontSize:12, color:'#64748B', fontWeight:600 }}>Share these credentials with the parent. They'll be prompted to change their PIN on first login.</p>
+              <button onClick={() => setShowCreds(null)} style={{ width:'100%', padding:12, borderRadius:10, fontSize:14, fontWeight:700, color:'white', background:'linear-gradient(135deg,#0F766E,#0D9488)', border:'none', cursor:'pointer', boxShadow:'0 4px 12px rgba(15,118,110,0.2)' }}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Link Existing Parent to Another Student Modal ───────────────────── */}
+      {showLinkModal && (
+        <div style={overlay}>
+          <div style={{ width:'100%', maxWidth:420, background:'white', borderRadius:20, boxShadow:'0 25px 50px rgba(0,0,0,0.25)', overflow:'hidden' }}>
+            <div style={{ padding:'20px 24px', borderBottom:'1px solid #E2E8F0', background:'#F8FAFC', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <div>
+                <h3 style={{ margin:0, fontSize:17, fontWeight:800, color:'#0F172A' }}>🔗 Link to Student</h3>
+                <p style={{ margin:'4px 0 0', fontSize:12, color:'#64748B' }}>Link <strong>{showLinkModal.parentName}</strong> to another student</p>
+              </div>
+              <button onClick={() => setShowLinkModal(null)} style={{ width:32, height:32, borderRadius:'50%', background:'white', border:'1px solid #E2E8F0', display:'flex', alignItems:'center', justifyContent:'center', color:'#94A3B8', cursor:'pointer', fontSize:14 }}>✕</button>
+            </div>
+            <div style={{ padding:24 }}>
+              {linkError && <div style={{ marginBottom:14, padding:'10px 14px', borderRadius:10, background:'#FEF2F2', color:'#DC2626', border:'1px solid #FECACA', fontSize:13, fontWeight:600 }}>{linkError}</div>}
+              <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+                <div>
+                  <label style={{ display:'block', fontSize:12, fontWeight:700, color:'#334155', marginBottom:6, textTransform:'uppercase', letterSpacing:'0.05em' }}>Search & Select Student *</label>
+                  <StudentSearchPicker students={allStudents} value={linkStudentId} onChange={setLinkStudentId} placeholder="Type student name, class, or section…" />
+                </div>
+                <div>
+                  <label style={{ display:'block', fontSize:12, fontWeight:700, color:'#334155', marginBottom:6, textTransform:'uppercase', letterSpacing:'0.05em' }}>Relationship</label>
+                  <select value={linkRelationship} onChange={e => setLinkRelationship(e.target.value)} style={{ ...IS, background:'#F8FAFC' }}>
+                    <option value="father">Father</option>
+                    <option value="mother">Mother</option>
+                    <option value="guardian">Guardian</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+              </div>
+              <div style={{ display:'flex', gap:10, marginTop:24 }}>
+                <button onClick={() => setShowLinkModal(null)} style={{ flex:1, padding:12, borderRadius:10, border:'1px solid #E2E8F0', background:'white', fontSize:13, fontWeight:700, color:'#475569', cursor:'pointer' }}>Cancel</button>
+                <button onClick={handleLinkExisting} disabled={linking} style={{ flex:1, padding:12, borderRadius:10, border:'none', background: linking ? '#93C5FD' : 'linear-gradient(135deg,#1D4ED8,#3B82F6)', color:'white', fontSize:13, fontWeight:700, cursor: linking ? 'not-allowed' : 'pointer', boxShadow:'0 4px 12px rgba(29,78,216,0.25)' }}>
+                  {linking ? 'Linking…' : 'Link Parent'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -261,7 +261,7 @@ function ParentLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
-  const { selectedChild, parentName } = useParent();
+  const { children: linkedChildren, selectedChild, setSelectedChild, parentName } = useParent();
   const [showChangePwd, setShowChangePwd] = useState(false);
   const isMobile = useIsMobile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -355,7 +355,38 @@ function ParentLayoutInner({ children }: { children: React.ReactNode }) {
                 {!isMobile && <p style={{ fontSize: 12, color: '#94A3B8', marginTop: 1, fontWeight: 500 }}>Parent Portal{selectedChild ? ` · ${selectedChild.student_name}` : ''}</p>}
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {/* Mobile child switcher toggle — only shows when parent has multiple children */}
+              {isMobile && linkedChildren.length > 1 && selectedChild && (
+                <button
+                  onClick={() => {
+                    const idx = linkedChildren.findIndex(c => c.student_id === selectedChild.student_id);
+                    const next = linkedChildren[(idx + 1) % linkedChildren.length];
+                    setSelectedChild(next);
+                  }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px 5px 6px',
+                    borderRadius: 99, border: '1.5px solid #DDD6FE', background: 'linear-gradient(135deg, #F5F3FF, #EDE9FE)',
+                    cursor: 'pointer', transition: 'all 0.2s',
+                  }}
+                >
+                  <div style={{
+                    width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+                    background: 'linear-gradient(135deg, #7C3AED, #A855F7)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 10, fontWeight: 800, color: 'white',
+                  }}>
+                    {selectedChild.student_name.charAt(0)}
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#6D28D9', maxWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {selectedChild.student_name.split(' ')[0]}
+                  </span>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                    <path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+                  </svg>
+                </button>
+              )}
               <NotificationBell accentColor="#7C3AED" />
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, padding: '6px 14px 6px 8px' }}>
                 <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #2E1065, #7C3AED)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'white', flexShrink: 0 }}>{initials}</div>

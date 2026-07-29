@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRealtimeTable } from '@/hooks/useRealtimeTable';
+import { useParent } from '@/context/ParentContext';
 
 interface DocRequest {
   id: string;
@@ -31,15 +32,18 @@ const STATUS_STYLE: Record<string, { bg: string; color: string }> = {
 
 export default function DocumentsPage() {
   const supabase = createClient();
+  const { selectedChild, loading: childLoading } = useParent();
   const [requests, setRequests] = useState<DocRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [showRequest, setShowRequest] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [studentId, setStudentId] = useState('');
   const [schoolId, setSchoolId] = useState('');
   const [form, setForm] = useState({ document_type: 'bonafide', reason: '' });
   const [formError, setFormError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+
+  // Use student_id from context instead of hardcoded limit(1) query
+  const studentId = selectedChild?.student_id || '';
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -48,10 +52,6 @@ export default function DocumentsPage() {
 
     const { data: u } = await supabase.from('users').select('school_id').eq('id', user.id).single();
     if (u?.school_id) setSchoolId(u.school_id);
-
-    const { data: link } = await supabase.from('student_parent_links')
-      .select('student_id').eq('parent_id', user.id).limit(1).maybeSingle();
-    if (link?.student_id) setStudentId(link.student_id);
 
     const { data: docs } = await supabase.from('document_requests')
       .select('id, document_type, reason, status, created_at, download_url, rejection_reason')

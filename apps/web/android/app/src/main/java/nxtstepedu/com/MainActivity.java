@@ -1,4 +1,4 @@
-package com.nxtstep.edu;
+package nxtstepedu.com;
 
 import com.getcapacitor.BridgeActivity;
 
