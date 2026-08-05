@@ -1088,8 +1088,42 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
           </div>
         </div>
 
-        {/* Reminder button + result */}
+        {/* Reminder button + Export */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <button
+            onClick={() => {
+              if (visible.length === 0) return;
+              const data = visible.map((r, i) => ({
+                '#': i + 1,
+                'Student Name': r.student_name,
+                'Class': r.class_name,
+                'Section': r.section_name,
+                'Total Fee (₹)': r.total_fee,
+                'Amount Paid (₹)': r.paid,
+                'Amount Due (₹)': r.due,
+                'Status': r.status.replace('_', ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()),
+              }));
+              const ws = XLSX.utils.json_to_sheet(data);
+              ws['!cols'] = [{ wch: 4 }, { wch: 24 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 16 }];
+              const wb = XLSX.utils.book_new();
+              XLSX.utils.book_append_sheet(wb, ws, 'Fee Report');
+              const label = filterClass ? (classes.find(c => c.id === filterClass)?.name || 'Class') : 'All';
+              XLSX.writeFile(wb, `Fee_Report_${label}_${new Date().toISOString().slice(0,10)}.xlsx`);
+            }}
+            disabled={visible.length === 0 || loading}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '9px 18px', borderRadius: 9, border: 'none',
+              background: visible.length === 0 || loading ? '#F1F5F9' : 'linear-gradient(135deg,#065F46,#059669)',
+              color: visible.length === 0 || loading ? '#94A3B8' : 'white',
+              fontSize: 13, fontWeight: 700,
+              cursor: visible.length === 0 || loading ? 'not-allowed' : 'pointer',
+              boxShadow: visible.length > 0 && !loading ? '0 4px 12px rgba(5,150,105,0.3)' : 'none',
+              transition: 'all 0.2s', whiteSpace: 'nowrap',
+            }}
+          >
+            📥 Export Excel
+          </button>
           {(() => {
             const unpaidCount = visible.filter(r => r.status !== 'paid').length;
             return (

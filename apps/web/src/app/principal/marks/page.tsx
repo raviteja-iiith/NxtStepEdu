@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import * as XLSX from 'xlsx';
 
 interface ClassItem { id: string; name: string; }
 interface SectionItem { id: string; name: string; class_id: string; }
@@ -251,7 +252,7 @@ export default function PrincipalMarksPage() {
       {/* Results Table */}
       {selectedExam && !loading && results.length > 0 && (
         <>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
             <p style={{ fontSize:13, fontWeight:600, color:'#475569', margin:0 }}>{results.length} students · {enteredCount} marks entered</p>
             <div style={{ display:'flex', gap:8 }}>
               {(['rank','name','marks'] as const).map(f => (
@@ -260,6 +261,36 @@ export default function PrincipalMarksPage() {
                   {f === 'rank' ? 'Rank' : f === 'name' ? 'Name' : 'Marks'}
                 </button>
               ))}
+              <button
+                onClick={() => {
+                  if (!exam || sortedResults.length === 0) return;
+                  const passT = exam.passing_marks || exam.total_marks * 0.35;
+                  const data = sortedResults.map((row, idx) => {
+                    const pct = row.marks_obtained != null ? Math.round((row.marks_obtained / exam.total_marks) * 100) : null;
+                    const gr = row.marks_obtained != null ? getGrade(row.marks_obtained, exam.total_marks) : null;
+                    return {
+                      'Rank': !row.is_absent && pct != null ? idx + 1 : '',
+                      'Student Name': row.full_name,
+                      'Roll No': row.roll_number ?? '',
+                      'Marks': row.is_absent ? 'Absent' : (row.marks_obtained ?? 'Not Entered'),
+                      'Total Marks': exam.total_marks,
+                      'Percentage': pct != null ? `${pct}%` : '',
+                      'Grade': gr?.letter ?? '',
+                      'Pass / Fail': row.is_absent ? 'Absent' : pct != null ? (row.marks_obtained! >= passT ? 'Pass' : 'Fail') : '',
+                      'Remarks': row.remarks ?? '',
+                    };
+                  });
+                  const ws = XLSX.utils.json_to_sheet(data);
+                  ws['!cols'] = [{ wch: 6 }, { wch: 24 }, { wch: 8 }, { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 12 }, { wch: 20 }];
+                  const wb = XLSX.utils.book_new();
+                  XLSX.utils.book_append_sheet(wb, ws, 'Results');
+                  const safeName = exam.name.replace(/[^a-z0-9]/gi, '_');
+                  XLSX.writeFile(wb, `Results_${safeName}_${new Date().toISOString().slice(0,10)}.xlsx`);
+                }}
+                style={{ padding:'6px 14px', borderRadius:8, border:'none', fontSize:12, fontWeight:700, cursor:'pointer', background:'linear-gradient(135deg,#065F46,#059669)', color:'white', display:'flex', alignItems:'center', gap:6 }}
+              >
+                📥 Export Excel
+              </button>
             </div>
           </div>
           <div style={{ background:'white', borderRadius:14, border:'1px solid #E8ECF0', overflow:'hidden', boxShadow:'0 1px 3px rgba(0,0,0,0.04)' }}>

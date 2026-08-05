@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import * as XLSX from 'xlsx';
 
 interface Teacher { id:string; full_name:string; phone:string; email:string|null; is_active:boolean; last_login_at:string|null; username:string; profile?:{ employee_id:string|null; qualification:string|null; specialization:string|null; joining_date:string|null; }; }
 interface ClassItem { id:string; name:string; }
@@ -200,9 +201,39 @@ export default function TeachersPage() {
           <h2 style={{ fontSize:22, fontWeight:800, color:'#0F172A', letterSpacing:'-0.02em', margin:0 }}>Teacher Management</h2>
           <p style={{ fontSize:13, color:'#94A3B8', marginTop:4 }}>Manage teachers, assignments, and credentials</p>
         </div>
-        <button onClick={()=>{setShowAdd(true);setFormError('');}} style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 20px', background:'linear-gradient(135deg, #1E3A8A, #3B82F6)', color:'white', border:'none', borderRadius:10, fontSize:13, fontWeight:700, cursor:'pointer', boxShadow:'0 4px 12px rgba(59,130,246,0.3)', whiteSpace:'nowrap' }}>
-          <span style={{fontSize:16}}>+</span> Add Teacher
-        </button>
+        <div style={{ display:'flex', gap:8 }}>
+          <button
+            onClick={() => {
+              if (filtered.length === 0) return;
+              const data = filtered.map((t, i) => ({
+                '#': i + 1,
+                'Full Name': t.full_name,
+                'Username': t.username,
+                'Employee ID': t.profile?.employee_id ?? '',
+                'Phone': t.phone,
+                'Email': t.email ?? '',
+                'Role': classTeacherMap[t.id] ? `Class Teacher (${classTeacherMap[t.id]})` : subjectTeacherSet.has(t.id) ? 'Subject Teacher' : 'Unassigned',
+                'Qualification': t.profile?.qualification ?? '',
+                'Specialization': t.profile?.specialization ?? '',
+                'Joining Date': t.profile?.joining_date ? new Date(t.profile.joining_date).toLocaleDateString('en-IN') : '',
+                'Status': t.is_active ? 'Active' : 'Inactive',
+                'Last Login': t.last_login_at ? new Date(t.last_login_at).toLocaleDateString('en-IN') : 'Never',
+              }));
+              const ws = XLSX.utils.json_to_sheet(data);
+              ws['!cols'] = [{ wch: 4 }, { wch: 24 }, { wch: 26 }, { wch: 12 }, { wch: 14 }, { wch: 24 }, { wch: 28 }, { wch: 18 }, { wch: 18 }, { wch: 14 }, { wch: 10 }, { wch: 14 }];
+              const wb = XLSX.utils.book_new();
+              XLSX.utils.book_append_sheet(wb, ws, 'Teachers');
+              XLSX.writeFile(wb, `Teachers_${new Date().toISOString().slice(0,10)}.xlsx`);
+            }}
+            disabled={filtered.length === 0}
+            style={{ display:'flex', alignItems:'center', gap:6, padding:'10px 16px', background: filtered.length === 0 ? '#F1F5F9' : 'linear-gradient(135deg,#065F46,#059669)', color: filtered.length === 0 ? '#94A3B8' : 'white', border:'none', borderRadius:10, fontSize:13, fontWeight:700, cursor: filtered.length === 0 ? 'not-allowed' : 'pointer', boxShadow: filtered.length > 0 ? '0 4px 12px rgba(5,150,105,0.2)' : 'none', whiteSpace:'nowrap' }}
+          >
+            📥 Export Excel
+          </button>
+          <button onClick={()=>{setShowAdd(true);setFormError('');}} style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 20px', background:'linear-gradient(135deg, #1E3A8A, #3B82F6)', color:'white', border:'none', borderRadius:10, fontSize:13, fontWeight:700, cursor:'pointer', boxShadow:'0 4px 12px rgba(59,130,246,0.3)', whiteSpace:'nowrap' }}>
+            <span style={{fontSize:16}}>+</span> Add Teacher
+          </button>
+        </div>
       </div>
 
       {/* Stats */}

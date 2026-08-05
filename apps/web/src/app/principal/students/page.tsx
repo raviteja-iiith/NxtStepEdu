@@ -92,7 +92,7 @@ export default function StudentsPage() {
     : [...new Map(sections.map(s => [s.name, s])).values()];
 
   const handleAdd = async () => {
-    if (!form.full_name||!form.date_of_birth||!form.gender||!form.class_id||!form.section_id) { setFormError('Name, DOB, gender, class & section required'); return; }
+    if (!form.full_name||!form.gender||!form.class_id||!form.section_id) { setFormError('Name, gender, class & section required'); return; }
     if (form.addParent && form.parentPhone && form.parentPhone.replace(/\D/g,'').length !== 10) { setFormError('Parent phone must be exactly 10 digits.'); return; }
     if (form.addParent && !form.parentName.trim()) { setFormError('Parent name is required when adding parent details.'); return; }
     setSaving(true); setFormError('');
@@ -104,7 +104,7 @@ export default function StudentsPage() {
     const year=new Date().getFullYear();
     const { count: sc } = await supabase.from('students').select('*',{count:'exact',head:true}).eq('school_id',schoolId);
     const admNum=form.admission_number||`STU-${year}-${String((sc||0)+1).padStart(4,'0')}`;
-    const { data: ins, error } = await supabase.from('students').insert({ full_name:form.full_name, date_of_birth:form.date_of_birth, gender:form.gender, blood_group:form.blood_group||null, class_id:form.class_id, section_id:form.section_id, roll_number:form.roll_number?parseInt(form.roll_number):null, address:form.address||null, admission_number:admNum, admission_date:form.admission_date, academic_year_id:yr?.id||null, school_id:schoolId, is_active:true }).select();
+    const { data: ins, error } = await supabase.from('students').insert({ full_name:form.full_name, date_of_birth:form.date_of_birth||null, gender:form.gender, blood_group:form.blood_group||null, class_id:form.class_id, section_id:form.section_id, roll_number:form.roll_number?parseInt(form.roll_number):null, address:form.address||null, admission_number:admNum, admission_date:form.admission_date, academic_year_id:yr?.id||null, school_id:schoolId, is_active:true }).select();
     if (error) { setFormError(`Error: ${error.message}`); setSaving(false); return; }
     if (!ins||ins.length===0) { setFormError('Could not save. Permissions issue.'); setSaving(false); return; }
     const studentId = ins[0].id;
@@ -180,10 +180,10 @@ export default function StudentsPage() {
   };
 
   const handleDownloadTemplate = () => {
-    const header = [['Full Name', 'Date of Birth (DD/MM/YYYY)', 'Gender (male/female/other)', 'Class Name', 'Section Name', 'Roll Number']];
-    const sample = [['Rahul Kumar', '15/06/2012', 'male', '6', 'A', 1], ['Priya Sharma', '22/03/2013', 'female', '7', 'B', 2]];
+    const header = [['Full Name', 'Gender (male/female/other)', 'Class Name', 'Section Name', 'Roll Number']];
+    const sample = [['Rahul Kumar', 'male', '6', 'A', 1], ['Priya Sharma', 'female', '7', 'B', 2]];
     const ws = XLSX.utils.aoa_to_sheet([...header, ...sample]);
-    ws['!cols'] = [{ wch: 22 }, { wch: 24 }, { wch: 24 }, { wch: 12 }, { wch: 14 }, { wch: 12 }];
+    ws['!cols'] = [{ wch: 22 }, { wch: 24 }, { wch: 12 }, { wch: 14 }, { wch: 12 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Students');
     XLSX.writeFile(wb, 'Student_Import_Template.xlsx');
@@ -197,7 +197,6 @@ export default function StudentsPage() {
     const foundClass = classes.find(c => c.name.toLowerCase() === cn.toLowerCase());
     const foundSection = foundClass ? sections.find(s => s.class_id===foundClass.id && s.name.toLowerCase()===sn.toLowerCase()) : null;
     if (!(row.full_name||'').trim()) error='Missing Full Name';
-    else if (!row.date_of_birth) error='Missing Date of Birth';
     else if (!['male','female','other'].includes((row.gender||'').toLowerCase())) error=`Invalid gender: '${row.gender}'`;
     else if (!cn) error='Missing Class Name';
     else if (!sn) error='Missing Section Name';
@@ -252,7 +251,6 @@ export default function StudentsPage() {
 
           // Validate
           if (!name) error = 'Missing Full Name';
-          else if (!dob) error = 'Missing Date of Birth';
           else if (!['male','female','other'].includes(gender)) error = `Invalid gender: '${gender}'`;
           else if (!className) error = 'Missing Class Name';
           else if (!sectionName) error = 'Missing Section Name';
@@ -304,7 +302,7 @@ export default function StudentsPage() {
       currentCount++;
       return {
         full_name: r.full_name,
-        date_of_birth: r.date_of_birth,
+        date_of_birth: r.date_of_birth || null,
         gender: r.gender,
         class_id: r.class_id,
         section_id: r.section_id,
@@ -337,6 +335,32 @@ export default function StudentsPage() {
           <p style={{ fontSize:13, color:'#94A3B8', marginTop:4 }}>Admissions, profiles, and academic tracking</p>
         </div>
         <div style={{ display:'flex', gap:8 }}>
+          <button
+            onClick={() => {
+              if (searched.length === 0) return;
+              const data = searched.map((s, i) => ({
+                '#': i + 1,
+                'Full Name': s.full_name,
+                'Admission No.': s.admission_number ?? '',
+                'Class': s.class_name ?? '',
+                'Section': s.section_name ?? '',
+                'Roll No': s.roll_number ?? '',
+                'Gender': s.gender ?? '',
+                'Blood Group': s.blood_group ?? '',
+                'Admission Date': s.admission_date ? new Date(s.admission_date).toLocaleDateString('en-IN') : '',
+                'Status': s.is_active ? 'Active' : 'Removed',
+              }));
+              const ws = XLSX.utils.json_to_sheet(data);
+              ws['!cols'] = [{ wch: 4 }, { wch: 26 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 16 }, { wch: 10 }];
+              const wb = XLSX.utils.book_new();
+              XLSX.utils.book_append_sheet(wb, ws, 'Students');
+              XLSX.writeFile(wb, `Students_${new Date().toISOString().slice(0,10)}.xlsx`);
+            }}
+            disabled={searched.length === 0}
+            style={{ display:'flex', alignItems:'center', gap:6, padding:'10px 16px', background: searched.length === 0 ? '#F1F5F9' : 'linear-gradient(135deg,#065F46,#059669)', color: searched.length === 0 ? '#94A3B8' : 'white', border:'none', borderRadius:10, fontSize:13, fontWeight:700, cursor: searched.length === 0 ? 'not-allowed' : 'pointer', boxShadow: searched.length > 0 ? '0 4px 12px rgba(5,150,105,0.2)' : 'none', whiteSpace:'nowrap' }}
+          >
+            📥 Export
+          </button>
           <button onClick={()=>{setShowBulkImport(true);setBulkData([]);setBulkError('');setBulkSuccess('');}} style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 20px', background:'white', color:'#1E3A8A', border:'1px solid #1E3A8A', borderRadius:10, fontSize:13, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap' }}>
             <span style={{fontSize:16}}>⬇</span> Bulk Import
           </button>
@@ -447,9 +471,8 @@ export default function StudentsPage() {
             <div style={{ padding:'20px 28px', overflowY:'auto', flex:1 }}>
               {formError && <div style={{ marginBottom:14, padding:'10px 14px', background:'#FEF2F2', border:'1px solid #FEE2E2', borderRadius:9, fontSize:13, color:'#DC2626' }}>{formError}</div>}
               <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-                <div><label style={LS}>Full Name <span style={{color:'#EF4444'}}>*</span></label><input value={form.full_name} onChange={e=>setForm(f=>({...f,full_name:e.target.value}))} style={IS}/></div>
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-                  <div><label style={LS}>Date of Birth <span style={{color:'#EF4444'}}>*</span></label><input type="date" value={form.date_of_birth} onChange={e=>setForm(f=>({...f,date_of_birth:e.target.value}))} style={IS}/></div>
+                  <div><label style={LS}>Full Name <span style={{color:'#EF4444'}}>*</span></label><input value={form.full_name} onChange={e=>setForm(f=>({...f,full_name:e.target.value}))} style={IS}/></div>
                   <div><label style={LS}>Gender <span style={{color:'#EF4444'}}>*</span></label>
                     <select value={form.gender} onChange={e=>setForm(f=>({...f,gender:e.target.value}))} style={IS}><option value="">Select...</option><option value="male">Male</option><option value="female">Female</option><option value="other">Other</option></select>
                   </div>
@@ -682,7 +705,7 @@ export default function StudentsPage() {
                     <table style={{ width:'100%', borderCollapse:'collapse', minWidth:700 }}>
                       <thead style={{ background:'#1E3A8A' }}>
                         <tr>
-                          {['Row','Full Name *','Date of Birth *','Gender *','Class Name *','Section Name *','Roll No','Status'].map(h=>(
+                          {['Row','Full Name *','Gender *','Class Name *','Section Name *','Roll No','Status'].map(h=>(
                             <th key={h} style={{ padding:'8px 12px', fontSize:11, fontWeight:700, color:'white', textAlign:'left', borderBottom:'1px solid #2563EB', whiteSpace:'nowrap' }}>{h}</th>
                           ))}
                         </tr>
@@ -696,7 +719,6 @@ export default function StudentsPage() {
                           <tr key={i} style={{ borderBottom:'1px solid #F1F5F9', background:r.error?'#FEF2F2':i%2===0?'#F8FAFC':'white' }}>
                             <td style={{ padding:'6px 10px', fontSize:11, color:'#94A3B8', textAlign:'center' }}>{r.rowNum}</td>
                             <td style={{ padding:'4px 6px', minWidth:140 }}><input value={r.full_name||''} onChange={e=>handleBulkEdit(i,'full_name',e.target.value)} style={r.error&&!r.full_name?errCellIS:cellIS}/></td>
-                            <td style={{ padding:'4px 6px', minWidth:120 }}><input type="date" value={r.date_of_birth||''} onChange={e=>handleBulkEdit(i,'date_of_birth',e.target.value)} style={r.error&&!r.date_of_birth?errCellIS:cellIS}/></td>
                             <td style={{ padding:'4px 6px', minWidth:90 }}>
                               <select value={r.gender||''} onChange={e=>handleBulkEdit(i,'gender',e.target.value)} style={cellIS}>
                                 <option value="">--</option><option value="male">Male</option><option value="female">Female</option><option value="other">Other</option>

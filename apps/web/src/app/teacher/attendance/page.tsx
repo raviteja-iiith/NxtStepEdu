@@ -6,6 +6,7 @@ import { getSectionStudents, getStudentAttendance, getUserProfile } from '@schoo
 import { createNotification } from '@/components/NotificationBell';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useRealtimeTable } from '@/hooks/useRealtimeTable';
+import * as XLSX from 'xlsx';
 
 interface Student { id: string; full_name: string; roll_number: number | null; }
 interface Section { id: string; name: string; class_name: string; }
@@ -309,6 +310,28 @@ export default function AttendancePage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 700, padding: '8px 16px', background: '#F0FDF4', color: '#15803D', borderRadius: 12, border: '1px solid #DCFCE7' }}>
                     <span>✅</span> Saved successfully!
                   </div>
+                )}
+                {!isMobile && students.length > 0 && (
+                  <button
+                    onClick={() => {
+                      const sectionLabel = sections.find(s => s.id === selectedSection);
+                      const sectionName = sectionLabel ? `${sectionLabel.class_name}_${sectionLabel.name}` : 'Section';
+                      const data = students.map(s => ({
+                        'Roll No': s.roll_number ?? '',
+                        'Student Name': s.full_name,
+                        'Status': (attendance[s.id] || 'present').charAt(0).toUpperCase() + (attendance[s.id] || 'present').slice(1),
+                      }));
+                      const summary = [{ 'Roll No': '', 'Student Name': `Present: ${counts.present}  Absent: ${counts.absent}  Late: ${counts.late}  Excused: ${counts.excused}`, 'Status': '' }];
+                      const ws = XLSX.utils.json_to_sheet([...data, {}, ...summary]);
+                      ws['!cols'] = [{ wch: 8 }, { wch: 26 }, { wch: 12 }];
+                      const wb = XLSX.utils.book_new();
+                      XLSX.utils.book_append_sheet(wb, ws, 'Attendance');
+                      XLSX.writeFile(wb, `Attendance_${sectionName}_${date}.xlsx`);
+                    }}
+                    style={{ padding: '10px 18px', borderRadius: 12, border: 'none', fontSize: 13, fontWeight: 700, color: 'white', background: 'linear-gradient(135deg, #065F46, #059669)', cursor: 'pointer', boxShadow: '0 4px 12px rgba(5,150,105,0.3)', display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}
+                  >
+                    📥 Export Excel
+                  </button>
                 )}
                 <button onClick={handleSubmit} disabled={saving} style={{ width: isMobile ? '100%' : 'auto', padding: '14px 32px', borderRadius: 12, fontSize: 14, fontWeight: 800, color: 'white', background: 'linear-gradient(135deg, #0F766E 0%, #0D9488 100%)', border: 'none', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1, boxShadow: '0 4px 12px rgba(15, 118, 110, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                   {saving ? 'Submitting...' : alreadyMarked ? 'Update Attendance' : 'Submit Attendance'}

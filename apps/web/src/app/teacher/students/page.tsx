@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import * as XLSX from 'xlsx';
 
 interface Student { id: string; full_name: string; roll_number: number | null; }
 interface Section { id: string; name: string; class_name: string; }
@@ -198,6 +199,28 @@ export default function TeacherStudentsPage() {
                 </p>
                 <p style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>{students.length} enrolled student{students.length !== 1 ? 's' : ''}</p>
               </div>
+              {!isMobile && students.length > 0 && (
+                <button
+                  onClick={() => {
+                    const data = students.map((s, i) => ({
+                      '#': i + 1,
+                      'Roll No': s.roll_number ?? '',
+                      'Student Name': s.full_name,
+                      'Class': selectedSec?.class_name ?? '',
+                      'Section': selectedSec?.name ?? '',
+                    }));
+                    const ws = XLSX.utils.json_to_sheet(data);
+                    ws['!cols'] = [{ wch: 4 }, { wch: 8 }, { wch: 26 }, { wch: 10 }, { wch: 10 }];
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, 'Students');
+                    const sName = `${selectedSec?.class_name || 'Class'}_${selectedSec?.name || 'Sec'}`;
+                    XLSX.writeFile(wb, `Students_${sName}_${new Date().toISOString().slice(0,10)}.xlsx`);
+                  }}
+                  style={{ padding: '7px 14px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg,#065F46,#059669)', color: 'white', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}
+                >
+                  📥 Export Excel
+                </button>
+              )}
             </div>
             {/* Full-width search on mobile */}
             <div style={{ position: 'relative' }}>

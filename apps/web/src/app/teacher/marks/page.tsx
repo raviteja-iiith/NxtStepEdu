@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import * as XLSX from 'xlsx';
 
 interface ExamItem {
   id: string; name: string; exam_type: string; exam_date: string;
@@ -248,6 +249,37 @@ export default function MarksPage() {
                 ✅ Mark All Present
               </button>
               {exam && !exam.is_published && <span style={{ fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:99, background:'#FFFBEB', color:'#D97706', border:'1px solid #FDE68A', display:'flex', alignItems:'center' }}>DRAFT</span>}
+              <button
+                onClick={() => {
+                  if (!exam || students.length === 0) return;
+                  const passT = exam.passing_marks || exam.total_marks * 0.35;
+                  const data = students.map((s, idx) => {
+                    const entry = marks[s.id] || { marks: '', absent: false, remarks: '' };
+                    const mNum = entry.marks ? parseFloat(entry.marks) : null;
+                    const pct = mNum != null ? Math.round((mNum / exam.total_marks) * 100) : null;
+                    const gr = mNum != null ? getGrade(mNum, exam.total_marks) : null;
+                    return {
+                      '#': s.roll_number ?? idx + 1,
+                      'Student Name': s.full_name,
+                      'Marks': entry.absent ? 'Absent' : (mNum ?? 'Not Entered'),
+                      'Total Marks': exam.total_marks,
+                      'Percentage': pct != null ? `${pct}%` : '',
+                      'Grade': gr?.letter ?? '',
+                      'Pass / Fail': entry.absent ? 'Absent' : mNum != null ? (mNum >= passT ? 'Pass' : 'Fail') : '',
+                      'Remarks': entry.remarks || '',
+                    };
+                  });
+                  const ws = XLSX.utils.json_to_sheet(data);
+                  ws['!cols'] = [{ wch: 4 }, { wch: 24 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 12 }, { wch: 20 }];
+                  const wb = XLSX.utils.book_new();
+                  XLSX.utils.book_append_sheet(wb, ws, 'Marks');
+                  const safeName = (exam.name || 'Exam').replace(/[^a-z0-9]/gi, '_');
+                  XLSX.writeFile(wb, `Marks_${safeName}_${new Date().toISOString().slice(0,10)}.xlsx`);
+                }}
+                style={{ padding:'8px 14px', border:'none', borderRadius:9, background:'linear-gradient(135deg,#065F46,#059669)', color:'white', fontSize:12, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}
+              >
+                📥 Export Excel
+              </button>
             </div>
           </div>
 

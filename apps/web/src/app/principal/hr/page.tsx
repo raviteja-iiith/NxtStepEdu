@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import * as XLSX from 'xlsx';
 
 interface LeaveRequest {
   id: string;
@@ -110,7 +111,69 @@ export default function HRPage() {
 
   return (
     <div className="space-y-6">
-      <div><h2 className="text-2xl font-bold text-gray-900">HR Management</h2><p className="text-gray-500 text-sm mt-1">Staff records, leave approvals, and payroll</p></div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">HR Management</h2>
+          <p className="text-gray-500 text-sm mt-1">Staff records, leave approvals, and payroll</p>
+        </div>
+        {/* Export for current tab */}
+        {tab === 'employees' && (
+          <button
+            onClick={() => {
+              if (employees.length === 0) return;
+              const data = employees.map((e, i) => ({
+                '#': i + 1,
+                'Full Name': e.full_name,
+                'Role': e.role,
+                'Phone': e.phone ?? '',
+                'Email': e.email ?? '',
+                'Status': e.is_active ? 'Active' : 'Inactive',
+                'Last Login': e.last_login_at ? new Date(e.last_login_at).toLocaleDateString('en-IN') : 'Never',
+              }));
+              const ws = XLSX.utils.json_to_sheet(data);
+              ws['!cols'] = [{ wch: 4 }, { wch: 24 }, { wch: 12 }, { wch: 14 }, { wch: 26 }, { wch: 10 }, { wch: 14 }];
+              const wb = XLSX.utils.book_new();
+              XLSX.utils.book_append_sheet(wb, ws, 'Employees');
+              XLSX.writeFile(wb, `Employees_${new Date().toISOString().slice(0,10)}.xlsx`);
+            }}
+            disabled={employees.length === 0 || loading}
+            style={{ display:'flex', alignItems:'center', gap:6, padding:'9px 16px', background: employees.length === 0 ? '#F1F5F9' : 'linear-gradient(135deg,#065F46,#059669)', color: employees.length === 0 ? '#94A3B8' : 'white', border:'none', borderRadius:10, fontSize:13, fontWeight:700, cursor: employees.length === 0 ? 'not-allowed' : 'pointer', whiteSpace:'nowrap' }}
+          >
+            📥 Export Excel
+          </button>
+        )}
+        {tab === 'leave' && (
+          <button
+            onClick={() => {
+              if (leaveRequests.length === 0) return;
+              const data = leaveRequests.map((l, i) => {
+                const days = Math.ceil((new Date(l.to_date).getTime() - new Date(l.from_date).getTime()) / 86400000) + 1;
+                return {
+                  '#': i + 1,
+                  'Staff Name': l.requester?.full_name ?? '',
+                  'Role': l.requester?.role ?? '',
+                  'Leave Type': (l.leave_type ?? '').replace(/_/g, ' '),
+                  'From Date': new Date(l.from_date).toLocaleDateString('en-IN'),
+                  'To Date': new Date(l.to_date).toLocaleDateString('en-IN'),
+                  'Days': days,
+                  'Reason': l.reason ?? '',
+                  'Status': l.status,
+                  'Applied On': new Date(l.created_at).toLocaleDateString('en-IN'),
+                };
+              });
+              const ws = XLSX.utils.json_to_sheet(data);
+              ws['!cols'] = [{ wch: 4 }, { wch: 22 }, { wch: 12 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 6 }, { wch: 30 }, { wch: 10 }, { wch: 14 }];
+              const wb = XLSX.utils.book_new();
+              XLSX.utils.book_append_sheet(wb, ws, 'Leave Requests');
+              XLSX.writeFile(wb, `LeaveRequests_${new Date().toISOString().slice(0,10)}.xlsx`);
+            }}
+            disabled={leaveRequests.length === 0 || loading}
+            style={{ display:'flex', alignItems:'center', gap:6, padding:'9px 16px', background: leaveRequests.length === 0 ? '#F1F5F9' : 'linear-gradient(135deg,#065F46,#059669)', color: leaveRequests.length === 0 ? '#94A3B8' : 'white', border:'none', borderRadius:10, fontSize:13, fontWeight:700, cursor: leaveRequests.length === 0 ? 'not-allowed' : 'pointer', whiteSpace:'nowrap' }}
+          >
+            📥 Export Excel
+          </button>
+        )}
+      </div>
 
       <div className="flex gap-1 p-1 rounded-xl" style={{ background: '#F1F5F9' }}>
         {tabs.map(t => (
