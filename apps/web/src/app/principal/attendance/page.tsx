@@ -51,7 +51,7 @@ export default function PrincipalAttendancePage() {
           // Find missing sections
           const missing = secResult.data
             .filter((s: any) => !reportedSectionIds.has(s.id))
-            .sort((a, b) => (a.classes?.name || '').localeCompare(b.classes?.name || '') || a.name.localeCompare(b.name));
+            .sort((a: any, b: any) => (a.classes?.name || '').localeCompare(b.classes?.name || '') || a.name.localeCompare(b.name));
             
           setMissingSections(missing);
           
