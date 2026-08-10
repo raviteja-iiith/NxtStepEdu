@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { useRouter } from 'next/navigation';
 
 // ── Notification type icons & colors ────────────────────────────────────────
 const TYPE_CFG: Record<string, { icon: string; color: string; bg: string; border: string }> = {
@@ -43,8 +44,12 @@ export default function NotificationBell({ accentColor = '#1E3A8A' }: Props) {
   const [open,    setOpen]    = useState(false);
   const [notifs,  setNotifs]  = useState<Notif[]>([]);
   const [loading, setLoading] = useState(false);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const isMobile = useIsMobile();
+  // panelRef: wraps the dropdown panel only (not the bell button)
+  const panelRef  = useRef<HTMLDivElement>(null);
+  // buttonRef: the bell button — excluded from outside-click so the toggle click wins
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const isMobile  = useIsMobile();
+  const router = useRouter();
 
   const unreadCount = notifs.filter(n => !n.is_read).length;
 
@@ -61,20 +66,34 @@ export default function NotificationBell({ accentColor = '#1E3A8A' }: Props) {
 
   useEffect(() => {
     fetchNotifs();
-    // Poll every 60 seconds for new notifications
     const interval = setInterval(fetchNotifs, 60000);
     return () => clearInterval(interval);
   }, [fetchNotifs]);
 
-  // Close on outside click (desktop only — mobile uses overlay)
+  // Close on outside click — desktop only.
+  // Excludes the bell button itself so that the button's own onClick toggle wins.
   useEffect(() => {
     if (isMobile) return;
     const handler = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      const insidePanel  = panelRef.current  && panelRef.current.contains(target);
+      const insideButton = buttonRef.current && buttonRef.current.contains(target);
+      if (!insidePanel && !insideButton) setOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [isMobile]);
+
+  // Intercept Capacitor hardware back button to close panel
+  useEffect(() => {
+    if (!open) return;
+    const handleBack = (e: Event) => {
+      e.preventDefault();
+      setOpen(false);
+    };
+    document.addEventListener('capacitor-back-button', handleBack);
+    return () => document.removeEventListener('capacitor-back-button', handleBack);
+  }, [open]);
 
   const markRead = async (id: string) => {
     setNotifs(n => n.map(x => x.id === id ? { ...x, is_read: true } : x));
@@ -134,7 +153,18 @@ export default function NotificationBell({ accentColor = '#1E3A8A' }: Props) {
           return (
             <div key={n.id}
               style={{ padding: '12px 18px', borderBottom: i < notifs.length - 1 ? '1px solid #F8FAFC' : 'none', background: n.is_read ? 'white' : `${cfg.bg}`, display: 'flex', gap: 12, alignItems: 'flex-start', cursor: 'pointer', transition: 'background 0.15s' }}
-              onClick={() => { markRead(n.id); if (n.link) window.location.href = n.link; }}
+              onClick={() => { 
+                markRead(n.id); 
+                if (n.link) {
+                  // Use window.location.href for external links, router.push for internal
+                  if (n.link.startsWith('http')) {
+                    window.location.href = n.link;
+                  } else {
+                    router.push(n.link);
+                  }
+                }
+                setOpen(false); 
+              }}
             >
               {/* Icon */}
               <div style={{ width: 36, height: 36, borderRadius: 10, background: cfg.bg, border: `1px solid ${cfg.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>
@@ -173,11 +203,16 @@ export default function NotificationBell({ accentColor = '#1E3A8A' }: Props) {
   );
 
   return (
-    <div ref={panelRef} style={{ position: 'relative' }}>
+    <div style={{ position: 'relative' }}>
       {/* Bell button */}
       <button
-        onClick={() => { setOpen(o => !o); if (!open) fetchNotifs(); }}
-        style={{ width: 38, height: 38, borderRadius: '50%', border: '1px solid #E2E8F0', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#64748B', position: 'relative', transition: 'all 0.15s' }}
+        ref={buttonRef}
+        onClick={() => {
+          const willOpen = !open;
+          setOpen(willOpen);
+          if (willOpen) fetchNotifs();
+        }}
+        style={{ width: 38, height: 38, borderRadius: '50%', border: '1px solid #E2E8F0', background: open ? '#F1F5F9' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#64748B', position: 'relative', transition: 'all 0.15s', zIndex: (open && isMobile) ? 202 : 'auto' }}
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
@@ -193,9 +228,9 @@ export default function NotificationBell({ accentColor = '#1E3A8A' }: Props) {
       {/* MOBILE: Full-screen overlay panel */}
       {open && isMobile && (
         <>
-          {/* Backdrop */}
+          {/* Backdrop — stopPropagation prevents the click from bubbling to the bell button */}
           <div
-            onClick={() => setOpen(false)}
+            onClick={(e) => { e.stopPropagation(); setOpen(false); }}
             style={{
               position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.5)',
               zIndex: 200, backdropFilter: 'blur(4px)',
@@ -222,7 +257,7 @@ export default function NotificationBell({ accentColor = '#1E3A8A' }: Props) {
 
       {/* DESKTOP: Dropdown panel */}
       {open && !isMobile && (
-        <div style={{
+        <div ref={panelRef} style={{
           position: 'absolute', right: 0, top: 46, width: 380,
           maxWidth: 'calc(100vw - 32px)', background: 'white',
           borderRadius: 16, boxShadow: '0 20px 60px rgba(0,0,0,0.18)',

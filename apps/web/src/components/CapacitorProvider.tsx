@@ -45,6 +45,13 @@ export default function CapacitorProvider() {
         const { App } = await import('@capacitor/app');
 
         const listener = await App.addListener('backButton', ({ canGoBack }) => {
+          // 1. Dispatch custom event to allow modals/panels to handle the back button first
+          const event = new CustomEvent('capacitor-back-button', { cancelable: true });
+          document.dispatchEvent(event);
+          if (event.defaultPrevented) {
+            return; // A modal or panel intercepted the back button
+          }
+
           // If we're on a root page (dashboard), implement "press back again to exit"
           if (isOnRootPage()) {
             const now = Date.now();

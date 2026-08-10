@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import * as XLSX from 'xlsx';
@@ -9,6 +9,7 @@ interface ClassItem { id: string; name: string; }
 interface SectionItem { id: string; name: string; class_id: string; }
 interface ExamItem { id: string; name: string; exam_type: string; exam_date: string; total_marks: number; passing_marks: number | null; is_published: boolean; class_id: string | null; section_id: string | null; subject_id: string | null; subject_name?: string; }
 interface MarkRow { student_id: string; full_name: string; roll_number: number | null; marks_obtained: number | null; is_absent: boolean; remarks: string | null; }
+interface MarkEntry { marks: string; absent: boolean; remarks: string; }
 
 function getGrade(obtained: number, total: number) {
   const pct = (obtained / total) * 100;
@@ -35,6 +36,11 @@ export default function PrincipalMarksPage() {
   const [initLoading, setInitLoading] = useState(true);
   const [sortField, setSortField] = useState<'rank'|'name'|'marks'>('rank');
   const [schoolId, setSchoolId] = useState('');
+  const [editMarks, setEditMarks] = useState<Record<string, MarkEntry>>({});
+  const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle'|'success'|'error'>('idle');
+  const [saveError, setSaveError] = useState('');
+  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const fetchStructure = useCallback(async () => {
     const userId = (await supabase.auth.getUser()).data.user?.id;
@@ -95,10 +101,62 @@ export default function PrincipalMarksPage() {
           marks_obtained: m?.marks_obtained ?? null, is_absent: !!m?.is_absent, remarks: m?.remarks || null };
       });
       setResults(rows);
+      // Initialize editMarks from fetched data
+      const em: Record<string, MarkEntry> = {};
+      rows.forEach(r => {
+        em[r.student_id] = { marks: r.marks_obtained != null ? String(r.marks_obtained) : '', absent: r.is_absent, remarks: r.remarks || '' };
+      });
+      setEditMarks(em);
       setLoading(false);
     };
     fetchResults();
   }, [supabase, selectedExam, exams, selectedSection]);
+
+  const updateMark = (studentId: string, field: keyof MarkEntry, value: string | boolean) => {
+    setEditMarks(m => ({ ...m, [studentId]: { ...m[studentId], [field]: value, ...(field === 'absent' && value === true ? { marks: '' } : {}) } }));
+    setSaveStatus('idle');
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent, idx: number) => {
+    if (e.key === 'Enter' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      const next = sortedResults[idx + 1];
+      if (next && inputRefs.current[next.student_id]) inputRefs.current[next.student_id]!.focus();
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prev = sortedResults[idx - 1];
+      if (prev && inputRefs.current[prev.student_id]) inputRefs.current[prev.student_id]!.focus();
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true); setSaveStatus('idle'); setSaveError('');
+    const userId = (await supabase.auth.getUser()).data.user?.id;
+    if (!userId || !exam) { setSaving(false); return; }
+    // Validate
+    const invalid = results.find(s => {
+      const entry = editMarks[s.student_id];
+      if (!entry || entry.absent || !entry.marks) return false;
+      const val = parseFloat(entry.marks);
+      return isNaN(val) || val < 0 || val > exam.total_marks;
+    });
+    if (invalid) {
+      const val = parseFloat(editMarks[invalid.student_id]?.marks || '');
+      setSaveError(val < 0 ? `Marks for "${invalid.full_name}" cannot be negative.` : `Marks for "${invalid.full_name}" exceed total (${exam.total_marks})`);
+      setSaving(false); return;
+    }
+    const records = results.map(s => {
+      const entry = editMarks[s.student_id] || { marks: '', absent: false, remarks: '' };
+      return { exam_id: selectedExam, student_id: s.student_id, school_id: schoolId,
+        marks_obtained: entry.absent ? null : (entry.marks ? parseFloat(entry.marks) : null),
+        is_absent: entry.absent, remarks: entry.remarks || null, entered_by: userId };
+    });
+    const { error } = await supabase.from('marks').upsert(records, { onConflict: 'exam_id,student_id' });
+    if (error) { setSaveError(error.message); setSaveStatus('error'); }
+    else { setSaveStatus('success'); setTimeout(() => setSaveStatus('idle'), 3000); }
+    setSaving(false);
+  };
 
   const exam = exams.find(e => e.id === selectedExam);
   const passThresh = exam ? (exam.passing_marks || exam.total_marks * 0.35) : 0;
@@ -293,52 +351,76 @@ export default function PrincipalMarksPage() {
               </button>
             </div>
           </div>
+          {saveError && <div style={{ padding:'12px 16px', background:'#FEF2F2', border:'1px solid #FEE2E2', borderRadius:10, fontSize:13, color:'#DC2626', fontWeight:600 }}>⚠️ {saveError}</div>}
+
           <div style={{ background:'white', borderRadius:14, border:'1px solid #E8ECF0', overflow:'hidden', boxShadow:'0 1px 3px rgba(0,0,0,0.04)' }}>
-            <div style={{ display:'grid', gridTemplateColumns:'56px 2fr 80px 100px 80px 100px 1fr 100px', padding:'10px 20px', background:'#F8FAFC', borderBottom:'1px solid #F1F5F9', gap:12 }}>
-              {['Rank','Student','Roll','Marks','%','Grade','Remarks','Analysis'].map((h,i) => (
-                <p key={h} style={{ fontSize:11, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', letterSpacing:'0.06em', margin:0, textAlign:i>=2?'center':'left' }}>{h}</p>
+            <div style={{ display:'grid', gridTemplateColumns:'48px 2fr 90px 110px 1fr 68px 90px', padding:'10px 20px', background:'#F8FAFC', borderBottom:'1px solid #F1F5F9', gap:12 }}>
+              {['#','Student','Marks','% / Grade','Remarks','Absent','Analysis'].map((h,i) => (
+                <p key={h} style={{ fontSize:11, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', letterSpacing:'0.06em', margin:0, textAlign:i>=5?'center':'left' }}>{h}</p>
               ))}
             </div>
             {sortedResults.map((row, idx) => {
-              const pct = row.marks_obtained != null && exam ? Math.round((row.marks_obtained/exam.total_marks)*100) : null;
-              const grade = row.marks_obtained != null && exam ? getGrade(row.marks_obtained, exam.total_marks) : null;
-              const isPassing = row.marks_obtained != null && row.marks_obtained >= passThresh;
-              const rank = sortField === 'rank' || sortField === 'marks' ? idx+1 : '—';
+              const entry = editMarks[row.student_id] || { marks:'', absent:false, remarks:'' };
+              const marksNum = entry.marks ? parseFloat(entry.marks) : null;
+              const grade = marksNum != null && exam ? getGrade(marksNum, exam.total_marks) : null;
+              const pct = marksNum != null && exam ? Math.round((marksNum/exam.total_marks)*100) : null;
+              const isPassing = marksNum != null && exam && marksNum >= passThresh;
+              const rowBg = entry.absent ? '#F8FAFC' : pct !== null ? (isPassing ? '#F0FDF4' : '#FFF5F5') : 'white';
               return (
                 <div key={row.student_id}
-                  style={{ display:'grid', gridTemplateColumns:'56px 2fr 80px 100px 80px 100px 1fr 100px', padding:'12px 20px', borderBottom:idx<sortedResults.length-1?'1px solid #F1F5F9':'none', alignItems:'center', gap:12, background:row.is_absent?'#F8FAFC':'white', cursor:'pointer', transition:'background 0.15s' }}
-                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = row.is_absent ? '#F1F5F9' : '#F8FAFF'}
-                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = row.is_absent ? '#F8FAFC' : 'white'}
+                  style={{ display:'grid', gridTemplateColumns:'48px 2fr 90px 110px 1fr 68px 90px', padding:'10px 20px', borderBottom:idx<sortedResults.length-1?'1px solid #F1F5F9':'none', alignItems:'center', gap:12, background:rowBg, transition:'background 0.2s' }}
                 >
-                  <span style={{ fontSize:13, fontWeight:700, color:'#94A3B8', textAlign:'center' }}>{!row.is_absent && pct != null ? `#${rank}` : '—'}</span>
+                  <span style={{ fontSize:13, fontWeight:700, color:'#94A3B8' }}>{row.roll_number||idx+1}</span>
                   <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                    <div style={{ width:32, height:32, borderRadius:'50%', background:`linear-gradient(135deg,${isPassing?'#1D4ED8':'#DC2626'},${isPassing?'#60A5FA':'#FCA5A5'})`, color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700, flexShrink:0 }}>
+                    <div style={{ width:30, height:30, borderRadius:'50%', background:'linear-gradient(135deg,#6366F1,#8B5CF6)', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:700, flexShrink:0 }}>
                       {row.full_name.charAt(0)}
                     </div>
                     <span style={{ fontSize:13, fontWeight:600, color:'#0F172A' }}>{row.full_name}</span>
                   </div>
-                  <span style={{ fontSize:13, color:'#94A3B8', textAlign:'center' }}>{row.roll_number ?? '—'}</span>
-                  <div style={{ textAlign:'center' }}>
-                    {row.is_absent ? <span style={{ fontSize:12, fontWeight:600, padding:'3px 9px', borderRadius:99, background:'#FEF2F2', color:'#DC2626' }}>Absent</span>
-                    : row.marks_obtained != null ? <span style={{ fontSize:15, fontWeight:800, color:'#0F172A' }}>{row.marks_obtained}</span>
-                    : <span style={{ fontSize:12, color:'#CBD5E1' }}>Not entered</span>}
+                  <input
+                    ref={el => { inputRefs.current[row.student_id] = el; }}
+                    type="number" placeholder="—" disabled={entry.absent}
+                    value={entry.marks}
+                    onChange={e => updateMark(row.student_id,'marks',e.target.value)}
+                    onKeyDown={e => handleKeyDown(e,idx)}
+                    min={0} max={exam?.total_marks}
+                    style={{ width:'100%', padding:'7px 10px', border:`1.5px solid ${entry.absent?'#E2E8F0':pct!==null?(isPassing?'#86EFAC':'#FCA5A5'):'#E2E8F0'}`, borderRadius:8, fontSize:14, fontWeight:700, textAlign:'center', outline:'none', background:entry.absent?'#F8FAFC':'white', color:'#0F172A', cursor:entry.absent?'not-allowed':'text', opacity:entry.absent?0.4:1, boxSizing:'border-box' }}
+                  />
+                  <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                    {entry.absent ? <span style={{ fontSize:12, fontWeight:600, padding:'3px 9px', borderRadius:99, background:'#F1F5F9', color:'#94A3B8' }}>Absent</span>
+                    : pct!==null&&grade ? <>
+                      <span style={{ fontSize:13, fontWeight:700, color:grade.color }}>{pct}%</span>
+                      <span style={{ fontSize:11, fontWeight:800, padding:'2px 7px', borderRadius:6, background:grade.bg, color:grade.color }}>{grade.letter}</span>
+                    </> : <span style={{ fontSize:12, color:'#CBD5E1' }}>—</span>}
                   </div>
-                  <span style={{ fontSize:13, fontWeight:700, textAlign:'center', color:pct!=null?(isPassing?'#16A34A':'#DC2626'):'#CBD5E1' }}>{pct!=null?`${pct}%`:'—'}</span>
-                  <div style={{ textAlign:'center' }}>
-                    {grade && !row.is_absent ? <span style={{ fontSize:12, fontWeight:800, padding:'3px 9px', borderRadius:6, background:grade.bg, color:grade.color }}>{grade.letter}</span> : <span style={{ fontSize:12, color:'#CBD5E1' }}>—</span>}
+                  <input type="text" placeholder="Remarks..." value={entry.remarks}
+                    onChange={e => updateMark(row.student_id,'remarks',e.target.value)}
+                    style={{ width:'100%', padding:'7px 10px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:12, outline:'none', boxSizing:'border-box', color:'#475569' }}
+                  />
+                  <div style={{ display:'flex', justifyContent:'center' }}>
+                    <input type="checkbox" checked={entry.absent} onChange={e => updateMark(row.student_id,'absent',e.target.checked)}
+                      style={{ width:18, height:18, cursor:'pointer', accentColor:'#DC2626' }} />
                   </div>
-                  <span style={{ fontSize:12, color:'#64748B' }}>{row.remarks || '—'}</span>
                   <div style={{ display:'flex', justifyContent:'center' }}>
                     <button
                       onClick={() => router.push(`/principal/students/${row.student_id}/analysis`)}
-                      style={{ padding:'5px 12px', borderRadius:8, border:'1px solid #DDD6FE', background:'linear-gradient(135deg,#F5F3FF,#EDE9FE)', color:'#7C3AED', fontSize:11, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap' }}
+                      style={{ padding:'5px 10px', borderRadius:7, border:'1px solid #DDD6FE', background:'linear-gradient(135deg,#F5F3FF,#EDE9FE)', color:'#7C3AED', fontSize:11, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap' }}
                     >
-                      📊 View
+                      📊 Chart
                     </button>
                   </div>
                 </div>
               );
             })}
+          </div>
+
+          {/* Save */}
+          <div style={{ display:'flex', justifyContent:'flex-end', alignItems:'center', gap:16 }}>
+            {saveStatus==='success' && <span style={{ fontSize:13, fontWeight:600, color:'#16A34A' }}>✅ Marks saved successfully!</span>}
+            <button onClick={handleSave} disabled={saving||results.length===0}
+              style={{ padding:'11px 32px', borderRadius:11, border:'none', fontSize:14, fontWeight:700, color:'white', cursor:saving?'not-allowed':'pointer', background:saving?'#6B7280':'linear-gradient(135deg,#0F766E,#059669)', boxShadow:saving?'none':'0 4px 14px rgba(15,118,110,0.3)', opacity:saving?0.8:1 }}>
+              {saving ? 'Saving...' : '💾 Save Marks'}
+            </button>
           </div>
         </>
       )}
