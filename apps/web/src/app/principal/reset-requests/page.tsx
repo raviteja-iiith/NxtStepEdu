@@ -65,6 +65,18 @@ export default function PrincipalResetRequestsPage() {
     fetchRequests();
   };
 
+  const handleDismiss = async (req: ResetRequest) => {
+    if (!confirm(`Dismiss reset request for "${req.user_name}"? This will mark it as resolved without resetting any credentials.`)) return;
+    setResolving(req.id); setError('');
+    const { error: updateErr } = await supabase.from('password_reset_requests').update({
+      status: 'resolved',
+      resolved_at: new Date().toISOString(),
+    }).eq('id', req.id);
+    setResolving(null);
+    if (updateErr) { setError('Failed to dismiss request'); return; }
+    fetchRequests();
+  };
+
   const filtered = requests.filter(r => r.role === tab);
   const pending = filtered.filter(r => r.status === 'pending');
   const resolved = filtered.filter(r => r.status === 'resolved');
@@ -118,13 +130,22 @@ export default function PrincipalResetRequestsPage() {
                       </p>
                       <p style={{ fontSize:11, color:'#94A3B8', margin:'4px 0 0' }}>Requested: {new Date(r.requested_at).toLocaleString('en-IN')}</p>
                     </div>
-                    <button
-                      onClick={() => handleResolve(r)}
-                      disabled={resolving === r.id}
-                      style={{ padding:'8px 18px', borderRadius:9, border:'none', background: resolving===r.id ? '#93C5FD' : 'linear-gradient(135deg,#1E3A8A,#3B82F6)', color:'white', fontSize:13, fontWeight:700, cursor: resolving===r.id ? 'not-allowed' : 'pointer', whiteSpace:'nowrap' }}
-                    >
-                      {resolving === r.id ? 'Generating…' : `🔑 Generate New ${r.role === 'parent' ? 'PIN' : 'Password'}`}
-                    </button>
+                    <div style={{ display:'flex', gap:6, alignItems:'center', flexShrink:0 }}>
+                      <button
+                        onClick={() => handleDismiss(r)}
+                        disabled={resolving === r.id}
+                        style={{ padding:'8px 14px', borderRadius:9, border:'1px solid #E2E8F0', background:'white', color:'#64748B', fontSize:12, fontWeight:600, cursor: resolving===r.id ? 'not-allowed' : 'pointer', whiteSpace:'nowrap' }}
+                      >
+                        ✕ Dismiss
+                      </button>
+                      <button
+                        onClick={() => handleResolve(r)}
+                        disabled={resolving === r.id}
+                        style={{ padding:'8px 18px', borderRadius:9, border:'none', background: resolving===r.id ? '#93C5FD' : 'linear-gradient(135deg,#1E3A8A,#3B82F6)', color:'white', fontSize:13, fontWeight:700, cursor: resolving===r.id ? 'not-allowed' : 'pointer', whiteSpace:'nowrap' }}
+                      >
+                        {resolving === r.id ? 'Generating…' : `🔑 Generate New ${r.role === 'parent' ? 'PIN' : 'Password'}`}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

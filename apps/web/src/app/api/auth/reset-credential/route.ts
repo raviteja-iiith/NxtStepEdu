@@ -41,21 +41,128 @@ export async function POST(request: Request) {
     user_id = user_id || reqRow.user_id;
 
     if (!user_id) {
-      if (reqRow.role === 'parent') {
-        // Look up parent by phone number
+      const identifier = (reqRow.user_identifier || '').trim();
+      const targetRole = reqRow.role; // 'parent' or 'teacher'
+
+      if (targetRole === 'parent') {
+        // Strategy 1: Match by phone or username (exact)
         const { data: u } = await supabaseAdmin
           .from('users')
           .select('id')
-          .eq('phone', reqRow.user_identifier)
           .eq('school_id', reqRow.school_id)
+          .eq('role', 'parent')
+          .or(`phone.eq.${identifier},username.eq.${identifier}`)
           .maybeSingle();
         user_id = u?.id || null;
+
+        // Strategy 2: If identifier contains @parent.schoolerp.local, strip it to get phone
+        if (!user_id && identifier.includes('@parent.schoolerp.local')) {
+          const phone = identifier.replace('@parent.schoolerp.local', '');
+          const { data: u2 } = await supabaseAdmin
+            .from('users').select('id')
+            .eq('school_id', reqRow.school_id).eq('role', 'parent').eq('phone', phone)
+            .maybeSingle();
+          user_id = u2?.id || null;
+        }
+
+        // Strategy 3: Match by full_name from the request
+        if (!user_id && reqRow.user_name) {
+          const { data: u3 } = await supabaseAdmin
+            .from('users').select('id')
+            .eq('school_id', reqRow.school_id).eq('role', 'parent')
+            .ilike('full_name', reqRow.user_name.trim())
+            .maybeSingle();
+          user_id = u3?.id || null;
+        }
       } else {
-        // Teacher: identifier is "name@SCHOOLCODE" → auth email "name.SCHOOLCODE@schoolerp.local"
-        const derivedEmail = `${reqRow.user_identifier.replace('@', '.')}@schoolerp.local`;
-        const { data: authList } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-        const found = authList?.users?.find((u: any) => u.email === derivedEmail);
-        user_id = found?.id || null;
+        // ── Teacher: multiple lookup strategies ──────────────────────────
+        // Teacher usernames are like: "firstname.empid@SCHOOLCODE"
+        // Auth emails are like: "firstname.empid.SCHOOLCODE@schoolerp.local"
+
+        // Strategy 1: Exact username match
+        const { data: u1 } = await supabaseAdmin
+          .from('users').select('id')
+          .eq('school_id', reqRow.school_id).eq('role', 'teacher')
+          .eq('username', identifier)
+          .maybeSingle();
+        user_id = u1?.id || null;
+
+        // Strategy 2: If identifier ends with @schoolerp.local, it's the auth email
+        // Strip the suffix, replace last dot with @ to reconstruct username
+        if (!user_id && identifier.endsWith('@schoolerp.local')) {
+          const withoutDomain = identifier.replace('@schoolerp.local', '');
+          // "firstname.empid.SCHOOLCODE" → "firstname.empid@SCHOOLCODE"
+          const lastDotIdx = withoutDomain.lastIndexOf('.');
+          if (lastDotIdx > 0) {
+            const reconstructedUsername = withoutDomain.substring(0, lastDotIdx) + '@' + withoutDomain.substring(lastDotIdx + 1);
+            const { data: u2 } = await supabaseAdmin
+              .from('users').select('id')
+              .eq('school_id', reqRow.school_id).eq('role', 'teacher')
+              .eq('username', reconstructedUsername)
+              .maybeSingle();
+            user_id = u2?.id || null;
+          }
+
+          // Also try direct email match in users table
+          if (!user_id) {
+            const { data: u2b } = await supabaseAdmin
+              .from('users').select('id')
+              .eq('school_id', reqRow.school_id).eq('role', 'teacher')
+              .eq('email', identifier)
+              .maybeSingle();
+            user_id = u2b?.id || null;
+          }
+        }
+
+        // Strategy 3: Derive email from username and match
+        if (!user_id && !identifier.endsWith('@schoolerp.local')) {
+          const derivedEmail = `${identifier.replace('@', '.')}@schoolerp.local`;
+          const { data: u3 } = await supabaseAdmin
+            .from('users').select('id')
+            .eq('school_id', reqRow.school_id).eq('role', 'teacher')
+            .eq('email', derivedEmail)
+            .maybeSingle();
+          user_id = u3?.id || null;
+        }
+
+        // Strategy 4: Match by full_name from the request
+        if (!user_id && reqRow.user_name) {
+          const { data: u4 } = await supabaseAdmin
+            .from('users').select('id')
+            .eq('school_id', reqRow.school_id).eq('role', 'teacher')
+            .ilike('full_name', reqRow.user_name.trim())
+            .maybeSingle();
+          user_id = u4?.id || null;
+        }
+
+        // Strategy 5: Partial username match (identifier contains @ → use part before @)
+        if (!user_id && identifier.includes('@')) {
+          const namePart = identifier.split('@')[0];
+          if (namePart) {
+            const { data: u5 } = await supabaseAdmin
+              .from('users').select('id')
+              .eq('school_id', reqRow.school_id).eq('role', 'teacher')
+              .ilike('username', `${namePart}@%`)
+              .maybeSingle();
+            user_id = u5?.id || null;
+          }
+        }
+
+        // Strategy 6: Last resort — scan auth users by derived email
+        if (!user_id) {
+          const derivedEmail = identifier.endsWith('@schoolerp.local')
+            ? identifier
+            : `${identifier.replace('@', '.')}@schoolerp.local`;
+          const { data: authList } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+          const found = authList?.users?.find((u: any) => u.email === derivedEmail);
+          if (found) {
+            // Verify this user belongs to the same school
+            const { data: verifyUser } = await supabaseAdmin
+              .from('users').select('id, school_id')
+              .eq('id', found.id).eq('school_id', reqRow.school_id).maybeSingle();
+            user_id = verifyUser?.id || null;
+          }
+        }
       }
     }
 

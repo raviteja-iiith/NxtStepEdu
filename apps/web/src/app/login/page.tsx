@@ -73,18 +73,21 @@ export default function LoginPage() {
     if (!forgotName.trim() || !forgotIdentifier.trim()) return;
     if (!selectedSchool) return;
     setForgotSubmitting(true);
-    // Find the user in the DB to get user_id
+    // Find the user in the DB to get user_id by matching their identifier
     const supabaseClient = createClient();
-    const { data: users } = await supabaseClient
+    const identifier = forgotIdentifier.trim();
+    const role = selectedRole === 'parent' ? 'parent' : 'teacher';
+    const { data: matchedUser } = await supabaseClient
       .from('users')
       .select('id')
       .eq('school_id', selectedSchool.id)
-      .eq('role', selectedRole === 'parent' ? 'parent' : 'teacher')
-      .limit(5);
+      .eq('role', role)
+      .or(`username.eq.${identifier},phone.eq.${identifier}`)
+      .maybeSingle();
     // Insert request row (public_insert policy allows this without auth)
     await supabaseClient.from('password_reset_requests').insert({
       school_id: selectedSchool.id,
-      user_id: users?.[0]?.id || null,   // best-effort; admin can still look up by name
+      user_id: matchedUser?.id || null,   // looked up by identifier; admin can still resolve by username
       user_name: forgotName.trim(),
       user_identifier: forgotIdentifier.trim(),
       role: selectedRole === 'parent' ? 'parent' : 'teacher',
