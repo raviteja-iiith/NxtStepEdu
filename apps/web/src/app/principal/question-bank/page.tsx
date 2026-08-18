@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 interface Question {
   question: string;
   type: 'mcq' | 'short' | 'long';
+  difficulty?: 'easy' | 'medium' | 'hard';
   options?: { A: string; B: string; C: string; D: string };
   answer: string;
   explanation: string;
@@ -298,6 +299,14 @@ export default function QuestionBankPage() {
                       border: `1px solid ${q.type==='mcq'?'#BFDBFE':q.type==='short'?'#DDD6FE':'#FED7AA'}` }}>
                       {TYPE_LABEL[q.type]}
                     </span>
+                    {q.difficulty && (
+                      <span style={{ fontSize:11, fontWeight:700, padding:'3px 9px', borderRadius:99, textTransform:'capitalize',
+                        background: q.difficulty==='easy'?'#ECFDF5':q.difficulty==='medium'?'#FEFCE8':'#FEF2F2',
+                        color: q.difficulty==='easy'?'#047857':q.difficulty==='medium'?'#A16207':'#B91C1C',
+                        border: `1px solid ${q.difficulty==='easy'?'#A7F3D0':q.difficulty==='medium'?'#FEF08A':'#FECACA'}` }}>
+                        {q.difficulty}
+                      </span>
+                    )}
                   </div>
                   <p style={{ fontSize:14, fontWeight:600, color:'#0F172A', margin:'0 0 10px', lineHeight:1.6 }}>{q.question}</p>
 

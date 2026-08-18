@@ -114,6 +114,7 @@ Return ONLY this JSON structure (no text outside):
     {
       "question": "...",
       "type": "mcq",
+      "difficulty": "easy",
       "options": { "A": "...", "B": "...", "C": "...", "D": "..." },
       "answer": "B",
       "explanation": "..."
@@ -121,6 +122,7 @@ Return ONLY this JSON structure (no text outside):
     {
       "question": "...",
       "type": "short",
+      "difficulty": "medium",
       "answer": "model answer",
       "explanation": "..."
     }
