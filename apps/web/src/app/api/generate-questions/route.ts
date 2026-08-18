@@ -80,9 +80,6 @@ export async function POST(req: NextRequest) {
 
     const { className, subject, chapter, difficulty, count: qCount, questionType } = await req.json();
 
-    const apiKey = process.env.GROQ_API_KEY;
-    if (!apiKey) return NextResponse.json({ error: 'GROQ_API_KEY not set in .env.local' }, { status: 500 });
-
     const typeInstruction =
       questionType === 'mcq'    ? 'Multiple Choice Questions with 4 options (A, B, C, D).'
       : questionType === 'short'? 'Short Answer Questions (2-3 sentence answers).'
@@ -130,14 +127,27 @@ Return ONLY this JSON structure (no text outside):
   ]
 }`;
 
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    // Prefer Gemini API (1M TPM free tier) with fallback to Groq
+    const geminiKey = process.env.GEMINI_API_KEY;
+    const groqKey = process.env.GROQ_API_KEY;
+
+    if (!geminiKey && !groqKey) {
+      return NextResponse.json({ error: 'No AI API key configured. Set GEMINI_API_KEY or GROQ_API_KEY in environment.' }, { status: 500 });
+    }
+
+    const useGemini = !!geminiKey;
+    const apiUrl = useGemini
+      ? `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`
+      : 'https://api.groq.com/openai/v1/chat/completions';
+
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${useGemini ? geminiKey : groqKey}`,
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: useGemini ? 'gemini-2.5-flash' : 'openai/gpt-oss-20b',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user',   content: userPrompt },
@@ -150,7 +160,7 @@ Return ONLY this JSON structure (no text outside):
 
     if (!response.ok) {
       const err = await response.text();
-      return NextResponse.json({ error: `Groq API error: ${err}` }, { status: 500 });
+      return NextResponse.json({ error: `AI API error: ${err}` }, { status: 500 });
     }
 
     const data = await response.json();
