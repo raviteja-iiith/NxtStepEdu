@@ -24,14 +24,24 @@ export default function ReportsPage() {
       supabase.from('users').select('*',{count:'exact',head:true}).eq('school_id',sid).eq('role','parent').eq('is_active',true),
       supabase.from('attendance').select('*',{count:'exact',head:true}).eq('school_id',sid).eq('date',today).eq('status','present'),
       supabase.from('attendance').select('*',{count:'exact',head:true}).eq('school_id',sid).eq('date',today).eq('status','absent'),
-      supabase.from('fees').select('amount, discount_amount, status').eq('school_id',sid),
+      supabase.from('fees').select('id, amount, discount_amount, status').eq('school_id',sid).not('status','eq','paid').not('status','eq','waived'),
       supabase.from('exams').select('*',{count:'exact',head:true}).eq('school_id',sid),
       supabase.from('leave_requests').select('*',{count:'exact',head:true}).eq('school_id',sid).eq('status','pending'),
       supabase.from('announcements').select('*',{count:'exact',head:true}).eq('school_id',sid),
       supabase.from('sections').select('*',{count:'exact',head:true}).eq('school_id',sid),
     ]);
     let feesCollected=0, feesPending=0;
-    if (fd) fd.forEach((f:any) => { const net=(f.amount||0)-(f.discount_amount||0); if(f.status==='paid') feesCollected+=net; else if(['pending','overdue'].includes(f.status)) feesPending+=net; });
+    // Fetch fees collected separately (paid fees)
+    const { data: paidFees } = await supabase.from('fees').select('amount, discount_amount').eq('school_id',sid).eq('status','paid');
+    if (paidFees) paidFees.forEach((f:any) => { feesCollected += Math.max(0,(f.amount||0)-(f.discount_amount||0)); });
+    // Compute true pending: subtract actual payments made (handles partially_paid correctly)
+    if (fd && fd.length > 0) {
+      const feeIds = fd.map((f:any) => f.id);
+      const { data: payments } = await supabase.from('fee_payments').select('fee_id, amount_paid, is_voided').in('fee_id', feeIds);
+      const paidMap = new Map<string,number>();
+      (payments ?? []).forEach((p:any) => { if (!p.is_voided) paidMap.set(p.fee_id, (paidMap.get(p.fee_id)??0)+(p.amount_paid??0)); });
+      fd.forEach((f:any) => { const gross=Math.max(0,(f.amount||0)-(f.discount_amount||0)); const paid=paidMap.get(f.id)??0; feesPending+=Math.max(0,gross-paid); });
+    }
     const total=(pt||0)+(at||0);
     setStats({ totalStudents:ts||0, totalTeachers:tt||0, totalParents:tp||0, presentToday:pt||0, absentToday:at||0, attendanceRate:total>0?Math.round(((pt||0)/total)*100):0, feesCollected, feesPending, totalExams:te||0, pendingLeaves:pl||0, totalAnnouncements:ta||0, totalSections:tsec||0 });
     setLoading(false);
