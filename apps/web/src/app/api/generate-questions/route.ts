@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const WEEKLY_LIMIT = 5;
+
 
 // Service role client — bypasses RLS for usage tracking
 function getServiceClient() {
@@ -29,10 +29,10 @@ export async function GET(req: NextRequest) {
     const supabase = getServiceClient();
     const authHeader = req.headers.get('authorization') || '';
     const token = authHeader.replace('Bearer ', '');
-    if (!token) return NextResponse.json({ remaining: 0, used: WEEKLY_LIMIT });
+    if (!token) return NextResponse.json({ used: 0 });
 
     const { data: { user } } = await supabase.auth.getUser(token);
-    if (!user) return NextResponse.json({ remaining: 0, used: WEEKLY_LIMIT });
+    if (!user) return NextResponse.json({ used: 0 });
 
     const weekStart = getWeekStart();
     const { count } = await supabase
@@ -42,9 +42,9 @@ export async function GET(req: NextRequest) {
       .gte('used_at', weekStart);
 
     const used = count ?? 0;
-    return NextResponse.json({ used, remaining: Math.max(0, WEEKLY_LIMIT - used), limit: WEEKLY_LIMIT });
+    return NextResponse.json({ used });
   } catch (e: any) {
-    return NextResponse.json({ used: 0, remaining: WEEKLY_LIMIT, limit: WEEKLY_LIMIT });
+    return NextResponse.json({ used: 0 });
   }
 }
 
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser(token);
     if (!user) return NextResponse.json({ error: 'Invalid session.' }, { status: 401 });
 
-    // Check weekly usage
+    // Track usage (informational only — no limit enforced)
     const weekStart = getWeekStart();
     const { count } = await supabase
       .from('question_bank_usage')
@@ -69,14 +69,6 @@ export async function POST(req: NextRequest) {
       .gte('used_at', weekStart);
 
     const used = count ?? 0;
-    if (used >= WEEKLY_LIMIT) {
-      return NextResponse.json({
-        error: `Weekly limit reached. You have used all ${WEEKLY_LIMIT} generations for this week. Resets every Monday.`,
-        limitReached: true,
-        used,
-        limit: WEEKLY_LIMIT,
-      }, { status: 429 });
-    }
 
     const { className, subject, chapter, difficulty, count: qCount, questionType } = await req.json();
 
@@ -179,12 +171,7 @@ Return ONLY this JSON structure (no text outside):
     // ✅ Log successful generation
     await supabase.from('question_bank_usage').insert({ user_id: user.id });
 
-    return NextResponse.json({
-      questions,
-      used: used + 1,
-      remaining: WEEKLY_LIMIT - used - 1,
-      limit: WEEKLY_LIMIT,
-    });
+    return NextResponse.json({ questions, used: used + 1 });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'Unexpected server error' }, { status: 500 });
   }

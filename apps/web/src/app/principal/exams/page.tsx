@@ -38,6 +38,7 @@ export default function ExamsPage() {
   const [loading,setLoading]   = useState(true);
   const [showAdd,setShowAdd]   = useState(false);
   const [saving,setSaving]     = useState(false);
+  const [publishingId,setPublishingId] = useState<string|null>(null); // key of group being toggled
   const [formError,setFormError] = useState('');
   const [filterType,setFilterType]       = useState('');
   const [filterClass,setFilterClass]     = useState('');
@@ -150,33 +151,54 @@ export default function ExamsPage() {
   };
 
   const togglePublishGroup = async (group:Exam[]) => {
-    const nv = !group[0].is_published;
-    await Promise.all(group.map(e => supabase.from('exams').update({ is_published:nv }).eq('id',e.id)));
+    const groupKey = `${group[0].name}§${group[0].exam_date}§${group[0].class_id}`;
+    if (publishingId === groupKey) return; // prevent double-click
+    setPublishingId(groupKey);
 
-    // Notify parents when marks are published
-    if (nv) {
-      const classId = group[0].class_id;
-      const examName = group[0].name;
-      // Get all students in this class
-      const { data: studentsInClass } = await supabase
-        .from('students').select('id').eq('class_id', classId).eq('is_active', true);
-      if (studentsInClass && studentsInClass.length > 0) {
-        const { data: links } = await supabase
-          .from('student_parent_links').select('parent_id')
-          .in('student_id', studentsInClass.map((s:any) => s.id));
-        if (links) {
-          await Promise.all(links.map((l:any) => createNotification(supabase, {
-            recipient_id: l.parent_id,
-            school_id:    schoolId,
-            type:         'marks_published',
-            title:        `Marks published: ${examName}`,
-            body:         'Your child\'s marks have been published. Check the Academics section.',
-            link:         '/parent/academics',
-          })));
-        }
-      }
+    const nv = !group[0].is_published;
+
+    // Update all exams in the group and collect any errors
+    const results = await Promise.all(
+      group.map(e => supabase.from('exams').update({ is_published: nv }).eq('id', e.id))
+    );
+    const failed = results.find(r => r.error);
+    if (failed?.error) {
+      alert(`Failed to ${nv ? 'publish' : 'unpublish'}: ${failed.error.message}`);
+      setPublishingId(null);
+      return;
     }
 
+    // Notify parents when exam is published
+    if (nv && schoolId) {
+      try {
+        const classId  = group[0].class_id;
+        const examName = group[0].name;
+        // Get all active students in this class (scoped to school)
+        const { data: studentsInClass } = await supabase
+          .from('students')
+          .select('id')
+          .eq('class_id', classId)
+          .eq('school_id', schoolId)
+          .eq('is_active', true);
+        if (studentsInClass && studentsInClass.length > 0) {
+          const { data: links } = await supabase
+            .from('student_parent_links').select('parent_id')
+            .in('student_id', studentsInClass.map((s:any) => s.id));
+          if (links && links.length > 0) {
+            await Promise.all(links.map((l:any) => createNotification(supabase, {
+              recipient_id: l.parent_id,
+              school_id:    schoolId,
+              type:         'marks_published',
+              title:        `Marks published: ${examName}`,
+              body:         "Your child's marks have been published. Check the Academics section.",
+              link:         '/parent/academics',
+            })));
+          }
+        }
+      } catch (_) { /* notification failure should not block publish */ }
+    }
+
+    setPublishingId(null);
     fetchExams();
   };
 
@@ -284,9 +306,11 @@ export default function ExamsPage() {
                   <span style={{ fontSize:11, fontWeight:600, padding:'3px 9px', borderRadius:99, background:first.is_published?'#DCFCE7':'#FFFBEB', color:first.is_published?'#15803D':'#D97706' }}>
                     {first.is_published?'Published':'Draft'}
                   </span>
-                  <button onClick={() => togglePublishGroup(group)}
-                    style={{ fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:7, border:'none', cursor:'pointer', background:first.is_published?'#FEE2E2':'#DCFCE7', color:first.is_published?'#DC2626':'#15803D' }}>
-                    {first.is_published?'Unpublish':'Publish'}
+                  <button
+                    onClick={() => togglePublishGroup(group)}
+                    disabled={publishingId === `${first.name}§${first.exam_date}§${first.class_id}`}
+                    style={{ fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:7, border:'none', cursor: publishingId === `${first.name}§${first.exam_date}§${first.class_id}` ? 'not-allowed' : 'pointer', background:first.is_published?'#FEE2E2':'#DCFCE7', color:first.is_published?'#DC2626':'#15803D', opacity: publishingId === `${first.name}§${first.exam_date}§${first.class_id}` ? 0.6 : 1, transition:'opacity 0.15s' }}>
+                    {publishingId === `${first.name}§${first.exam_date}§${first.class_id}` ? '...' : (first.is_published?'Unpublish':'Publish')}
                   </button>
                 </div>
               </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
 interface Question {
@@ -31,7 +31,6 @@ const TYPE_LABEL: Record<string, string> = {
   mcq: 'MCQ', short: 'Short Answer', long: 'Long Answer',
 };
 
-const WEEKLY_LIMIT = 5;
 
 export default function QuestionBankPage() {
   const supabase = createClient();
@@ -46,36 +45,13 @@ export default function QuestionBankPage() {
   const [error, setError]         = useState('');
   const [showAnswers, setShowAnswers] = useState(true);
   const [expanded, setExpanded]   = useState<Record<number, boolean>>({});
-  const [used, setUsed]           = useState(0);
-  const [usageLoading, setUsageLoading] = useState(true);
-
-  // Fetch current week's usage on mount
-  useEffect(() => {
-    async function fetchUsage() {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) return;
-        const res = await fetch('/api/generate-questions', {
-          headers: { 'Authorization': `Bearer ${session.access_token}` },
-        });
-        const d = await res.json();
-        setUsed(d.used ?? 0);
-      } catch {}
-      setUsageLoading(false);
-    }
-    fetchUsage();
-  }, []);
 
   const subjects = className ? (SUBJECTS[className] || []) : [];
-
-  const remaining = WEEKLY_LIMIT - used;
-  const limitReached = used >= WEEKLY_LIMIT;
 
   async function generate() {
     if (!className || !subject || !chapter.trim()) {
       setError('Please fill in Class, Subject, and Chapter name.'); return;
     }
-    if (limitReached) { setError('Weekly limit reached. Resets every Monday.'); return; }
     setLoading(true); setError(''); setQuestions([]); setExpanded({});
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -92,7 +68,6 @@ export default function QuestionBankPage() {
         setError(data.error || 'Failed to generate.');
       } else {
         setQuestions(data.questions || []);
-        setUsed(data.used ?? used + 1);
       }
     } catch (e: any) { setError(e.message); }
     setLoading(false);
@@ -162,26 +137,6 @@ export default function QuestionBankPage() {
             Generate AP State Board questions using Groq AI — Principal only access
           </p>
         </div>
-        {/* Usage badge */}
-        <div style={{ background:'rgba(255,255,255,0.1)', borderRadius:12, padding:'12px 18px', minWidth:140, textAlign:'center' }}>
-          {usageLoading ? (
-            <div style={{ color:'#93C5FD', fontSize:12 }}>Loading…</div>
-          ) : (
-            <>
-              <div style={{ display:'flex', justifyContent:'center', gap:4, marginBottom:6 }}>
-                {Array.from({length: WEEKLY_LIMIT}).map((_,i) => (
-                  <div key={i} style={{ width:14, height:14, borderRadius:'50%',
-                    background: i < used ? '#EF4444' : '#22C55E',
-                    border:'2px solid rgba(255,255,255,0.3)' }} />
-                ))}
-              </div>
-              <div style={{ color: limitReached ? '#FCA5A5' : '#86EFAC', fontSize:13, fontWeight:700 }}>
-                {limitReached ? '🚫 Limit Reached' : `${remaining} of ${WEEKLY_LIMIT} left`}
-              </div>
-              <div style={{ color:'rgba(255,255,255,0.4)', fontSize:10, marginTop:2 }}>Resets every Monday</div>
-            </>
-          )}
-        </div>
       </div>
 
       {/* Form Card */}
@@ -245,18 +200,13 @@ export default function QuestionBankPage() {
 
         {error && <div style={{ padding:'10px 14px', borderRadius:9, background:'#FEF2F2', border:'1px solid #FEE2E2', color:'#DC2626', fontSize:13, marginBottom:14 }}>{error}</div>}
 
-        {limitReached && (
-          <div style={{ padding:'10px 14px', borderRadius:9, background:'#FEF2F2', border:'1px solid #FEE2E2', color:'#DC2626', fontSize:13, marginBottom:14 }}>
-            🚫 <strong>Weekly limit reached ({WEEKLY_LIMIT}/{WEEKLY_LIMIT} used).</strong> Your quota resets every Monday.
-          </div>
-        )}
-        <button onClick={generate} disabled={loading || limitReached}
+        <button onClick={generate} disabled={loading}
           style={{ padding:'11px 28px', borderRadius:10, border:'none', fontSize:14, fontWeight:700,
-            cursor: loading ? 'wait' : limitReached ? 'not-allowed' : 'pointer',
-            background: loading || limitReached ? '#E2E8F0' : 'linear-gradient(135deg,#1E3A8A,#3B82F6)',
-            color: loading || limitReached ? '#94A3B8' : 'white',
-            boxShadow: loading || limitReached ? 'none' : '0 4px 12px rgba(59,130,246,0.3)' }}>
-          {loading ? '⏳ Generating with Groq AI…' : limitReached ? '🚫 Limit Reached (Resets Monday)' : `✨ Generate Questions (${remaining} left this week)`}
+            cursor: loading ? 'wait' : 'pointer',
+            background: loading ? '#E2E8F0' : 'linear-gradient(135deg,#1E3A8A,#3B82F6)',
+            color: loading ? '#94A3B8' : 'white',
+            boxShadow: loading ? 'none' : '0 4px 12px rgba(59,130,246,0.3)' }}>
+          {loading ? '⏳ Generating…' : '✨ Generate Questions'}
         </button>
       </div>
 
