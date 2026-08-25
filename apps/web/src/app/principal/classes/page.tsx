@@ -282,13 +282,13 @@ export default function PrincipalClassesPage() {
                     <p style={{ fontSize:13, color:'#CBD5E1', fontStyle:'italic', margin:0 }}>No sections yet — click <strong style={{color:'#64748B'}}>+ Add Section</strong></p>
                   </div>
                 ) : cls.sections.map((sec, si) => (
-                  <div key={sec.id} style={{ display:'grid', gridTemplateColumns:'120px 1fr 180px', alignItems:'center', padding:'12px 20px', borderBottom:si<cls.sections.length-1?'1px solid #F8FAFC':'none', gap:16 }}>
+                  <div key={sec.id} style={{ display:'grid', gridTemplateColumns:'auto 1fr 180px', alignItems:'center', padding:'12px 20px', borderBottom:si<cls.sections.length-1?'1px solid #F8FAFC':'none', gap:16 }}>
                     {/* Section Badge */}
-                    <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
-                      <div style={{ width:32, height:32, borderRadius:8, background:col.bg, border:`1px solid ${col.light}`, color:col.accent, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:800, flexShrink:0, overflow:'hidden' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                      <div style={{ width:32, height:32, borderRadius:8, background:col.bg, border:`1px solid ${col.light}`, color:col.accent, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:800, flexShrink:0 }}>
                         {sec.name.charAt(0).toUpperCase()}
                       </div>
-                      <span style={{ fontSize:13, fontWeight:600, color:'#334155', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>Section {sec.name}</span>
+                      <span style={{ fontSize:13, fontWeight:600, color:'#334155', whiteSpace:'nowrap' }}>Section {sec.name}</span>
                     </div>
 
                     {/* Class Teacher */}
