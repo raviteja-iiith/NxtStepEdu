@@ -51,6 +51,14 @@ export default function ExamsPage() {
   const [form,setForm]         = useState(BLANK_FORM);
   const [isMulti,setIsMulti]   = useState(false);
   const [multiRows,setMultiRows] = useState<MultiRow[]>([{ subject_id:'', total_marks:'100', passing_marks:'35' }]);
+  // Edit
+  const [editGroup,setEditGroup] = useState<Exam[]|null>(null);
+  const [editForm,setEditForm]   = useState(BLANK_FORM);
+  const [editSaving,setEditSaving] = useState(false);
+  const [editError,setEditError]   = useState('');
+  // Delete
+  const [deleteGroup,setDeleteGroup] = useState<Exam[]|null>(null);
+  const [deleting,setDeleting]       = useState(false);
 
   const fetchExams = useCallback(async () => {
     setLoading(true);
@@ -202,6 +210,31 @@ export default function ExamsPage() {
     fetchExams();
   };
 
+  const openEdit = (group:Exam[]) => {
+    const f = group[0];
+    setEditForm({ name:f.name, exam_type:f.exam_type, class_id:f.class_id, section_id:(f as any).section_id||'', exam_date:f.exam_date, start_time:f.start_time||'', duration_minutes:String(f.duration_minutes||120), subject_id:f.subject_id, total_marks:String(f.total_marks), passing_marks:String(f.passing_marks||'') });
+    setEditError(''); setEditGroup(group);
+  };
+
+  const handleEdit = async () => {
+    if (!editGroup) return;
+    if (!editForm.name||!editForm.exam_date) { setEditError('Exam name and date are required.'); return; }
+    setEditSaving(true); setEditError('');
+    const results = await Promise.all(editGroup.map(e => supabase.from('exams').update({ name:editForm.name.trim(), exam_type:editForm.exam_type, exam_date:editForm.exam_date, start_time:editForm.start_time||null, duration_minutes:editForm.duration_minutes?parseInt(editForm.duration_minutes):null, total_marks:parseInt(editForm.total_marks)||e.total_marks, passing_marks:editForm.passing_marks?parseInt(editForm.passing_marks):null }).eq('id',e.id)));
+    const failed = results.find(r=>r.error);
+    if (failed?.error) { setEditError(failed.error.message); setEditSaving(false); return; }
+    setEditGroup(null); fetchExams(); setEditSaving(false);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteGroup) return;
+    setDeleting(true);
+    const results = await Promise.all(deleteGroup.map(e => supabase.from('exams').delete().eq('id',e.id)));
+    const failed = results.find(r=>r.error);
+    if (failed?.error) { alert('Delete failed: '+failed.error.message); setDeleting(false); return; }
+    setDeleteGroup(null); fetchExams(); setDeleting(false);
+  };
+
   const groups = groupExams(exams);
 
   const updateMultiRow = (i:number, field:keyof MultiRow, val:string) =>
@@ -302,16 +335,18 @@ export default function ExamsPage() {
                   {isGroup && <p style={{ fontSize:11, fontWeight:700, color:'#64748B', margin:'2px 0 0' }}>Grand Total: {totalMarks} marks</p>}
                 </div>
                 {/* Actions */}
-                <div style={{ display:'flex', justifyContent:'flex-end', alignItems:'center', gap:6 }}>
+                <div style={{ display:'flex', justifyContent:'flex-end', alignItems:'center', gap:6, flexWrap:'wrap' }}>
                   <span style={{ fontSize:11, fontWeight:600, padding:'3px 9px', borderRadius:99, background:first.is_published?'#DCFCE7':'#FFFBEB', color:first.is_published?'#15803D':'#D97706' }}>
                     {first.is_published?'Published':'Draft'}
                   </span>
-                  <button
-                    onClick={() => togglePublishGroup(group)}
-                    disabled={publishingId === `${first.name}§${first.exam_date}§${first.class_id}`}
-                    style={{ fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:7, border:'none', cursor: publishingId === `${first.name}§${first.exam_date}§${first.class_id}` ? 'not-allowed' : 'pointer', background:first.is_published?'#FEE2E2':'#DCFCE7', color:first.is_published?'#DC2626':'#15803D', opacity: publishingId === `${first.name}§${first.exam_date}§${first.class_id}` ? 0.6 : 1, transition:'opacity 0.15s' }}>
-                    {publishingId === `${first.name}§${first.exam_date}§${first.class_id}` ? '...' : (first.is_published?'Unpublish':'Publish')}
+                  <button onClick={() => togglePublishGroup(group)} disabled={publishingId===`${first.name}§${first.exam_date}§${first.class_id}`}
+                    style={{ fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:7, border:'none', cursor:publishingId===`${first.name}§${first.exam_date}§${first.class_id}`?'not-allowed':'pointer', background:first.is_published?'#FEE2E2':'#DCFCE7', color:first.is_published?'#DC2626':'#15803D', opacity:publishingId===`${first.name}§${first.exam_date}§${first.class_id}`?0.6:1, transition:'opacity 0.15s' }}>
+                    {publishingId===`${first.name}§${first.exam_date}§${first.class_id}`?'...':(first.is_published?'Unpublish':'Publish')}
                   </button>
+                  <button onClick={() => openEdit(group)} title="Edit exam"
+                    style={{ fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:7, border:'1px solid #BFDBFE', background:'#EFF6FF', color:'#1D4ED8', cursor:'pointer' }}>✏️ Edit</button>
+                  <button onClick={() => setDeleteGroup(group)} title="Delete exam"
+                    style={{ fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:7, border:'1px solid #FEE2E2', background:'#FEF2F2', color:'#DC2626', cursor:'pointer' }}>🗑 Delete</button>
                 </div>
               </div>
             </div>
@@ -445,6 +480,58 @@ export default function ExamsPage() {
                 style={{ flex:1, padding:11, borderRadius:10, border:'none', background:saving?'#93C5FD':'linear-gradient(135deg,#1E3A8A,#3B82F6)', color:'white', fontSize:13, fontWeight:700, cursor:saving?'not-allowed':'pointer' }}>
                 {saving?'Creating...':'Create Exam'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Modal ── */}
+      {editGroup && (
+        <div style={{ position:'fixed', inset:0, zIndex:50, display:'flex', alignItems:'center', justifyContent:'center', padding:16, background:'rgba(15,23,42,0.55)', backdropFilter:'blur(4px)' }}>
+          <div style={{ width:'100%', maxWidth:520, background:'white', borderRadius:18, boxShadow:'0 24px 64px rgba(0,0,0,0.2)', display:'flex', flexDirection:'column', maxHeight:'90vh' }}>
+            <div style={{ padding:'20px 24px 14px', borderBottom:'1px solid #F1F5F9', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
+              <div><h3 style={{ fontSize:16, fontWeight:800, color:'#0F172A', margin:0 }}>Edit Exam</h3><p style={{ fontSize:12, color:'#94A3B8', marginTop:2 }}>{editGroup.length > 1 ? `${editGroup.length} subjects — shared fields only` : editGroup[0].subject_name}</p></div>
+              <button onClick={() => setEditGroup(null)} style={{ width:32, height:32, borderRadius:'50%', border:'1px solid #E2E8F0', background:'white', cursor:'pointer', color:'#64748B', fontSize:16, display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
+            </div>
+            <div style={{ padding:'18px 24px', overflowY:'auto', flex:1, display:'flex', flexDirection:'column', gap:14 }}>
+              {editError && <div style={{ padding:'10px 14px', background:'#FEF2F2', border:'1px solid #FEE2E2', borderRadius:9, fontSize:13, color:'#DC2626' }}>{editError}</div>}
+              <div><label style={LS}>Exam Name *</label><input value={editForm.name} onChange={e => setEditForm(f=>({...f,name:e.target.value}))} style={IS}/></div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                <div><label style={LS}>Exam Type</label><select value={editForm.exam_type} onChange={e => setEditForm(f=>({...f,exam_type:e.target.value}))} style={IS}>{EXAM_TYPES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
+                <div><label style={LS}>Exam Date *</label><input type="date" value={editForm.exam_date} onChange={e => setEditForm(f=>({...f,exam_date:e.target.value}))} style={IS}/></div>
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                <div><label style={LS}>Start Time</label><input type="time" value={editForm.start_time} onChange={e => setEditForm(f=>({...f,start_time:e.target.value}))} style={IS}/></div>
+                <div><label style={LS}>Duration (min)</label><input type="number" value={editForm.duration_minutes} onChange={e => setEditForm(f=>({...f,duration_minutes:e.target.value}))} style={IS}/></div>
+              </div>
+              {editGroup.length === 1 && (
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                  <div><label style={LS}>Total Marks</label><input type="number" value={editForm.total_marks} onChange={e => setEditForm(f=>({...f,total_marks:e.target.value}))} style={IS}/></div>
+                  <div><label style={LS}>Pass Marks</label><input type="number" value={editForm.passing_marks} onChange={e => setEditForm(f=>({...f,passing_marks:e.target.value}))} style={IS}/></div>
+                </div>
+              )}
+              {editGroup.length > 1 && <p style={{ fontSize:12, color:'#94A3B8', margin:0 }}>ℹ️ To edit marks per subject, delete this exam and recreate it.</p>}
+            </div>
+            <div style={{ padding:'14px 24px', borderTop:'1px solid #F1F5F9', display:'flex', gap:10, flexShrink:0 }}>
+              <button onClick={() => setEditGroup(null)} style={{ flex:1, padding:11, borderRadius:10, border:'1px solid #E2E8F0', background:'white', fontSize:13, fontWeight:600, color:'#475569', cursor:'pointer' }}>Cancel</button>
+              <button onClick={handleEdit} disabled={editSaving} style={{ flex:1, padding:11, borderRadius:10, border:'none', background:editSaving?'#93C5FD':'linear-gradient(135deg,#1E3A8A,#3B82F6)', color:'white', fontSize:13, fontWeight:700, cursor:editSaving?'not-allowed':'pointer' }}>{editSaving?'Saving...':'Save Changes'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete Confirmation ── */}
+      {deleteGroup && (
+        <div style={{ position:'fixed', inset:0, zIndex:50, display:'flex', alignItems:'center', justifyContent:'center', padding:16, background:'rgba(15,23,42,0.55)', backdropFilter:'blur(4px)' }}>
+          <div style={{ width:'100%', maxWidth:400, background:'white', borderRadius:18, boxShadow:'0 24px 64px rgba(0,0,0,0.2)', padding:'28px 28px 24px', display:'flex', flexDirection:'column', gap:16 }}>
+            <div style={{ width:52, height:52, borderRadius:'50%', background:'#FEF2F2', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24 }}>🗑️</div>
+            <div>
+              <h3 style={{ fontSize:16, fontWeight:800, color:'#0F172A', margin:'0 0 6px' }}>Delete Exam?</h3>
+              <p style={{ fontSize:13, color:'#64748B', margin:0 }}><strong>{deleteGroup[0].name}</strong> ({deleteGroup.length} subject{deleteGroup.length>1?'s':''}) will be permanently deleted. This cannot be undone.</p>
+            </div>
+            <div style={{ display:'flex', gap:10 }}>
+              <button onClick={() => setDeleteGroup(null)} style={{ flex:1, padding:11, borderRadius:10, border:'1px solid #E2E8F0', background:'white', fontSize:13, fontWeight:600, color:'#475569', cursor:'pointer' }}>Cancel</button>
+              <button onClick={handleDelete} disabled={deleting} style={{ flex:1, padding:11, borderRadius:10, border:'none', background:deleting?'#FCA5A5':'#DC2626', color:'white', fontSize:13, fontWeight:700, cursor:deleting?'not-allowed':'pointer' }}>{deleting?'Deleting...':'Yes, Delete'}</button>
             </div>
           </div>
         </div>
