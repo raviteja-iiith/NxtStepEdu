@@ -37,9 +37,16 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Wrap getUser in try/catch: token refresh can throw "fetch failed" when
+  // the refresh token is expired or Supabase is temporarily unreachable.
+  let user = null;
+  try {
+    const { data } = await supabase.auth.getUser();
+    user = data.user;
+  } catch {
+    // Silently treat as unauthenticated — the user will be redirected to /login
+    // if they try to access a protected route.
+  }
 
   const pathname = request.nextUrl.pathname;
 
