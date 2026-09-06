@@ -43,7 +43,6 @@ export default function MarksPage() {
     const userId = (await supabase.auth.getUser()).data.user?.id;
     if (!userId) { setLoading(false); return; }
 
-    // Source 1: explicit section assignments (teacher_id → section_id + subject_id)
     const { data: assignments } = await supabase
       .from('teacher_section_assignments')
       .select('subject_id, section_id')
@@ -52,15 +51,12 @@ export default function MarksPage() {
     const assignedSubjectIds = [...new Set((assignments || []).map((a: any) => a.subject_id).filter(Boolean))] as string[];
     const assignedSectionIds = [...new Set((assignments || []).map((a: any) => a.section_id).filter(Boolean))] as string[];
 
-    // Source 2: subjects where this teacher is directly set as the subject teacher
-    // (covers teachers assigned before the section-assignments fix, or subjects with null class_id)
     const { data: ownedSubjects } = await supabase
       .from('subjects')
       .select('id')
       .eq('teacher_id', userId);
     const ownedSubjectIds = (ownedSubjects || []).map((s: any) => s.id as string);
 
-    // Merge both sources
     const allSubjectIds = [...new Set([...assignedSubjectIds, ...ownedSubjectIds])];
 
     if (allSubjectIds.length > 0) {
@@ -69,14 +65,10 @@ export default function MarksPage() {
         .in('subject_id', allSubjectIds)
         .order('exam_date', { ascending: false });
 
-      // Show exam if:
-      // - exam has no section restriction (class-wide exam), OR
-      // - exam's section is one the teacher is assigned to, OR
-      // - teacher is the direct subject teacher (ownedSubjectIds covers this)
       const filtered = (data || []).filter((e: any) => {
-        if (!e.section_id) return true; // class-wide exam — always show
-        if (assignedSectionIds.includes(e.section_id)) return true; // teacher is in that section
-        if (ownedSubjectIds.includes(e.subject_id)) return true; // teacher owns the subject
+        if (!e.section_id) return true;
+        if (assignedSectionIds.includes(e.section_id)) return true;
+        if (ownedSubjectIds.includes(e.subject_id)) return true;
         return false;
       });
 
@@ -171,41 +163,46 @@ export default function MarksPage() {
   const passThresh = exam ? (exam.passing_marks || exam.total_marks * 0.35) : 0;
   const passCount = exam ? students.filter(s => { const m = marks[s.id]; return m && !m.absent && m.marks && parseFloat(m.marks) >= passThresh; }).length : 0;
   const failCount = exam ? students.filter(s => { const m = marks[s.id]; return m && !m.absent && m.marks && parseFloat(m.marks) < passThresh; }).length : 0;
-  const IS: React.CSSProperties = { width:'100%', padding:'7px 10px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:13, outline:'none', boxSizing:'border-box' };
 
   return (
     <div className="dashboard-container">
+      {/* Page Header */}
       <div>
-        <h2 style={{ fontSize:22, fontWeight:800, color:'#0F172A', letterSpacing:'-0.02em', margin:0 }}>Marks Entry</h2>
-        <p style={{ fontSize:13, color:'#94A3B8', marginTop:4 }}>Enter marks for any exam across your assigned subjects</p>
+        <h2 style={{ fontSize: 22, fontWeight: 800, color: '#0F172A', letterSpacing: '-0.02em', margin: 0 }}>Marks Entry</h2>
+        <p style={{ fontSize: 13, color: '#94A3B8', marginTop: 4 }}>Enter marks for any exam across your assigned subjects</p>
       </div>
 
       {/* Exam Selector */}
-      {loading ? <div style={{ height:48, background:'#F1F5F9', borderRadius:12 }} /> : (
-        <select value={selectedExam} onChange={e => selectExam(e.target.value)}
-          style={{ ...IS, fontSize:14, fontWeight:500, cursor:'pointer', padding:'11px 14px' }}>
+      {loading ? (
+        <div style={{ height: 48, background: '#F1F5F9', borderRadius: 12 }} />
+      ) : (
+        <select
+          value={selectedExam}
+          onChange={e => selectExam(e.target.value)}
+          style={{ width: '100%', padding: '11px 14px', border: '1px solid #E2E8F0', borderRadius: 12, fontSize: 14, fontWeight: 500, cursor: 'pointer', outline: 'none', boxSizing: 'border-box', background: 'white', color: '#0F172A' }}
+        >
           <option value="">— Select an Exam —</option>
           {exams.map(e => (
             <option key={e.id} value={e.id}>
-              {e.name} · {e.subject_name} · {e.class_name} · {new Date(e.exam_date).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}
+              {e.name} · {e.subject_name} · {e.class_name} · {new Date(e.exam_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
               {!e.is_published ? ' [DRAFT]' : ''}
             </option>
           ))}
         </select>
       )}
 
-      {/* Exam Info */}
+      {/* Exam Info Cards */}
       {exam && (
-        <div className="stat-cards-container">
+        <div className="marks-info-grid">
           {[
-            { label:'Subject', value:exam.subject_name||'—', icon:'📚' },
-            { label:'Class', value:exam.class_name||'—', icon:'🏫' },
-            { label:'Total Marks', value:exam.total_marks, icon:'📊' },
-            { label:'Pass Marks', value:exam.passing_marks||`${Math.round(exam.total_marks*0.35)} (35%)`, icon:'✅' },
-          ].map((item,i) => (
-            <div key={i} style={{ background:'white', border:'1px solid #E8ECF0', borderRadius:12, padding:'14px 18px', boxShadow:'0 1px 3px rgba(0,0,0,0.04)' }}>
-              <p style={{ fontSize:11, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', letterSpacing:'0.06em', margin:0 }}>{item.icon} {item.label}</p>
-              <p style={{ fontSize:17, fontWeight:700, color:'#0F172A', margin:'6px 0 0' }}>{item.value}</p>
+            { label: 'Subject', value: exam.subject_name || '—', icon: '📚' },
+            { label: 'Class', value: exam.class_name || '—', icon: '🏫' },
+            { label: 'Total Marks', value: exam.total_marks, icon: '📊' },
+            { label: 'Pass Marks', value: exam.passing_marks || `${Math.round(exam.total_marks * 0.35)} (35%)`, icon: '✅' },
+          ].map((item, i) => (
+            <div key={i} style={{ background: 'white', border: '1px solid #E8ECF0', borderRadius: 12, padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>{item.icon} {item.label}</p>
+              <p style={{ fontSize: 16, fontWeight: 700, color: '#0F172A', margin: '4px 0 0' }}>{item.value}</p>
             </div>
           ))}
         </div>
@@ -213,42 +210,49 @@ export default function MarksPage() {
 
       {/* Main Content */}
       {!selectedExam ? (
-        <div style={{ background:'white', borderRadius:16, border:'1px solid #E8ECF0', padding:'64px 24px', textAlign:'center' }}>
-          <div style={{ width:64, height:64, borderRadius:18, background:'linear-gradient(135deg,#EFF6FF,#DBEAFE)', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px', fontSize:28 }}>📊</div>
-          <p style={{ fontWeight:700, color:'#1E293B', fontSize:16, margin:0 }}>Select an Exam to Begin</p>
-          <p style={{ fontSize:13, color:'#94A3B8', marginTop:6 }}>Choose an exam from the dropdown above to start entering marks</p>
+        <div style={{ background: 'white', borderRadius: 16, border: '1px solid #E8ECF0', padding: '64px 24px', textAlign: 'center' }}>
+          <div style={{ width: 64, height: 64, borderRadius: 18, background: 'linear-gradient(135deg,#EFF6FF,#DBEAFE)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 28 }}>📊</div>
+          <p style={{ fontWeight: 700, color: '#1E293B', fontSize: 16, margin: 0 }}>Select an Exam to Begin</p>
+          <p style={{ fontSize: 13, color: '#94A3B8', marginTop: 6 }}>Choose an exam from the dropdown above to start entering marks</p>
         </div>
       ) : loadingStudents ? (
-        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-          {[1,2,3,4].map(i => <div key={i} style={{ height:52, background:'#F8FAFC', borderRadius:10 }} />)}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {[1, 2, 3, 4].map(i => <div key={i} style={{ height: 52, background: '#F8FAFC', borderRadius: 10 }} />)}
         </div>
       ) : students.length === 0 ? (
-        <div style={{ background:'white', borderRadius:16, border:'1px solid #E8ECF0', padding:'48px 24px', textAlign:'center' }}>
-          <p style={{ fontSize:28 }}>😕</p>
-          <p style={{ fontWeight:600, color:'#475569' }}>No students found for this exam&apos;s class/section.</p>
+        <div style={{ background: 'white', borderRadius: 16, border: '1px solid #E8ECF0', padding: '48px 24px', textAlign: 'center' }}>
+          <p style={{ fontSize: 28 }}>😕</p>
+          <p style={{ fontWeight: 600, color: '#475569' }}>No students found for this exam&apos;s class/section.</p>
         </div>
       ) : (
         <>
           {/* Progress + Actions */}
-          <div className="page-header-row">
-            <div style={{ display:'flex', alignItems:'center', gap:16 }}>
-              <div>
-                <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
-                  <span style={{ fontSize:13, fontWeight:600, color:'#475569' }}>Progress:</span>
-                  <span style={{ fontSize:13, fontWeight:800, color:'#0F172A' }}>{filledCount}/{students.length}</span>
-                  {filledCount === students.length && <span style={{ fontSize:12, fontWeight:600, color:'#059669', background:'#ECFDF5', padding:'2px 9px', borderRadius:99 }}>✓ All filled</span>}
-                </div>
-                <div style={{ width:220, height:6, background:'#E2E8F0', borderRadius:99, overflow:'hidden' }}>
-                  <div style={{ height:'100%', borderRadius:99, width:`${(filledCount/students.length)*100}%`, background:'linear-gradient(90deg,#0F766E,#10B981)', transition:'width 0.3s ease' }} />
-                </div>
+          <div className="marks-progress-row">
+            {/* Progress */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#475569' }}>Progress:</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: '#0F172A' }}>{filledCount}/{students.length}</span>
+                {filledCount === students.length && (
+                  <span style={{ fontSize: 12, fontWeight: 600, color: '#059669', background: '#ECFDF5', padding: '2px 9px', borderRadius: 99 }}>✓ All filled</span>
+                )}
+              </div>
+              <div style={{ width: '100%', maxWidth: 220, height: 6, background: '#E2E8F0', borderRadius: 99, overflow: 'hidden' }}>
+                <div style={{ height: '100%', borderRadius: 99, width: `${(filledCount / students.length) * 100}%`, background: 'linear-gradient(90deg,#0F766E,#10B981)', transition: 'width 0.3s ease' }} />
               </div>
             </div>
-            <div style={{ display:'flex', gap:10 }}>
-              <button onClick={() => setMarks(m => { const u={...m}; students.forEach(s => { u[s.id]={...u[s.id], absent:false}; }); return u; })}
-                style={{ padding:'8px 14px', border:'1px solid #E2E8F0', borderRadius:9, background:'white', fontSize:12, fontWeight:600, color:'#475569', cursor:'pointer' }}>
+
+            {/* Action Buttons */}
+            <div className="marks-action-buttons">
+              <button
+                onClick={() => setMarks(m => { const u = { ...m }; students.forEach(s => { u[s.id] = { ...u[s.id], absent: false }; }); return u; })}
+                style={{ flex: 1, padding: '9px 14px', border: '1px solid #E2E8F0', borderRadius: 9, background: 'white', fontSize: 12, fontWeight: 600, color: '#475569', cursor: 'pointer', whiteSpace: 'nowrap' }}
+              >
                 ✅ Mark All Present
               </button>
-              {exam && !exam.is_published && <span style={{ fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:99, background:'#FFFBEB', color:'#D97706', border:'1px solid #FDE68A', display:'flex', alignItems:'center' }}>DRAFT</span>}
+              {exam && !exam.is_published && (
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 99, background: '#FFFBEB', color: '#D97706', border: '1px solid #FDE68A', display: 'flex', alignItems: 'center' }}>DRAFT</span>
+              )}
               <button
                 onClick={() => {
                   if (!exam || students.length === 0) return;
@@ -274,72 +278,153 @@ export default function MarksPage() {
                   const wb = XLSX.utils.book_new();
                   XLSX.utils.book_append_sheet(wb, ws, 'Marks');
                   const safeName = (exam.name || 'Exam').replace(/[^a-z0-9]/gi, '_');
-                  XLSX.writeFile(wb, `Marks_${safeName}_${new Date().toISOString().slice(0,10)}.xlsx`);
+                  XLSX.writeFile(wb, `Marks_${safeName}_${new Date().toISOString().slice(0, 10)}.xlsx`);
                 }}
-                style={{ padding:'8px 14px', border:'none', borderRadius:9, background:'linear-gradient(135deg,#065F46,#059669)', color:'white', fontSize:12, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}
+                style={{ flex: 1, padding: '9px 14px', border: 'none', borderRadius: 9, background: 'linear-gradient(135deg,#065F46,#059669)', color: 'white', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, whiteSpace: 'nowrap' }}
               >
                 📥 Export Excel
               </button>
             </div>
           </div>
 
-          {saveError && <div style={{ padding:'12px 16px', background:'#FEF2F2', border:'1px solid #FEE2E2', borderRadius:10, fontSize:13, color:'#DC2626', fontWeight:600 }}>⚠️ {saveError}</div>}
+          {saveError && (
+            <div style={{ padding: '12px 16px', background: '#FEF2F2', border: '1px solid #FEE2E2', borderRadius: 10, fontSize: 13, color: '#DC2626', fontWeight: 600 }}>⚠️ {saveError}</div>
+          )}
 
-          {/* Table */}
-          <div style={{ background:'white', borderRadius:14, border:'1px solid #E8ECF0', overflow:'hidden', boxShadow:'0 1px 3px rgba(0,0,0,0.04)' }}>
-            <div style={{ display:'grid', gridTemplateColumns:'48px 2fr 90px 110px 1fr 68px 90px', padding:'10px 20px', background:'#F8FAFC', borderBottom:'1px solid #F1F5F9', gap:12 }}>
-              {['#','Student','Marks','% / Grade','Remarks','Absent','Analysis'].map((h,i) => (
-                <p key={h} style={{ fontSize:11, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', letterSpacing:'0.06em', margin:0, textAlign:i>=5?'center':'left' }}>{h}</p>
+          {/* Desktop Table Header — hidden on mobile via CSS */}
+          <div className="marks-table-container">
+            <div className="marks-table-header">
+              {['#', 'Student', 'Marks', '% / Grade', 'Absent', 'Analysis'].map((h, i) => (
+                <p key={h} style={{ fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0, textAlign: i >= 4 ? 'center' : 'left' }}>{h}</p>
               ))}
             </div>
+
+            {/* Student Rows */}
             {students.map((s, idx) => {
-              const entry = marks[s.id] || { marks:'', absent:false, remarks:'' };
+              const entry = marks[s.id] || { marks: '', absent: false, remarks: '' };
               const marksNum = entry.marks ? parseFloat(entry.marks) : null;
               const grade = marksNum != null && exam ? getGrade(marksNum, exam.total_marks) : null;
-              const pct = marksNum != null && exam ? Math.round((marksNum/exam.total_marks)*100) : null;
+              const pct = marksNum != null && exam ? Math.round((marksNum / exam.total_marks) * 100) : null;
               const isPassing = marksNum != null && exam && marksNum >= passThresh;
               const rowBg = entry.absent ? '#F8FAFC' : pct !== null ? (isPassing ? '#F0FDF4' : '#FFF5F5') : 'white';
+
               return (
-                <div key={s.id} style={{ display:'grid', gridTemplateColumns:'48px 2fr 90px 110px 1fr 68px 90px', padding:'10px 20px', borderBottom:idx<students.length-1?'1px solid #F1F5F9':'none', alignItems:'center', gap:12, background:rowBg, transition:'background 0.2s' }}>
-                  <span style={{ fontSize:13, fontWeight:700, color:'#94A3B8' }}>{s.roll_number||idx+1}</span>
-                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                    <div style={{ width:30, height:30, borderRadius:'50%', background:'linear-gradient(135deg,#6366F1,#8B5CF6)', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:700, flexShrink:0 }}>
-                      {s.full_name.charAt(0)}
+                <div key={s.id} style={{ borderBottom: idx < students.length - 1 ? '1px solid #F1F5F9' : 'none', background: rowBg }}>
+                  {/* Desktop row */}
+                  <div className="marks-desktop-row" style={{ padding: '10px 20px', alignItems: 'center', gap: 12 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#94A3B8' }}>{s.roll_number || idx + 1}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg,#6366F1,#8B5CF6)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                        {s.full_name.charAt(0)}
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#0F172A' }}>{s.full_name}</span>
                     </div>
-                    <span style={{ fontSize:13, fontWeight:600, color:'#0F172A' }}>{s.full_name}</span>
+                    <input
+                      ref={el => { inputRefs.current[s.id] = el; }}
+                      type="number" placeholder="—" disabled={entry.absent}
+                      value={entry.marks}
+                      onChange={e => updateMark(s.id, 'marks', e.target.value)}
+                      onKeyDown={e => handleKeyDown(e, idx)}
+                      min={0} max={exam?.total_marks}
+                      style={{ width: '100%', padding: '7px 10px', border: `1.5px solid ${entry.absent ? '#E2E8F0' : pct !== null ? (isPassing ? '#86EFAC' : '#FCA5A5') : '#E2E8F0'}`, borderRadius: 8, fontSize: 14, fontWeight: 700, textAlign: 'center', outline: 'none', background: entry.absent ? '#F8FAFC' : 'white', color: '#0F172A', cursor: entry.absent ? 'not-allowed' : 'text', opacity: entry.absent ? 0.4 : 1, boxSizing: 'border-box' }}
+                    />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {entry.absent
+                        ? <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 9px', borderRadius: 99, background: '#F1F5F9', color: '#94A3B8' }}>Absent</span>
+                        : pct !== null && grade
+                          ? <>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: grade.color }}>{pct}%</span>
+                              <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 7px', borderRadius: 6, background: grade.bg, color: grade.color }}>{grade.letter}</span>
+                            </>
+                          : <span style={{ fontSize: 12, color: '#CBD5E1' }}>—</span>
+                      }
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                      <input type="checkbox" checked={entry.absent} onChange={e => updateMark(s.id, 'absent', e.target.checked)}
+                        style={{ width: 18, height: 18, cursor: 'pointer', accentColor: '#DC2626' }} />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                      <button
+                        onClick={() => router.push(`/teacher/students/${s.id}/analysis`)}
+                        title="View full analysis"
+                        style={{ padding: '5px 10px', borderRadius: 7, border: '1px solid #DDD6FE', background: 'linear-gradient(135deg,#F5F3FF,#EDE9FE)', color: '#7C3AED', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                      >
+                        📊 Chart
+                      </button>
+                    </div>
                   </div>
-                  <input
-                    ref={el => { inputRefs.current[s.id] = el; }}
-                    type="number" placeholder="—" disabled={entry.absent}
-                    value={entry.marks}
-                    onChange={e => updateMark(s.id,'marks',e.target.value)}
-                    onKeyDown={e => handleKeyDown(e,idx)}
-                    min={0} max={exam?.total_marks}
-                    style={{ width:'100%', padding:'7px 10px', border:`1.5px solid ${entry.absent?'#E2E8F0':pct!==null?(isPassing?'#86EFAC':'#FCA5A5'):'#E2E8F0'}`, borderRadius:8, fontSize:14, fontWeight:700, textAlign:'center', outline:'none', background:entry.absent?'#F8FAFC':'white', color:'#0F172A', cursor:entry.absent?'not-allowed':'text', opacity:entry.absent?0.4:1, boxSizing:'border-box' }}
-                  />
-                  <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                    {entry.absent ? <span style={{ fontSize:12, fontWeight:600, padding:'3px 9px', borderRadius:99, background:'#F1F5F9', color:'#94A3B8' }}>Absent</span>
-                    : pct!==null&&grade ? <>
-                      <span style={{ fontSize:13, fontWeight:700, color:grade.color }}>{pct}%</span>
-                      <span style={{ fontSize:11, fontWeight:800, padding:'2px 7px', borderRadius:6, background:grade.bg, color:grade.color }}>{grade.letter}</span>
-                    </> : <span style={{ fontSize:12, color:'#CBD5E1' }}>—</span>}
-                  </div>
-                  <input type="text" placeholder="Remarks..." value={entry.remarks}
-                    onChange={e => updateMark(s.id,'remarks',e.target.value)}
-                    style={{ width:'100%', padding:'7px 10px', border:'1px solid #E2E8F0', borderRadius:8, fontSize:12, outline:'none', boxSizing:'border-box', color:'#475569' }}
-                  />
-                  <div style={{ display:'flex', justifyContent:'center' }}>
-                    <input type="checkbox" checked={entry.absent} onChange={e => updateMark(s.id,'absent',e.target.checked)}
-                      style={{ width:18, height:18, cursor:'pointer', accentColor:'#DC2626' }} />
-                  </div>
-                  <div style={{ display:'flex', justifyContent:'center' }}>
-                    <button
-                      onClick={() => router.push(`/teacher/students/${s.id}/analysis`)}
-                      title="View full analysis"
-                      style={{ padding:'5px 10px', borderRadius:7, border:'1px solid #DDD6FE', background:'linear-gradient(135deg,#F5F3FF,#EDE9FE)', color:'#7C3AED', fontSize:11, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap' }}
-                    >
-                      📊 Chart
-                    </button>
+
+                  {/* Mobile card row */}
+                  <div className="marks-mobile-row" style={{ padding: '12px 14px' }}>
+                    {/* Student info row */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                      <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg,#6366F1,#8B5CF6)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
+                        {s.full_name.charAt(0)}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 14, fontWeight: 700, color: '#0F172A', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.full_name}</p>
+                        <p style={{ fontSize: 12, color: '#94A3B8', margin: 0 }}>Roll #{s.roll_number || idx + 1}</p>
+                      </div>
+                      {/* Grade badge top-right */}
+                      {!entry.absent && pct !== null && grade && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: grade.color }}>{pct}%</span>
+                          <span style={{ fontSize: 12, fontWeight: 800, padding: '3px 8px', borderRadius: 6, background: grade.bg, color: grade.color }}>{grade.letter}</span>
+                        </div>
+                      )}
+                      {entry.absent && (
+                        <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 9px', borderRadius: 99, background: '#FEF2F2', color: '#DC2626', border: '1px solid #FEE2E2', flexShrink: 0 }}>Absent</span>
+                      )}
+                    </div>
+
+                    {/* Marks input + Absent checkbox */}
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 4 }}>Marks</label>
+                        <input
+                          ref={el => { inputRefs.current[s.id] = el; }}
+                          type="number" placeholder="Enter marks" disabled={entry.absent}
+                          value={entry.marks}
+                          onChange={e => updateMark(s.id, 'marks', e.target.value)}
+                          onKeyDown={e => handleKeyDown(e, idx)}
+                          min={0} max={exam?.total_marks}
+                          style={{ width: '100%', padding: '10px 14px', border: `1.5px solid ${entry.absent ? '#E2E8F0' : pct !== null ? (isPassing ? '#86EFAC' : '#FCA5A5') : '#E2E8F0'}`, borderRadius: 10, fontSize: 16, fontWeight: 700, textAlign: 'center', outline: 'none', background: entry.absent ? '#F8FAFC' : 'white', color: '#0F172A', cursor: entry.absent ? 'not-allowed' : 'text', opacity: entry.absent ? 0.5 : 1, boxSizing: 'border-box' }}
+                        />
+                      </div>
+
+                      {/* Absent toggle */}
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Absent</label>
+                        <label style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={entry.absent}
+                            onChange={e => updateMark(s.id, 'absent', e.target.checked)}
+                            style={{ width: 22, height: 22, cursor: 'pointer', accentColor: '#DC2626', borderRadius: 4 }}
+                          />
+                        </label>
+                      </div>
+
+                      {/* Chart button */}
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Chart</label>
+                        <button
+                          onClick={() => router.push(`/teacher/students/${s.id}/analysis`)}
+                          style={{ padding: '6px 10px', borderRadius: 7, border: '1px solid #DDD6FE', background: 'linear-gradient(135deg,#F5F3FF,#EDE9FE)', color: '#7C3AED', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                        >
+                          📊
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Remarks */}
+                    <div style={{ marginTop: 8 }}>
+                      <input
+                        type="text" placeholder="Remarks (optional)…" value={entry.remarks}
+                        onChange={e => updateMark(s.id, 'remarks', e.target.value)}
+                        style={{ width: '100%', padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box', color: '#475569', background: 'white' }}
+                      />
+                    </div>
                   </div>
                 </div>
               );
@@ -349,25 +434,29 @@ export default function MarksPage() {
           {/* Stats */}
           {filledCount > 0 && (
             <div className="stat-cards-container">
-              {[{ label:'Total', value:students.length, color:'#1D4ED8', bg:'#EFF6FF', border:'#DBEAFE' },
-                { label:'Filled', value:filledCount, color:'#0F766E', bg:'#F0FDF4', border:'#CCFBF1' },
-                { label:'Passing', value:passCount, color:'#16A34A', bg:'#DCFCE7', border:'#BBF7D0' },
-                { label:'Failing', value:failCount, color:'#DC2626', bg:'#FEF2F2', border:'#FEE2E2' },
-              ].map((stat,i) => (
-                <div key={i} style={{ background:stat.bg, border:`1px solid ${stat.border}`, borderRadius:10, padding:'12px 16px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                  <span style={{ fontSize:12, fontWeight:600, color:stat.color }}>{stat.label}</span>
-                  <span style={{ fontSize:20, fontWeight:800, color:'#0F172A' }}>{stat.value}</span>
+              {[
+                { label: 'Total', value: students.length, color: '#1D4ED8', bg: '#EFF6FF', border: '#DBEAFE' },
+                { label: 'Filled', value: filledCount, color: '#0F766E', bg: '#F0FDF4', border: '#CCFBF1' },
+                { label: 'Passing', value: passCount, color: '#16A34A', bg: '#DCFCE7', border: '#BBF7D0' },
+                { label: 'Failing', value: failCount, color: '#DC2626', bg: '#FEF2F2', border: '#FEE2E2' },
+              ].map((stat, i) => (
+                <div key={i} style={{ background: stat.bg, border: `1px solid ${stat.border}`, borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: stat.color }}>{stat.label}</span>
+                  <span style={{ fontSize: 20, fontWeight: 800, color: '#0F172A' }}>{stat.value}</span>
                 </div>
               ))}
             </div>
           )}
 
           {/* Save */}
-          <div style={{ display:'flex', justifyContent:'flex-end', alignItems:'center', gap:16 }}>
-            {saveStatus==='success' && <span style={{ fontSize:13, fontWeight:600, color:'#16A34A' }}>✅ Marks saved successfully!</span>}
-            {saveStatus==='error' && !saveError && <span style={{ fontSize:13, fontWeight:600, color:'#DC2626' }}>❌ Failed to save.</span>}
-            <button onClick={handleSave} disabled={saving||students.length===0}
-              style={{ padding:'11px 32px', borderRadius:11, border:'none', fontSize:14, fontWeight:700, color:'white', cursor:saving?'not-allowed':'pointer', background:saving?'#6B7280':'linear-gradient(135deg,#0F766E,#059669)', boxShadow:saving?'none':'0 4px 14px rgba(15,118,110,0.3)', opacity:saving?0.8:1 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+            {saveStatus === 'success' && <span style={{ fontSize: 13, fontWeight: 600, color: '#16A34A' }}>✅ Marks saved successfully!</span>}
+            {saveStatus === 'error' && !saveError && <span style={{ fontSize: 13, fontWeight: 600, color: '#DC2626' }}>❌ Failed to save.</span>}
+            <button
+              onClick={handleSave}
+              disabled={saving || students.length === 0}
+              style={{ flex: 1, maxWidth: 240, padding: '13px 32px', borderRadius: 11, border: 'none', fontSize: 15, fontWeight: 700, color: 'white', cursor: saving ? 'not-allowed' : 'pointer', background: saving ? '#6B7280' : 'linear-gradient(135deg,#0F766E,#059669)', boxShadow: saving ? 'none' : '0 4px 14px rgba(15,118,110,0.3)', opacity: saving ? 0.8 : 1 }}
+            >
               {saving ? 'Saving...' : '💾 Save Marks'}
             </button>
           </div>

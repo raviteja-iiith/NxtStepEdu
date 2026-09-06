@@ -24,13 +24,15 @@ export default function AcademicsPage() {
   const supabase = createClient();
   const router = useRouter();
   const { children, selectedChild: contextChild, setSelectedChild: setContextChild, loading: childLoading } = useParent();
-  const [tab, setTab] = useState<'exams'|'marks'|'assignments'>('marks');
+  const [tab, setTab] = useState<'exams'|'marks'|'assignments'|'this_week'>('marks');
   // Local override: allow in-page switching while keeping context in sync
   const [localSelected, setLocalSelected] = useState<ChildInfo | null>(null);
   const selectedChild = localSelected ?? contextChild;
   const [exams, setExams] = useState<Exam[]>([]);
   const [marks, setMarks] = useState<Mark[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [weekPlans, setWeekPlans] = useState<any[]>([]);
+  const [weekResources, setWeekResources] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Sync local selection when context changes (e.g., sidebar switcher)
@@ -81,6 +83,31 @@ export default function AcademicsPage() {
     if (examRes.data) setExams(examRes.data.map((e: any) => ({ ...e, subject_name: e.subjects?.name })));
     if (markRes.data) setMarks(markRes.data.map((m: any) => ({ ...m, exam: m.exams ? { ...m.exams, subject_name: m.exams.subjects?.name } : null })));
     if (asgRes.data) setAssignments(asgRes.data.map((a: any) => ({ ...a, subject_name: a.subjects?.name })));
+
+    // This week's lesson plan (Monday of current week)
+    const today2 = new Date();
+    const day = today2.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    today2.setDate(today2.getDate() + diff);
+    const mondayStr = today2.toISOString().split('T')[0];
+
+    const [planRes, resRes] = await Promise.all([
+      section_id ? supabase.from('lesson_plans')
+        .select('*, subjects(name)')
+        .eq('section_id', section_id)
+        .eq('week_start_date', mondayStr)
+        .order('created_at', { ascending: false }) : Promise.resolve({ data: [] }),
+      section_id ? supabase.from('resources')
+        .select('*, subjects(name)')
+        .eq('section_id', section_id)
+        .eq('is_published', true)
+        .order('created_at', { ascending: false })
+        .limit(10) : Promise.resolve({ data: [] }),
+    ]);
+
+    if (planRes.data) setWeekPlans(planRes.data);
+    if (resRes.data) setWeekResources(resRes.data as any[]);
+
     setLoading(false);
   }, [supabase, selectedChild]);
 
@@ -94,6 +121,7 @@ export default function AcademicsPage() {
     { key: 'marks' as const, label: '📊 Results' },
     { key: 'exams' as const, label: '📝 Upcoming Exams' },
     { key: 'assignments' as const, label: '📚 Assignments' },
+    { key: 'this_week' as const, label: '📖 This Week' },
   ];
 
   // Not linked state
@@ -268,7 +296,7 @@ export default function AcademicsPage() {
             })}
           </div>
         )
-      ) : (
+      ) : tab === 'assignments' ? (
         assignments.length === 0 ? (
           <div style={{ background:'white', borderRadius:16, border:'1px solid #E8ECF0', padding:'48px 24px', textAlign:'center' }}>
             <p style={{ fontSize:28 }}>📚</p>
@@ -297,7 +325,71 @@ export default function AcademicsPage() {
             })}
           </div>
         )
-      )}
+      ) : tab === 'this_week' ? (
+        <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+          {/* This Week's Lesson Plans */}
+          <div>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
+              <span style={{ fontSize:16 }}>📖</span>
+              <h3 style={{ fontSize:15, fontWeight:800, color:'#0F172A', margin:0 }}>What's Being Taught This Week</h3>
+            </div>
+            {weekPlans.length === 0 ? (
+              <div style={{ background:'#F8FAFC', borderRadius:12, padding:'24px 20px', textAlign:'center' }}>
+                <p style={{ fontSize:13, color:'#94A3B8', margin:0 }}>No lesson plan filed for this week yet</p>
+              </div>
+            ) : weekPlans.map((p: any) => (
+              <div key={p.id} style={{ background:'white', border:'1px solid #E8ECF0', borderRadius:14, padding:'16px 20px', marginBottom:10, boxShadow:'0 1px 3px rgba(0,0,0,0.04)' }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+                  <p style={{ fontWeight:700, color:'#0F172A', margin:0, fontSize:14 }}>{p.subjects?.name}</p>
+                  <span style={{ fontSize:11, fontWeight:700, padding:'3px 10px', borderRadius:99, background: p.status==='completed'?'#DCFCE7':p.status==='in_progress'?'#FFFBEB':'#EFF6FF', color: p.status==='completed'?'#16A34A':p.status==='in_progress'?'#D97706':'#1D4ED8' }}>{p.status?.replace('_',' ')}</span>
+                </div>
+                {p.topics && <p style={{ fontSize:13, color:'#475569', margin:'0 0 6px' }}><strong>Topics:</strong> {p.topics}</p>}
+                {p.learning_objectives && <p style={{ fontSize:13, color:'#475569', margin:'0 0 6px' }}><strong>Objectives:</strong> {p.learning_objectives}</p>}
+                {p.homework_given && (
+                  <div style={{ background:'#FFF7ED', border:'1px solid #FED7AA', borderRadius:8, padding:'8px 12px', marginTop:8 }}>
+                    <p style={{ fontSize:12, fontWeight:700, color:'#EA580C', margin:'0 0 2px' }}>📝 Homework</p>
+                    <p style={{ fontSize:13, color:'#78350F', margin:0 }}>{p.homework_given}</p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Shared Resources */}
+          <div>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
+              <span style={{ fontSize:16 }}>📚</span>
+              <h3 style={{ fontSize:15, fontWeight:800, color:'#0F172A', margin:0 }}>Study Materials</h3>
+            </div>
+            {weekResources.length === 0 ? (
+              <div style={{ background:'#F8FAFC', borderRadius:12, padding:'24px 20px', textAlign:'center' }}>
+                <p style={{ fontSize:13, color:'#94A3B8', margin:0 }}>No study materials shared yet</p>
+              </div>
+            ) : weekResources.map((r: any) => {
+              const icons: Record<string,string> = { notes:'📝', worksheet:'📋', video:'🎬', presentation:'📊', other:'📁' };
+              return (
+                <div key={r.id} style={{ background:'white', border:'1px solid #E8ECF0', borderRadius:14, padding:'14px 18px', marginBottom:8, display:'flex', alignItems:'center', gap:14, boxShadow:'0 1px 3px rgba(0,0,0,0.04)' }}>
+                  <div style={{ width:40, height:40, borderRadius:10, background:'#F0FDF4', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, flexShrink:0 }}>{icons[r.resource_type]||'📁'}</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <p style={{ fontWeight:700, color:'#0F172A', margin:0, fontSize:14 }}>{r.title}</p>
+                    {r.description && <p style={{ fontSize:12, color:'#94A3B8', margin:'2px 0 0', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{r.description}</p>}
+                    <div style={{ display:'flex', gap:8, marginTop:4, flexWrap:'wrap' }}>
+                      <span style={{ fontSize:11, color:'#0F766E', fontWeight:600, textTransform:'capitalize' }}>{r.resource_type}</span>
+                      {r.subjects?.name && <span style={{ fontSize:11, color:'#64748B' }}>• {r.subjects.name}</span>}
+                    </div>
+                  </div>
+                  {r.file_url && (
+                    <a href={r.file_url} target="_blank" rel="noreferrer"
+                      style={{ padding:'7px 14px', borderRadius:8, background:'linear-gradient(135deg,#0F766E,#0D9488)', color:'white', fontSize:12, fontWeight:700, textDecoration:'none', flexShrink:0 }}>
+                      Open
+                    </a>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

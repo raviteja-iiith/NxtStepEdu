@@ -1572,3 +1572,99 @@ img {
 
 /* NOTE: body position:fixed was removed — it broke scrolling on mobile.
    Pull-to-refresh is already prevented by overscroll-behavior-y: contain above. */
+
+/* ============================================================
+   MARKS ENTRY PAGE — Mobile-first responsive layout
+   ============================================================ */
+
+/* Exam info: 4 cols on desktop, 2 cols on mobile */
+.marks-info-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+
+/* Progress row: horizontal on desktop */
+.marks-progress-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+/* Action buttons row */
+.marks-action-buttons {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Table container */
+.marks-table-container {
+  background: white;
+  border-radius: 14px;
+  border: 1px solid #E8ECF0;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
+/* Desktop table header row */
+.marks-table-header {
+  display: grid;
+  grid-template-columns: 44px 2fr 88px 110px 64px 88px;
+  padding: 10px 20px;
+  background: #F8FAFC;
+  border-bottom: 1px solid #F1F5F9;
+  gap: 12px;
+}
+
+/* Desktop row grid */
+.marks-desktop-row {
+  display: grid;
+  grid-template-columns: 44px 2fr 88px 110px 64px 88px;
+}
+
+/* Mobile card row — hidden on desktop */
+.marks-mobile-row {
+  display: none;
+}
+
+/* ── Mobile overrides ── */
+@media (max-width: 768px) {
+  .marks-info-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  .marks-progress-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .marks-action-buttons {
+    flex-direction: row;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .marks-action-buttons button {
+    flex: 1 1 auto;
+    min-width: 120px;
+  }
+
+  /* Hide desktop table header and row on mobile */
+  .marks-table-header {
+    display: none !important;
+  }
+
+  .marks-desktop-row {
+    display: none !important;
+  }
+
+  /* Show mobile card layout */
+  .marks-mobile-row {
+    display: block !important;
+  }
+}
