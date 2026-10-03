@@ -222,7 +222,7 @@ export default function LoginPage() {
               <h2 className="login-title">Select Your School</h2>
               <p className="login-desc">Choose your school to continue</p>
               <div className="search-box">
-                <svg className="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <svg className="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
                 <input id="school-search" type="text" placeholder="Search by name, code, or city..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="search-input" />
               </div>
               <div className="school-list">
@@ -236,7 +236,7 @@ export default function LoginPage() {
                         <p className="school-name">{school.name}</p>
                         <p className="school-meta">{[school.city, school.state].filter(Boolean).join(', ')} <span className="school-code">{school.code}</span></p>
                       </div>
-                      <svg className="school-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m9 18 6-6-6-6"/></svg>
+                      <svg className="school-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m9 18 6-6-6-6" /></svg>
                     </button>
                   ))
                 )}
@@ -259,7 +259,7 @@ export default function LoginPage() {
                   <button key={item.role} id={`role-${item.role}`} onClick={() => handleRoleSelect(item.role)} className="role-item" style={{ '--role-color': item.color } as React.CSSProperties}>
                     <div className="role-icon-wrap" style={{ background: `${item.color}15`, color: item.color }}><span className="role-emoji">{item.icon}</span></div>
                     <div className="role-info"><p className="role-label">{item.label}</p><p className="role-desc">{item.desc}</p></div>
-                    <svg className="school-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m9 18 6-6-6-6"/></svg>
+                    <svg className="school-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m9 18 6-6-6-6" /></svg>
                   </button>
                 ))}
               </div>
@@ -312,56 +312,56 @@ export default function LoginPage() {
                 <p className="login-forgot">
                   {selectedRole === 'principal'
                     ? 'Principal forgot password? Contact your system administrator to reset via Supabase dashboard.'
-                    : <button type="button" onClick={() => { setShowForgot(true); setForgotDone(false); }} style={{ background:'none', border:'none', color:'#60A5FA', cursor:'pointer', fontSize:13, textDecoration:'underline', padding:0 }}>Forgot {selectedRole === 'parent' ? 'PIN' : 'Password'}? Submit a reset request →</button>
+                    : <button type="button" onClick={() => { setShowForgot(true); setForgotDone(false); }} style={{ background: 'none', border: 'none', color: '#60A5FA', cursor: 'pointer', fontSize: 13, textDecoration: 'underline', padding: 0 }}>Forgot {selectedRole === 'parent' ? 'PIN' : 'Password'}? Submit a reset request →</button>
                   }
                 </p>
               </form>
 
               {/* Forgot PIN/Password modal */}
               {showForgot && selectedRole !== 'principal' && (
-                <div style={{ position:'fixed', inset:0, zIndex:100, display:'flex', alignItems:'center', justifyContent:'center', padding:16, background:'rgba(15,23,42,0.65)', backdropFilter:'blur(4px)' }}>
-                  <div style={{ width:'100%', maxWidth:400, background:'white', borderRadius:18, boxShadow:'0 24px 64px rgba(0,0,0,0.25)', padding:'28px 26px' }}>
+                <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: 'rgba(15,23,42,0.65)', backdropFilter: 'blur(4px)' }}>
+                  <div style={{ width: '100%', maxWidth: 400, background: 'white', borderRadius: 18, boxShadow: '0 24px 64px rgba(0,0,0,0.25)', padding: '28px 26px' }}>
                     {!forgotDone ? (
                       <>
-                        <h3 style={{ fontSize:16, fontWeight:800, color:'#0F172A', margin:'0 0 6px' }}>🔑 Request {selectedRole === 'parent' ? 'PIN' : 'Password'} Reset</h3>
-                        <p style={{ fontSize:12, color:'#64748B', margin:'0 0 18px' }}>
+                        <h3 style={{ fontSize: 16, fontWeight: 800, color: '#0F172A', margin: '0 0 6px' }}>🔑 Request {selectedRole === 'parent' ? 'PIN' : 'Password'} Reset</h3>
+                        <p style={{ fontSize: 12, color: '#64748B', margin: '0 0 18px' }}>
                           {selectedRole === 'parent' ? 'Your class teacher or principal will generate a new PIN for you.' : 'The principal will generate a new password for you.'}
                         </p>
-                        <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                           <div>
-                            <label style={{ display:'block', fontSize:12, fontWeight:600, color:'#475569', marginBottom:4 }}>Your Full Name *</label>
-                            <input value={forgotName} onChange={e=>setForgotName(e.target.value)} placeholder="As registered in school" style={{ width:'100%', padding:'9px 12px', border:'1px solid #CBD5E1', borderRadius:8, fontSize:13, outline:'none', boxSizing:'border-box', color:'#0F172A', background:'white' }}/>
+                            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>Your Full Name *</label>
+                            <input value={forgotName} onChange={e => setForgotName(e.target.value)} placeholder="As registered in school" style={{ width: '100%', padding: '9px 12px', border: '1px solid #CBD5E1', borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box', color: '#0F172A', background: 'white' }} />
                           </div>
                           <div>
-                            <label style={{ display:'block', fontSize:12, fontWeight:600, color:'#475569', marginBottom:4 }}>{selectedRole === 'parent' ? 'Phone Number (Login ID) *' : 'Username / Email *'}</label>
-                            <input value={forgotIdentifier} onChange={e=>setForgotIdentifier(e.target.value)} placeholder={selectedRole === 'parent' ? '10-digit mobile' : 'your.username@SCHOOL'} style={{ width:'100%', padding:'9px 12px', border:'1px solid #CBD5E1', borderRadius:8, fontSize:13, outline:'none', boxSizing:'border-box', color:'#0F172A', background:'white' }}/>
+                            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>{selectedRole === 'parent' ? 'Phone Number (Login ID) *' : 'Username / Email *'}</label>
+                            <input value={forgotIdentifier} onChange={e => setForgotIdentifier(e.target.value)} placeholder={selectedRole === 'parent' ? '10-digit mobile' : 'your.username@SCHOOL'} style={{ width: '100%', padding: '9px 12px', border: '1px solid #CBD5E1', borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box', color: '#0F172A', background: 'white' }} />
                           </div>
                           {selectedRole === 'parent' && (
-                            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                               <div>
-                                <label style={{ display:'block', fontSize:12, fontWeight:600, color:'#475569', marginBottom:4 }}>Class</label>
-                                <input value={forgotClass} onChange={e=>setForgotClass(e.target.value)} placeholder="e.g. 9" style={{ width:'100%', padding:'9px 12px', border:'1px solid #CBD5E1', borderRadius:8, fontSize:13, outline:'none', boxSizing:'border-box', color:'#0F172A', background:'white' }}/>
+                                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>Class</label>
+                                <input value={forgotClass} onChange={e => setForgotClass(e.target.value)} placeholder="e.g. 9" style={{ width: '100%', padding: '9px 12px', border: '1px solid #CBD5E1', borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box', color: '#0F172A', background: 'white' }} />
                               </div>
                               <div>
-                                <label style={{ display:'block', fontSize:12, fontWeight:600, color:'#475569', marginBottom:4 }}>Section</label>
-                                <input value={forgotSection} onChange={e=>setForgotSection(e.target.value)} placeholder="e.g. A" style={{ width:'100%', padding:'9px 12px', border:'1px solid #CBD5E1', borderRadius:8, fontSize:13, outline:'none', boxSizing:'border-box', color:'#0F172A', background:'white' }}/>
+                                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>Section</label>
+                                <input value={forgotSection} onChange={e => setForgotSection(e.target.value)} placeholder="e.g. A" style={{ width: '100%', padding: '9px 12px', border: '1px solid #CBD5E1', borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box', color: '#0F172A', background: 'white' }} />
                               </div>
                             </div>
                           )}
                         </div>
-                        <div style={{ display:'flex', gap:10, marginTop:20 }}>
-                          <button type="button" onClick={resetForgotModal} style={{ flex:1, padding:'10px', borderRadius:9, border:'1px solid #E2E8F0', background:'white', fontSize:13, fontWeight:600, color:'#475569', cursor:'pointer' }}>Cancel</button>
-                          <button type="button" onClick={handleForgotSubmit} disabled={forgotSubmitting||!forgotName.trim()||!forgotIdentifier.trim()} style={{ flex:1, padding:'10px', borderRadius:9, border:'none', background: forgotSubmitting||!forgotName.trim()||!forgotIdentifier.trim() ? '#93C5FD' : 'linear-gradient(135deg,#1E3A8A,#3B82F6)', color:'white', fontSize:13, fontWeight:700, cursor: forgotSubmitting ? 'not-allowed':'pointer' }}>{forgotSubmitting ? 'Submitting…' : 'Submit Request'}</button>
+                        <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+                          <button type="button" onClick={resetForgotModal} style={{ flex: 1, padding: '10px', borderRadius: 9, border: '1px solid #E2E8F0', background: 'white', fontSize: 13, fontWeight: 600, color: '#475569', cursor: 'pointer' }}>Cancel</button>
+                          <button type="button" onClick={handleForgotSubmit} disabled={forgotSubmitting || !forgotName.trim() || !forgotIdentifier.trim()} style={{ flex: 1, padding: '10px', borderRadius: 9, border: 'none', background: forgotSubmitting || !forgotName.trim() || !forgotIdentifier.trim() ? '#93C5FD' : 'linear-gradient(135deg,#1E3A8A,#3B82F6)', color: 'white', fontSize: 13, fontWeight: 700, cursor: forgotSubmitting ? 'not-allowed' : 'pointer' }}>{forgotSubmitting ? 'Submitting…' : 'Submit Request'}</button>
                         </div>
                       </>
                     ) : (
-                      <div style={{ textAlign:'center', padding:'8px 0' }}>
-                        <div style={{ fontSize:40, marginBottom:12 }}>✅</div>
-                        <h3 style={{ fontSize:16, fontWeight:800, color:'#0F172A', margin:'0 0 8px' }}>Request Submitted!</h3>
-                        <p style={{ fontSize:13, color:'#64748B', margin:'0 0 20px' }}>
+                      <div style={{ textAlign: 'center', padding: '8px 0' }}>
+                        <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
+                        <h3 style={{ fontSize: 16, fontWeight: 800, color: '#0F172A', margin: '0 0 8px' }}>Request Submitted!</h3>
+                        <p style={{ fontSize: 13, color: '#64748B', margin: '0 0 20px' }}>
                           {selectedRole === 'parent' ? 'Your class teacher or principal will reset your PIN and inform you personally.' : 'The principal will reset your password and share it with you.'}
                         </p>
-                        <button type="button" onClick={resetForgotModal} style={{ padding:'10px 24px', borderRadius:9, border:'none', background:'linear-gradient(135deg,#1E3A8A,#3B82F6)', color:'white', fontSize:13, fontWeight:700, cursor:'pointer' }}>Close</button>
+                        <button type="button" onClick={resetForgotModal} style={{ padding: '10px 24px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg,#1E3A8A,#3B82F6)', color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Close</button>
                       </div>
                     )}
                   </div>
