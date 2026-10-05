@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import * as XLSX from 'xlsx';
 
-interface Parent { id: string; full_name: string; phone: string | null; email: string | null; is_active: boolean; student_name?: string; }
+interface Parent { id: string; full_name: string; phone: string | null; email: string | null; is_active: boolean; student_name?: string; login_pin?: string | null; }
 interface ClassItem { id: string; name: string; }
 interface SectionItem { id: string; name: string; class_id: string; }
 
@@ -427,6 +427,26 @@ function BulkImportModal({ schoolId, onClose, onDone }: { schoolId: string; onCl
   );
 }
 
+// ── Export all parent credentials to Excel ───────────────────────────────────
+async function exportAllCredentials() {
+  const res = await fetch('/api/auth/parent-credentials');
+  if (!res.ok) { alert('Failed to load credentials'); return; }
+  const { parents } = await res.json();
+  if (!parents?.length) { alert('No parent accounts found'); return; }
+  const ws = XLSX.utils.json_to_sheet(parents.map((p: any) => ({
+    'Parent Name': p.full_name,
+    'Phone (Login ID)': p.phone ?? '—',
+    'Current PIN': p.login_pin ?? '—',
+    'Child(ren)': p.student_names,
+    'Status': p.is_active ? 'Active' : 'Inactive',
+    'Created On': new Date(p.created_at).toLocaleDateString('en-IN'),
+  })));
+  ws['!cols'] = [{ wch: 24 }, { wch: 16 }, { wch: 12 }, { wch: 30 }, { wch: 10 }, { wch: 14 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Parent Credentials');
+  XLSX.writeFile(wb, `Parent_Credentials_${new Date().toISOString().split('T')[0]}.xlsx`);
+}
+
 // ── Main Page ────────────────────────────────────────────────────────────────
 export default function PrincipalParentsPage() {
   const supabase = createClient();
@@ -438,6 +458,7 @@ export default function PrincipalParentsPage() {
   const [filterClass, setFilterClass] = useState('');
   const [filterSection, setFilterSection] = useState('');
   const [showBulkImport, setShowBulkImport] = useState(false);
+  const [exportingCreds, setExportingCreds] = useState(false);
   const [schoolId, setSchoolId] = useState('');
   // parentId → Set<classId> and parentId → Set<sectionId> (from student links)
   const [parentClassMap, setParentClassMap] = useState<Map<string, Set<string>>>(new Map());
@@ -459,6 +480,9 @@ export default function PrincipalParentsPage() {
   const [linkRelationship, setLinkRelationship] = useState('guardian');
   const [linking, setLinking] = useState(false);
   const [linkError, setLinkError] = useState('');
+  // ── Reset PIN ─────────────────────────────────────────────────────────────
+  const [resettingPinFor, setResettingPinFor] = useState<string | null>(null);
+  const [showNewPin, setShowNewPin] = useState<{ name: string; phone: string; pin: string } | null>(null);
 
   const fetchParents = useCallback(async () => {
     setLoading(true);
@@ -478,7 +502,7 @@ export default function PrincipalParentsPage() {
     if (sec) setSections(sec);
 
     // Load parents
-    const { data } = await supabase.from('users').select('id, full_name, phone, email, is_active').eq('school_id', cu.school_id).eq('role', 'parent').order('full_name');
+    const { data } = await supabase.from('users').select('id, full_name, phone, email, is_active, login_pin').eq('school_id', cu.school_id).eq('role', 'parent').order('full_name');
     if (data) {
       const ids = data.map((p: any) => p.id);
       // Fetch student-parent links with student class/section data
@@ -612,6 +636,28 @@ export default function PrincipalParentsPage() {
     fetchParents(); setLinking(false);
   };
 
+  // ── Reset parent PIN handler ───────────────────────────────────────────────
+  const handleResetPin = async (parentId: string, parentName: string) => {
+    if (!confirm(`Reset login PIN for ${parentName}? A new 6-digit PIN will be generated and shown to you.`)) return;
+    setResettingPinFor(parentId);
+    try {
+      const res = await fetch('/api/auth/reset-parent-pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parent_id: parentId }),
+      });
+      const result = await res.json();
+      if (!res.ok) { alert(`Failed: ${result.error}`); return; }
+      // Update the PIN in the local parents list immediately so the table re-renders
+      setParents(prev => prev.map(p => p.id === parentId ? { ...p, login_pin: result.new_pin } : p));
+      setShowNewPin({ name: result.parent_name, phone: result.phone, pin: result.new_pin });
+    } catch (err: any) {
+      alert(`Network error: ${err?.message || 'Please try again'}`);
+    } finally {
+      setResettingPinFor(null);
+    }
+  };
+
   const filtSections = sections.filter(s => s.class_id === filterClass);
 
   const filtered = parents.filter(p => {
@@ -647,6 +693,13 @@ export default function PrincipalParentsPage() {
             style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 20px', background:'linear-gradient(135deg,#7C3AED,#A855F7)', color:'white', border:'none', borderRadius:10, fontSize:13, fontWeight:700, cursor:'pointer', boxShadow:'0 4px 12px rgba(124,58,237,0.3)', whiteSpace:'nowrap' }}
           >
             <span style={{ fontSize:16 }}>⬇</span> Bulk Import
+          </button>
+          <button
+            onClick={async () => { setExportingCreds(true); await exportAllCredentials(); setExportingCreds(false); }}
+            disabled={exportingCreds}
+            style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 20px', background: exportingCreds ? '#FDE68A' : 'linear-gradient(135deg,#D97706,#F59E0B)', color:'white', border:'none', borderRadius:10, fontSize:13, fontWeight:700, cursor: exportingCreds ? 'wait' : 'pointer', boxShadow:'0 4px 12px rgba(217,119,6,0.3)', whiteSpace:'nowrap' }}
+          >
+            <span style={{ fontSize:15 }}>{exportingCreds ? '⏳' : '📥'}</span> {exportingCreds ? 'Exporting…' : 'Export Credentials'}
           </button>
         </div>
       </div>
@@ -691,8 +744,8 @@ export default function PrincipalParentsPage() {
 
       {/* List */}
       <div className="list-table-container">
-        <div className="parent-list-grid header-row" style={{ padding:'12px 20px', background:'#F8FAFC', borderBottom:'1px solid #F1F5F9' }}>
-          {['Parent','Phone (Login)','Child','Status'].map(h => (
+        <div className="parent-list-grid header-row" style={{ padding:'12px 20px', background:'#F8FAFC', borderBottom:'1px solid #F1F5F9', gridTemplateColumns:'2fr 1.2fr 1.5fr 1fr 1.6fr' }}>
+          {['Parent','Phone (Login)','Child','PIN','Status / Actions'].map(h => (
             <p key={h} style={{ fontSize:11, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', letterSpacing:'0.06em', margin:0 }}>{h}</p>
           ))}
         </div>
@@ -707,7 +760,7 @@ export default function PrincipalParentsPage() {
             <p style={{ fontSize:13, color:'#94A3B8', marginTop:6 }}>Use <strong>⬇ Bulk Import</strong> to add parents from your Excel template</p>
           </div>
         ) : filtered.map((p, idx) => (
-          <div key={p.id} className="parent-list-grid" style={{ padding:'14px 20px', borderBottom:idx<filtered.length-1?'1px solid #F8FAFC':'none', alignItems:'center' }}>
+          <div key={p.id} className="parent-list-grid" style={{ padding:'14px 20px', borderBottom:idx<filtered.length-1?'1px solid #F8FAFC':'none', alignItems:'center', gridTemplateColumns:'2fr 1.2fr 1.5fr 1fr 1.6fr' }}>
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
               <div style={{ width:36, height:36, borderRadius:'50%', background:'linear-gradient(135deg, #7C3AED, #A78BFA)', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:800, flexShrink:0 }}>
                 {p.full_name.charAt(0).toUpperCase()}
@@ -718,7 +771,17 @@ export default function PrincipalParentsPage() {
             </div>
             <p style={{ fontSize:13, color:'#475569', margin:0, fontFamily:'monospace' }}>{p.phone||'—'}</p>
             <p style={{ fontSize:13, color:p.student_name?'#334155':'#CBD5E1', margin:0, fontStyle:p.student_name?'normal':'italic' }}>{p.student_name||'Not linked'}</p>
-            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            {/* PIN column */}
+            <div>
+              {p.login_pin ? (
+                <span style={{ fontFamily:'monospace', fontSize:14, fontWeight:800, color:'#B45309', background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:8, padding:'3px 10px', display:'inline-block', letterSpacing:2 }}>
+                  {p.login_pin}
+                </span>
+              ) : (
+                <span style={{ fontSize:12, color:'#CBD5E1', fontStyle:'italic' }}>—</span>
+              )}
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
               <span style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:99, background:p.is_active?'#F0FDF4':'#FEF2F2', color:p.is_active?'#16A34A':'#DC2626', width:'fit-content' }}>
                 <span style={{ width:6, height:6, borderRadius:'50%', background:p.is_active?'#16A34A':'#DC2626' }}/>
                 {p.is_active?'Active':'Inactive'}
@@ -727,6 +790,13 @@ export default function PrincipalParentsPage() {
                 title="Link to another student"
                 style={{ padding:'4px 10px', borderRadius:8, background:'#EFF6FF', border:'1px solid #BFDBFE', color:'#1D4ED8', fontSize:11, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap' }}>
                 🔗 Link
+              </button>
+              <button
+                onClick={() => handleResetPin(p.id, p.full_name)}
+                disabled={resettingPinFor === p.id}
+                title="Reset login PIN"
+                style={{ padding:'4px 10px', borderRadius:8, background: resettingPinFor === p.id ? '#FEF9C3' : '#FFFBEB', border:'1px solid #FDE68A', color:'#92400E', fontSize:11, fontWeight:700, cursor: resettingPinFor === p.id ? 'wait' : 'pointer', whiteSpace:'nowrap' }}>
+                {resettingPinFor === p.id ? '⏳…' : '🔑 PIN'}
               </button>
             </div>
           </div>
@@ -739,6 +809,35 @@ export default function PrincipalParentsPage() {
           onClose={() => setShowBulkImport(false)}
           onDone={() => { setShowBulkImport(false); fetchParents(); }}
         />
+      )}
+
+      {/* ── New PIN Reveal Modal ─────────────────────────────────────────────── */}
+      {showNewPin && (
+        <div style={overlay}>
+          <div style={{ width:'100%', maxWidth:400, background:'white', borderRadius:20, boxShadow:'0 25px 60px rgba(0,0,0,0.25)', overflow:'hidden', textAlign:'center', position:'relative' }}>
+            <div style={{ position:'absolute', top:0, left:0, width:'100%', height:6, background:'linear-gradient(to right,#F59E0B,#FBBF24)' }} />
+            <div style={{ padding:36 }}>
+              <div style={{ width:72, height:72, margin:'0 auto 20px', background:'#FFFBEB', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', border:'2px solid #FDE68A', fontSize:34 }}>🔑</div>
+              <h3 style={{ margin:'0 0 6px', fontSize:20, fontWeight:800, color:'#0F172A' }}>PIN Reset Successful</h3>
+              <p style={{ margin:'0 0 24px', fontSize:14, color:'#475569' }}>Share these credentials with <strong>{showNewPin.name}</strong></p>
+              <div style={{ background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:14, padding:20, textAlign:'left', marginBottom:24 }}>
+                <div style={{ marginBottom:16 }}>
+                  <p style={{ margin:'0 0 4px', fontSize:11, fontWeight:700, color:'#92400E', textTransform:'uppercase', letterSpacing:'0.06em' }}>Login Phone</p>
+                  <p style={{ margin:0, fontFamily:'monospace', fontSize:18, fontWeight:800, color:'#0F172A' }}>{showNewPin.phone}</p>
+                </div>
+                <div>
+                  <p style={{ margin:'0 0 4px', fontSize:11, fontWeight:700, color:'#92400E', textTransform:'uppercase', letterSpacing:'0.06em' }}>New PIN</p>
+                  <p style={{ margin:0, fontFamily:'monospace', fontSize:32, fontWeight:800, color:'#B45309', letterSpacing:8 }}>{showNewPin.pin}</p>
+                </div>
+              </div>
+              <p style={{ margin:'0 0 24px', fontSize:12, color:'#64748B' }}>The parent can use this PIN to log in immediately. They can change it from their profile settings.</p>
+              <button
+                onClick={() => setShowNewPin(null)}
+                style={{ width:'100%', padding:13, borderRadius:10, fontSize:14, fontWeight:700, color:'white', background:'linear-gradient(135deg,#F59E0B,#D97706)', border:'none', cursor:'pointer', boxShadow:'0 4px 12px rgba(245,158,11,0.3)' }}
+              >Done</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── Add Single Parent Modal ─────────────────────────────────────────── */}

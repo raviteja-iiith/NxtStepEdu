@@ -63,6 +63,8 @@ export async function POST(request: Request) {
         email: email || null,
         is_active: true,
         is_first_login: true,
+        // Store plain-text PIN for parent accounts so principals can retrieve/export credentials
+        ...(role === 'parent' ? { login_pin: password } : {}),
       });
 
     if (userError) {
