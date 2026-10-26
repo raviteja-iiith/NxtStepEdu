@@ -731,6 +731,79 @@ export default function FinancePage() {
           </div>
         </div>
 
+        {/* ── Net Profit / Loss Banner ─────────────────────────────────── */}
+        {(() => {
+          const totalRevenue  = revenueData.reduce((s: number, d: any) => s + d.revenue, 0);
+          const totalExpenses = revenueData.reduce((s: number, d: any) => s + d.expenses, 0);
+          const netProfit     = totalRevenue - totalExpenses;
+          const isProfit      = netProfit >= 0;
+          const marginPct     = totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : '0.0';
+          return (
+            <div style={{
+              marginTop: 20, marginBottom: 6,
+              background: isProfit
+                ? 'linear-gradient(135deg, #064E3B 0%, #065F46 50%, #047857 100%)'
+                : 'linear-gradient(135deg, #7F1D1D 0%, #991B1B 50%, #B91C1C 100%)',
+              borderRadius: 18,
+              padding: '24px 32px',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              flexWrap: 'wrap', gap: 20,
+              boxShadow: isProfit
+                ? '0 8px 32px rgba(6,78,59,0.35)'
+                : '0 8px 32px rgba(127,29,29,0.35)',
+              position: 'relative', overflow: 'hidden',
+            }}>
+              {/* Background glow orb */}
+              <div style={{ position:'absolute', top:-40, right:-40, width:200, height:200, borderRadius:'50%', background:'rgba(255,255,255,0.04)', pointerEvents:'none' }}/>
+              <div style={{ position:'absolute', bottom:-60, left: 60, width:160, height:160, borderRadius:'50%', background:'rgba(255,255,255,0.03)', pointerEvents:'none' }}/>
+
+              {/* Left: label */}
+              <div style={{ display:'flex', alignItems:'center', gap:14 }}>
+                <div style={{ width:52, height:52, borderRadius:14, background:'rgba(255,255,255,0.12)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:26, flexShrink:0 }}>
+                  {isProfit ? '📈' : '📉'}
+                </div>
+                <div>
+                  <p style={{ fontSize:12, fontWeight:700, color:'rgba(255,255,255,0.6)', textTransform:'uppercase', letterSpacing:'0.1em', margin:0 }}>
+                    All-Time Financial Position
+                  </p>
+                  <p style={{ fontSize:22, fontWeight:900, color:'white', margin:'4px 0 0', letterSpacing:'-0.02em' }}>
+                    {isProfit ? 'Operating in Profit' : 'Operating at a Loss'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Center: big net number */}
+              <div style={{ textAlign:'center' }}>
+                <p style={{ fontSize:12, fontWeight:600, color:'rgba(255,255,255,0.55)', textTransform:'uppercase', letterSpacing:'0.08em', margin:0 }}>
+                  Net {isProfit ? 'Profit' : 'Loss'}
+                </p>
+                <p style={{ fontSize:42, fontWeight:900, color:'white', margin:'4px 0 0', letterSpacing:'-0.03em', lineHeight:1 }}>
+                  {isProfit ? '+' : '−'}{fmtK(Math.abs(netProfit))}
+                </p>
+                <p style={{ fontSize:13, fontWeight:600, color:'rgba(255,255,255,0.55)', marginTop:4 }}>
+                  {marginPct}% {isProfit ? 'profit margin' : 'loss margin'}
+                </p>
+              </div>
+
+              {/* Right: revenue / expenses pills */}
+              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                {[
+                  { label: 'Total Revenue',  value: fmtK(totalRevenue),  icon: '▲', color: '#6EE7B7' },
+                  { label: 'Total Expenses', value: fmtK(totalExpenses), icon: '▼', color: '#FCA5A5' },
+                ].map((item, i) => (
+                  <div key={i} style={{ display:'flex', alignItems:'center', gap:12, background:'rgba(255,255,255,0.1)', borderRadius:12, padding:'10px 18px', minWidth:200 }}>
+                    <span style={{ fontSize:11, fontWeight:800, color:item.color }}>{item.icon}</span>
+                    <div>
+                      <p style={{ fontSize:10, fontWeight:600, color:'rgba(255,255,255,0.55)', textTransform:'uppercase', letterSpacing:'0.06em', margin:0 }}>{item.label}</p>
+                      <p style={{ fontSize:17, fontWeight:800, color:'white', margin:'2px 0 0' }}>{item.value}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Tab bar */}
         <div style={{ display:'flex', gap:4, marginTop:24, background:'white', borderRadius:14, padding:6, border:'1px solid #E8ECF0', boxShadow:'0 1px 4px rgba(0,0,0,0.04)', width:'fit-content' }}>
           {TABS.map(tab => (

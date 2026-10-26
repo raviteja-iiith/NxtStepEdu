@@ -7,6 +7,7 @@ interface School {
   id: string; name: string; code: string; city: string | null; state: string | null;
   phone: string | null; email: string | null; is_active: boolean;
   subscription_plan: string; subscription_end: string | null; created_at: string;
+  attendance_sms_enabled: boolean;
 }
 
 const planColors: Record<string, { bg: string; color: string }> = {
@@ -45,12 +46,12 @@ export default function SchoolsPage() {
 
   const fetchSchools = useCallback(async () => {
     setLoading(true);
-    let query = supabase.from('schools').select('*').is('deleted_at', null).order('created_at', { ascending: false });
+    let query = supabase.from('schools').select('id, name, code, city, state, phone, email, is_active, subscription_plan, subscription_end, created_at, attendance_sms_enabled').is('deleted_at', null).order('created_at', { ascending: false });
     if (statusFilter === 'active') query = query.eq('is_active', true);
     if (statusFilter === 'paused') query = query.eq('is_active', false);
     if (planFilter !== 'all') query = query.eq('subscription_plan', planFilter);
     const { data } = await query;
-    if (data) setSchools(data);
+    if (data) setSchools(data.map((s: any) => ({ ...s, attendance_sms_enabled: s.attendance_sms_enabled ?? false })));
     setLoading(false);
   }, [supabase, statusFilter, planFilter]);
 
@@ -91,6 +92,17 @@ export default function SchoolsPage() {
     if (pause && !pauseReason.trim()) return;
     await supabase.from('schools').update({ is_active: !pause }).eq('id', schoolId);
     setShowPauseModal(null); setPauseReason(''); fetchSchools();
+  };
+
+  const handleToggleSms = async (schoolId: string, currentValue: boolean) => {
+    // Optimistic update
+    setSchools(prev => prev.map(s => s.id === schoolId ? { ...s, attendance_sms_enabled: !currentValue } : s));
+    const { error } = await supabase.from('schools').update({ attendance_sms_enabled: !currentValue }).eq('id', schoolId);
+    if (error) {
+      // Revert on error
+      setSchools(prev => prev.map(s => s.id === schoolId ? { ...s, attendance_sms_enabled: currentValue } : s));
+      console.error('SMS toggle error:', error.message);
+    }
   };
 
   const suggestCode = (name: string) => {
@@ -166,9 +178,9 @@ export default function SchoolsPage() {
       {/* Table */}
       <div style={{ background: 'white', borderRadius: 14, border: '1px solid #E8ECF0', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
         {/* Table Header */}
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 100px 120px 110px 100px 130px 120px', padding: '12px 20px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
-          {['School', 'Code', 'City', 'Plan', 'Status', 'Expiry', 'Actions'].map((h, i) => (
-            <p key={h} style={{ fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0, textAlign: i === 6 ? 'right' : 'left' }}>{h}</p>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 100px 120px 110px 100px 130px 160px 120px', padding: '12px 20px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
+          {['School', 'Code', 'City', 'Plan', 'Status', 'Expiry', 'SMS Attendance', 'Actions'].map((h, i) => (
+            <p key={h} style={{ fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0, textAlign: i === 7 ? 'right' : 'left' }}>{h}</p>
           ))}
         </div>
 
@@ -186,7 +198,7 @@ export default function SchoolsPage() {
         ) : (
           filtered.map((school, idx) => (
             <div key={school.id}
-              style={{ display: 'grid', gridTemplateColumns: '2fr 100px 120px 110px 100px 130px 120px', padding: '14px 20px', borderBottom: idx < filtered.length - 1 ? '1px solid #F8FAFC' : 'none', alignItems: 'center' }}>
+              style={{ display: 'grid', gridTemplateColumns: '2fr 100px 120px 110px 100px 130px 160px 120px', padding: '14px 20px', borderBottom: idx < filtered.length - 1 ? '1px solid #F8FAFC' : 'none', alignItems: 'center' }}>
               {/* School */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ width: 34, height: 34, borderRadius: 9, background: '#EFF6FF', color: '#1D4ED8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, flexShrink: 0 }}>
@@ -214,6 +226,36 @@ export default function SchoolsPage() {
               <p style={{ fontSize: 12, color: '#64748B', margin: 0 }}>
                 {school.subscription_end ? new Date(school.subscription_end).toLocaleDateString('en-IN') : '—'}
               </p>
+              {/* SMS Attendance Toggle */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  onClick={() => handleToggleSms(school.id, school.attendance_sms_enabled)}
+                  title={school.attendance_sms_enabled ? 'Disable SMS Attendance for this school' : 'Enable SMS Attendance for this school'}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 7, padding: '5px 12px',
+                    borderRadius: 99, border: 'none', cursor: 'pointer', transition: 'all 0.2s',
+                    background: school.attendance_sms_enabled ? '#DCFCE7' : '#F1F5F9',
+                    color: school.attendance_sms_enabled ? '#15803D' : '#64748B',
+                    fontWeight: 700, fontSize: 11,
+                  }}
+                >
+                  {/* Toggle pill */}
+                  <div style={{
+                    width: 32, height: 18, borderRadius: 99,
+                    background: school.attendance_sms_enabled ? '#22C55E' : '#CBD5E1',
+                    display: 'flex', alignItems: 'center', padding: '0 3px',
+                    transition: 'background 0.2s', flexShrink: 0,
+                  }}>
+                    <div style={{
+                      width: 12, height: 12, borderRadius: '50%', background: 'white',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                      transform: school.attendance_sms_enabled ? 'translateX(14px)' : 'translateX(0)',
+                      transition: 'transform 0.2s',
+                    }} />
+                  </div>
+                  {school.attendance_sms_enabled ? 'On' : 'Off'}
+                </button>
+              </div>
               {/* Actions */}
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 {school.is_active ? (
