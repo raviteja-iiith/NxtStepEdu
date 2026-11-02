@@ -422,140 +422,127 @@ function TabBulk({ schoolId, academicYearId, classes, sections }: { schoolId: st
   const [label,      setLabel]      = useState('');
   const [dueDate,    setDueDate]    = useState('');
   const [applying,   setApplying]   = useState(false);
-  const [preview,    setPreview]    = useState<number | null>(null);
-  const [result,     setResult]     = useState<{ inserted: number; skipped: number; errors: string[] } | null>(null);
+  const [result,     setResult]     = useState<{ inserted: number; skipped: number; excluded: number; errors: string[] } | null>(null);
   const [formError,  setFormError]  = useState('');
+  const [students,   setStudents]   = useState<{ id: string; full_name: string; roll_number: number | null }[]>([]);
+  const [loadingStu, setLoadingStu] = useState(false);
+  // Set of student IDs that are EXCLUDED (unchecked)
+  const [excluded,   setExcluded]   = useState<Set<string>>(new Set());
 
   const filteredSections = sections.filter(s => s.class_id === selClass);
 
-  // Preview student count when class+section change
+  // Load student list when class+section changes
   useEffect(() => {
     setResult(null);
-    if (!selClass || !selSection) { setPreview(null); return; }
+    setExcluded(new Set());
+    if (!selClass || !selSection) { setStudents([]); return; }
+    setLoadingStu(true);
     (async () => {
-      const { count } = await supabase
+      const { data } = await supabase
         .from('students')
-        .select('id', { count: 'exact', head: true })
+        .select('id, full_name, roll_number')
         .eq('class_id', selClass)
         .eq('section_id', selSection)
-        .eq('is_active', true);
-      setPreview(count ?? 0);
+        .eq('is_active', true)
+        .order('roll_number');
+      setStudents(data ?? []);
+      setLoadingStu(false);
     })();
-  }, [supabase, selClass, selSection]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selClass, selSection]);
+
+  const toggleStudent = (id: string) => {
+    setExcluded(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+    setResult(null);
+  };
+
+  const toggleAll = (checkAll: boolean) => {
+    setExcluded(checkAll ? new Set() : new Set(students.map(s => s.id)));
+    setResult(null);
+  };
+
+  const includedStudents = students.filter(s => !excluded.has(s.id));
+  const allChecked = excluded.size === 0 && students.length > 0;
+  const someChecked = excluded.size > 0 && excluded.size < students.length;
 
   async function applyToAll() {
     setFormError('');
     const amt = parseFloat(amount);
-    if (!selClass || !selSection) { setFormError('Select a class and section first.'); return; }
-    if (!label.trim())            { setFormError('Enter a fee label.'); return; }
-    if (isNaN(amt) || amt <= 0)   { setFormError('Enter a valid positive amount.'); return; }
+    if (!selClass || !selSection)      { setFormError('Select a class and section first.'); return; }
+    if (!label.trim())                  { setFormError('Enter a fee label.'); return; }
+    if (isNaN(amt) || amt <= 0)        { setFormError('Enter a valid positive amount.'); return; }
+    if (includedStudents.length === 0) { setFormError('No students selected — check at least one student.'); return; }
 
     setApplying(true);
     setResult(null);
 
-    // 1. Fetch students
-    const { data: students, error: stuErr } = await supabase
-      .from('students').select('id')
-      .eq('class_id', selClass).eq('section_id', selSection).eq('is_active', true);
-
-    if (stuErr || !students) {
-      setFormError('Failed to fetch students: ' + (stuErr?.message ?? 'unknown error'));
-      setApplying(false);
-      return;
-    }
-
-    // 2. Fetch existing fee rows for these students (latest per student)
-    const studentIds = students.map((s: any) => s.id);
+    const studentIds = includedStudents.map(s => s.id);
     const { data: existingFees } = await supabase
       .from('fees').select('id, student_id, amount')
       .eq('school_id', schoolId).in('student_id', studentIds);
 
-    // Map: student_id → { fee_id, current_amount }
     const feeMap = new Map<string, { id: string; amount: number }>();
     (existingFees ?? []).forEach((f: any) => {
-      // If multiple rows per student, pick the first one encountered (most relevant)
-      if (!feeMap.has(f.student_id)) {
-        feeMap.set(f.student_id, { id: f.id, amount: f.amount ?? 0 });
-      }
+      if (!feeMap.has(f.student_id)) feeMap.set(f.student_id, { id: f.id, amount: f.amount ?? 0 });
     });
 
     const errors: string[] = [];
-    let updated  = 0;
-    let inserted = 0;
-
+    let updated = 0, inserted = 0;
     const now2 = new Date();
     const fallbackDue = new Date(now2.getFullYear(), now2.getMonth() + 1, 0).toISOString().split('T')[0];
 
-    // 3. For each student: UPDATE if existing fee, INSERT if new
-    await Promise.all(students.map(async (s: any) => {
+    await Promise.all(includedStudents.map(async (s) => {
       const existing = feeMap.get(s.id);
       if (existing) {
-        // Add on top of existing amount
-        const { error } = await supabase
-          .from('fees')
-          .update({ amount: existing.amount + amt })
-          .eq('id', existing.id);
-        if (error) errors.push(`${s.id}: ${error.message}`);
-        else updated++;
+        const { error } = await supabase.from('fees').update({ amount: existing.amount + amt }).eq('id', existing.id);
+        if (error) errors.push(`${s.full_name}: ${error.message}`); else updated++;
       } else {
-        // No existing fee — insert fresh
         const { error } = await supabase.from('fees').insert({
-          school_id: schoolId,
-          student_id: s.id,
-          amount: amt,
-          status: 'pending',
+          school_id: schoolId, student_id: s.id, amount: amt, status: 'pending',
           due_date: dueDate || fallbackDue,
           ...(academicYearId ? { academic_year_id: academicYearId } : {}),
         });
-        if (error) errors.push(`${s.id}: ${error.message}`);
-        else inserted++;
+        if (error) errors.push(`${s.full_name}: ${error.message}`); else inserted++;
       }
     }));
 
-    setResult({ inserted: updated + inserted, skipped: errors.length, errors,
+    setResult({ inserted: updated + inserted, skipped: errors.length, excluded: excluded.size, errors,
       _updated: updated, _inserted: inserted } as any);
     setApplying(false);
     if (!errors.length) { setAmount(''); setLabel(''); setDueDate(''); }
 
-    // ── Notify parents of newly-assigned fees ──────────────────────────────
     if (!errors.length && inserted > 0) {
-      const newStudentIds = students
-        .filter((s: any) => !feeMap.has(s.id))
-        .map((s: any) => s.id);
-      if (newStudentIds.length > 0) {
-        const { data: links } = await supabase
-          .from('student_parent_links').select('parent_id')
-          .in('student_id', newStudentIds);
+      const newIds = includedStudents.filter(s => !feeMap.has(s.id)).map(s => s.id);
+      if (newIds.length > 0) {
+        const { data: links } = await supabase.from('student_parent_links').select('parent_id').in('student_id', newIds);
         if (links) {
           const dueTxt = dueDate ? new Date(dueDate).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }) : '';
           await Promise.all(links.map((l: any) => createNotification(supabase, {
-            recipient_id: l.parent_id,
-            school_id:    schoolId,
-            type:         'fee_reminder',
-            title:        `New fee assigned: ${label} — ₹${amt.toLocaleString('en-IN')}`,
-            body:         dueTxt ? `Due by ${dueTxt}. Please pay on time to avoid late fees.` : 'Please check the Fees section for details.',
-            link:         '/parent/fees',
+            recipient_id: l.parent_id, school_id: schoolId, type: 'fee_reminder',
+            title: `New fee assigned: ${label} — \u20b9${amt.toLocaleString('en-IN')}`,
+            body: dueTxt ? `Due by ${dueTxt}. Please pay on time.` : 'Please check the Fees section.',
+            link: '/parent/fees',
           })));
         }
       }
     }
-    // ──────────────────────────────────────────────────────────────────────
   }
 
-  const canApply = selClass && selSection && label.trim() && parseFloat(amount) > 0;
+  const canApply = selClass && selSection && label.trim() && parseFloat(amount) > 0 && includedStudents.length > 0;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {/* Card */}
+      {/* Form card */}
       <div style={{ background: 'white', borderRadius: 16, border: '1px solid #E8ECF0', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-        {/* Card header */}
         <div style={{ padding: '18px 24px', borderBottom: '1px solid #F1F5F9', background: 'linear-gradient(135deg,#F8FAFC,#EFF6FF)' }}>
-          <p style={{ fontSize: 15, fontWeight: 800, color: '#0F172A', margin: 0 }}>⚡ Apply Fee to Entire Section</p>
-          <p style={{ fontSize: 13, color: '#64748B', marginTop: 4 }}>Inserts a new fee entry for every active student in the selected section.</p>
+          <p style={{ fontSize: 15, fontWeight: 800, color: '#0F172A', margin: 0 }}>\u26a1 Apply Fee to Section</p>
+          <p style={{ fontSize: 13, color: '#64748B', marginTop: 4 }}>Fill in the fee details below, then uncheck any students you want to <strong>exclude</strong> before applying.</p>
         </div>
-
         <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
-          {/* Row 1: Class + Section */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div>
               <label style={LABEL}>Class <span style={{ color: '#EF4444' }}>*</span></label>
@@ -572,86 +559,119 @@ function TabBulk({ schoolId, academicYearId, classes, sections }: { schoolId: st
               </select>
             </div>
           </div>
-
-          {/* Row 2: Label + Amount */}
           <div className="bottom-grid-container">
             <div>
               <label style={LABEL}>Fee Label <span style={{ color: '#EF4444' }}>*</span></label>
-              <input
-                value={label} onChange={e => setLabel(e.target.value)}
-                placeholder='e.g. "Term 2 Tuition" or "Activity Fee"'
-                style={IS}
-              />
+              <input value={label} onChange={e => setLabel(e.target.value)} placeholder='e.g. "Term 2 Tuition"' style={IS} />
             </div>
             <div>
-              <label style={LABEL}>Amount (₹) <span style={{ color: '#EF4444' }}>*</span></label>
-              <input
-                type="number" min={0} value={amount}
-                onChange={e => setAmount(e.target.value)}
-                placeholder="0.00"
-                style={IS}
-              />
+              <label style={LABEL}>Amount (\u20b9) <span style={{ color: '#EF4444' }}>*</span></label>
+              <input type="number" min={0} value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" style={IS} />
             </div>
           </div>
-
-          {/* Row 3: Due date (optional) */}
           <div style={{ maxWidth: 240 }}>
             <label style={LABEL}>Due Date <span style={{ color: '#94A3B8', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>(optional)</span></label>
             <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={IS} />
           </div>
-
-          {/* Preview pill */}
-          {preview !== null && (
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: '#EFF6FF', border: '1px solid #DBEAFE', borderRadius: 99, width: 'fit-content' }}>
-              <span style={{ fontSize: 16 }}>🎓</span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#1D4ED8' }}>
-                This will create fees for <strong>{preview}</strong> student{preview !== 1 ? 's' : ''}
-                {parseFloat(amount) > 0 && ` · ₹${parseFloat(amount).toLocaleString('en-IN')} each`}
-              </span>
-            </div>
-          )}
-
-          {/* Error */}
           {formError && (
-            <div style={{ padding: '10px 14px', borderRadius: 9, background: '#FEF2F2', border: '1px solid #FEE2E2', fontSize: 13, color: '#DC2626' }}>
-              {formError}
-            </div>
+            <div style={{ padding: '10px 14px', borderRadius: 9, background: '#FEF2F2', border: '1px solid #FEE2E2', fontSize: 13, color: '#DC2626' }}>{formError}</div>
           )}
-
-          {/* Apply button */}
-          <button
-            onClick={applyToAll}
-            disabled={applying || !canApply}
-            style={{
-              padding: '12px 28px', borderRadius: 10, border: 'none', fontSize: 14, fontWeight: 700,
-              cursor: canApply && !applying ? 'pointer' : 'not-allowed',
-              background: canApply && !applying
-                ? 'linear-gradient(135deg,#1E3A8A,#3B82F6)'
-                : '#E2E8F0',
-              color: canApply && !applying ? 'white' : '#94A3B8',
-              alignSelf: 'flex-start',
-              boxShadow: canApply && !applying ? '0 4px 12px rgba(59,130,246,0.3)' : 'none',
-              transition: 'all 0.2s',
-            }}>
-            {applying ? '⏳ Applying…' : '⚡ Apply to All Students'}
+          <button onClick={applyToAll} disabled={applying || !canApply} style={{
+            padding: '12px 28px', borderRadius: 10, border: 'none', fontSize: 14, fontWeight: 700,
+            cursor: canApply && !applying ? 'pointer' : 'not-allowed',
+            background: canApply && !applying ? 'linear-gradient(135deg,#1E3A8A,#3B82F6)' : '#E2E8F0',
+            color: canApply && !applying ? 'white' : '#94A3B8', alignSelf: 'flex-start',
+            boxShadow: canApply && !applying ? '0 4px 12px rgba(59,130,246,0.3)' : 'none', transition: 'all 0.2s',
+          }}>
+            {applying ? '\u23f3 Applying\u2026' : `\u26a1 Apply to ${includedStudents.length} Student${includedStudents.length !== 1 ? 's' : ''}`}
           </button>
         </div>
       </div>
 
-      {/* Result summary */}
+      {/* Student checklist */}
+      {selClass && selSection && (
+        <div style={{ background: 'white', borderRadius: 16, border: '1px solid #E8ECF0', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+          <div style={{ padding: '14px 20px', borderBottom: '1px solid #F1F5F9', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input type="checkbox" checked={allChecked}
+                  ref={el => { if (el) el.indeterminate = someChecked; }}
+                  onChange={e => toggleAll(e.target.checked)}
+                  style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#1D4ED8' }} />
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#0F172A' }}>Select All Students</span>
+              </label>
+              {students.length > 0 && (
+                <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 99,
+                  background: excluded.size > 0 ? '#FEF3C7' : '#EFF6FF',
+                  color: excluded.size > 0 ? '#92400E' : '#1D4ED8', fontWeight: 700 }}>
+                  {includedStudents.length} of {students.length} selected
+                  {excluded.size > 0 && ` \u00b7 ${excluded.size} excluded`}
+                </span>
+              )}
+            </div>
+            {parseFloat(amount) > 0 && includedStudents.length > 0 && (
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#059669', background: '#ECFDF5', border: '1px solid #BBF7D0', padding: '4px 12px', borderRadius: 99 }}>
+                Total: \u20b9{(parseFloat(amount) * includedStudents.length).toLocaleString('en-IN')}
+              </span>
+            )}
+          </div>
+          {loadingStu ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 16 }}>
+              {[1,2,3,4].map(i => <div key={i} style={{ height: 44, background: '#F8FAFC', borderRadius: 8 }} />)}
+            </div>
+          ) : students.length === 0 ? (
+            <div style={{ padding: '40px 24px', textAlign: 'center' }}>
+              <p style={{ fontSize: 28, margin: 0 }}>\ud83d\udcad</p>
+              <p style={{ fontWeight: 600, color: '#475569', marginTop: 8 }}>No active students found in this section.</p>
+            </div>
+          ) : (
+            <div style={{ maxHeight: 400, overflowY: 'auto' }}>
+              {students.map((s, idx) => {
+                const checked = !excluded.has(s.id);
+                return (
+                  <label key={s.id} style={{
+                    display: 'grid', gridTemplateColumns: '44px 36px 1fr auto', alignItems: 'center', gap: 12,
+                    padding: '10px 20px', cursor: 'pointer',
+                    borderBottom: idx < students.length - 1 ? '1px solid #F8FAFC' : 'none',
+                    background: checked ? 'white' : '#FAFBFC',
+                    opacity: checked ? 1 : 0.55, transition: 'background 0.15s, opacity 0.15s',
+                  }}>
+                    <input type="checkbox" checked={checked} onChange={() => toggleStudent(s.id)}
+                      style={{ width: 17, height: 17, cursor: 'pointer', accentColor: '#1D4ED8', justifySelf: 'center' }} />
+                    <span style={{ fontSize: 12, color: '#94A3B8', fontWeight: 600, textAlign: 'center' }}>{s.roll_number ?? '\u2014'}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 30, height: 30, borderRadius: '50%',
+                        background: checked ? 'linear-gradient(135deg,#1E3A8A,#3B82F6)' : '#CBD5E1',
+                        color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                        {s.full_name.charAt(0)}
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#0F172A' }}>{s.full_name}</span>
+                    </div>
+                    {!checked && (
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99,
+                        background: '#FEE2E2', color: '#DC2626', whiteSpace: 'nowrap' }}>Excluded</span>
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Result */}
       {result && (
-        <div style={{
-          borderRadius: 14, border: `1px solid ${result.errors.length === 0 ? '#BBF7D0' : '#FEE2E2'}`,
-          background: result.errors.length === 0 ? '#DCFCE7' : '#FEF2F2',
-          padding: '18px 22px',
-        }}>
+        <div style={{ borderRadius: 14, border: `1px solid ${result.errors.length === 0 ? '#BBF7D0' : '#FEE2E2'}`,
+          background: result.errors.length === 0 ? '#DCFCE7' : '#FEF2F2', padding: '18px 22px' }}>
           <p style={{ fontSize: 14, fontWeight: 800, color: result.errors.length === 0 ? '#15803D' : '#DC2626', margin: '0 0 6px' }}>
-            {result.errors.length === 0 ? '✅ Done!' : '⚠️ Partially applied'}
+            {result.errors.length === 0 ? '\u2705 Done!' : '\u26a0\ufe0f Partially applied'}
           </p>
           <p style={{ fontSize: 13, color: '#475569', margin: 0 }}>
-            {(result as any)._updated > 0 && <><strong>{(result as any)._updated}</strong> student{(result as any)._updated !== 1 ? 's' : ''} updated (amount added to existing) · </>}
-            {(result as any)._inserted > 0 && <><strong>{(result as any)._inserted}</strong> new fee{(result as any)._inserted !== 1 ? 's' : ''} created</>}
-            {result.skipped > 0 && <> · <strong>{result.skipped}</strong> skipped due to errors</>}
+            {(result as any)._updated > 0 && <><strong>{(result as any)._updated}</strong> updated (added to existing) &middot; </>}
+            {(result as any)._inserted > 0 && <><strong>{(result as any)._inserted}</strong> new fees created</>}
+            {result.excluded > 0 && <> &middot; <strong>{result.excluded}</strong> excluded (skipped by choice)</>}
+            {result.skipped > 0 && <> &middot; <strong>{result.skipped}</strong> failed due to errors</>}
           </p>
           {result.errors.length > 0 && (
             <ul style={{ marginTop: 8, paddingLeft: 18 }}>
