@@ -10,6 +10,7 @@ interface ExamRow {
   total_marks:number; passing_marks:number|null;
   subject_id:string; subject_name:string;
   class_id:string; section_id:string|null;
+  section_name?:string|null;
 }
 interface Student { id:string; full_name:string; roll_number:number|null; }
 type CellState = { marks:string; absent:boolean; remarks:string; dirty:boolean; };
@@ -20,12 +21,31 @@ const IS:React.CSSProperties = { width:'100%', padding:'8px 12px', border:'1px s
 const LS:React.CSSProperties = { display:'block', fontSize:11, fontWeight:700, color:'#64748B', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 };
 const CELL_INPUT:React.CSSProperties = { width:'100%', padding:'5px 7px', border:'1.5px solid #E2E8F0', borderRadius:7, fontSize:13, fontWeight:700, textAlign:'center' as const, outline:'none', boxSizing:'border-box' as const, minWidth:0 };
 
+/**
+ * Unique key identifying a multi-subject exam group.
+ * Grouping MUST include section_id (or 'all' for school/class-wide exams).
+ * If section_id was omitted, exams created for different sections (e.g., MPC-B vs BIPC)
+ * with the same name and date would be incorrectly merged together, causing subjects
+ * to appear multiple times (e.g. Telugu, chemistry, Telugu, chemistry).
+ */
+function getExamGroupKey(r: { name: string; exam_date: string; class_id: string; section_id?: string | null }) {
+  return `${r.name}§${r.exam_date}§${r.class_id}§${r.section_id || 'all'}`;
+}
+
+/**
+ * Groups exam rows by (name, exam_date, class_id, section_id)
+ * and guarantees that within an exam group each subject appears EXACTLY ONCE.
+ */
 function groupByExam(rows: ExamRow[]) {
   const map = new Map<string, ExamRow[]>();
   for (const r of rows) {
-    const key = `${r.name}§${r.exam_date}§${r.class_id}`;
+    const key = getExamGroupKey(r);
     if (!map.has(key)) map.set(key, []);
-    map.get(key)!.push(r);
+    const existing = map.get(key)!;
+    // Deduplicate: avoid adding the same subject twice in the same exam group
+    if (!existing.some(e => e.subject_id === r.subject_id)) {
+      existing.push(r);
+    }
   }
   return Array.from(map.values());
 }
@@ -80,24 +100,43 @@ export default function MultiMarksEntry() {
     if (!selClass || !schoolId) { setAllExams([]); setSelGroup(''); return; }
     (async () => {
       const { data } = await supabase.from('exams')
-        .select('id, name, exam_date, exam_type, total_marks, passing_marks, subject_id, class_id, section_id, subjects(name)')
+        .select('id, name, exam_date, exam_type, total_marks, passing_marks, subject_id, class_id, section_id, subjects(name), sections(name)')
         .eq('school_id', schoolId).eq('class_id', selClass)
         .order('exam_date', { ascending: false });
-      setAllExams((data??[]).map((e:any) => ({ ...e, subject_name: e.subjects?.name ?? 'Unknown' })));
+      setAllExams((data??[]).map((e:any) => ({ 
+        ...e, 
+        subject_name: e.subjects?.name ?? 'Unknown',
+        section_name: e.sections?.name ?? null
+      })));
       setSelGroup('');
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selClass, schoolId]);
 
-  // ── fetch students + marks ─────────────────────────────────────────────────
+  // ── fetch students + marks when group/section changes ─────────────────────
   useEffect(() => {
+    setSaved(false);
+    setError('');
+
     if (!selGroup || !selClass) { setStudents([]); setMarks({}); setExamEdits({}); return; }
     const grps = groupByExam(allExams);
-    const grp  = grps.find(g => `${g[0].name}§${g[0].exam_date}§${g[0].class_id}` === selGroup) ?? null;
-    if (!grp)  { setStudents([]); setMarks({}); setExamEdits({}); return; }
+    const grp = grps.find(g => getExamGroupKey(g[0]) === selGroup) ?? null;
+    if (!grp) { setStudents([]); setMarks({}); setExamEdits({}); return; }
+
     (async () => {
-      let q = supabase.from('students').select('id,full_name,roll_number').eq('is_active',true).eq('class_id', grp[0].class_id);
-      if (selSec) q = q.eq('section_id', selSec);
+      let q = supabase.from('students')
+        .select('id,full_name,roll_number')
+        .eq('is_active', true)
+        .eq('class_id', grp[0].class_id);
+
+      // If exam is for a specific section, only load that section's students
+      if (grp[0].section_id) {
+        q = q.eq('section_id', grp[0].section_id);
+      } else if (selSec) {
+        // Exam was for all sections, but user explicitly filtered by section
+        q = q.eq('section_id', selSec);
+      }
+
       const { data:sts } = await q.order('roll_number');
       if (!sts) return;
       setStudents(sts);
@@ -121,12 +160,18 @@ export default function MultiMarksEntry() {
       setExamEdits(ee);
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selGroup, selClass, selSec, allExams.length]);
+  }, [selGroup, selClass, selSec, allExams]);
 
   // ── derived ────────────────────────────────────────────────────────────────
-  const groups      = groupByExam(allExams);
-  const activeGroup = groups.find(g => `${g[0].name}§${g[0].exam_date}§${g[0].class_id}` === selGroup) ?? null;
+  const allGroups   = groupByExam(allExams);
   const filtSecs    = sections.filter(s => s.class_id === selClass);
+
+  // If a specific section is chosen, filter groups to only those that belong to that section or all-section exams
+  const groups = selSec
+    ? allGroups.filter(g => !g[0].section_id || g[0].section_id === selSec)
+    : allGroups;
+
+  const activeGroup = groups.find(g => getExamGroupKey(g[0]) === selGroup) ?? null;
 
   const displayGroup: ExamRow[] = (activeGroup ?? []).map(ex => ({
     ...ex,
@@ -165,7 +210,10 @@ export default function MultiMarksEntry() {
     setSavingExam(eid); setError('');
     const { error:err } = await supabase.from('exams').update({ total_marks:tm, passing_marks:pm }).eq('id', eid);
     if (err) setError(`Settings save failed: ${err.message}`);
-    else setAllExams(prev => prev.map(e => e.id===eid ? { ...e, total_marks:tm, passing_marks:pm } : e));
+    else {
+      setAllExams(prev => prev.map(e => e.id===eid ? { ...e, total_marks:tm, passing_marks:pm } : e));
+      setExamEdits(prev => ({ ...prev, [eid]: { total_marks: String(tm), passing_marks: pm!=null ? String(pm) : '' } }));
+    }
     setSavingExam('');
   };
 
@@ -173,24 +221,27 @@ export default function MultiMarksEntry() {
     if (!activeGroup) return;
     setSaving(true); setError(''); setSaved(false);
     const uid = (await supabase.auth.getUser()).data.user?.id;
+    if (!uid) { setError('Authentication error. Please refresh and try again.'); setSaving(false); return; }
+
+    // Validate: check non-absent, non-empty entries
     for (const ex of displayGroup) {
       for (const s of students) {
         const cell = marks[s.id]?.[ex.id];
-        if (!cell||cell.absent||cell.marks==='') continue;
+        if (!cell || cell.absent || cell.marks==='') continue;
         const val = parseFloat(cell.marks);
-        if (isNaN(val)||val<0||val>ex.total_marks) {
+        if (isNaN(val) || val<0 || val>ex.total_marks) {
           setError(`Invalid marks for "${s.full_name}" in "${ex.subject_name}": must be 0–${ex.total_marks}.`);
           setSaving(false); return;
         }
       }
     }
+
     const upserts: any[] = [];
     for (const s of students) {
       for (const ex of activeGroup) {
         const cell = marks[s.id]?.[ex.id];
         if (!cell) continue;
         const mo = cell.absent ? null : (cell.marks!=='' ? parseFloat(cell.marks) : null);
-        if (mo===null && !cell.absent && cell.remarks==='') continue;
         upserts.push({ exam_id:ex.id, student_id:s.id, school_id:schoolId, marks_obtained:mo, is_absent:cell.absent, remarks:cell.remarks||null, entered_by:uid });
       }
     }
@@ -199,20 +250,48 @@ export default function MultiMarksEntry() {
     if (err) setError(err.message);
     else {
       setSaved(true);
-      setMarks(m => { const next={...m}; for (const u of upserts) next[u.student_id]={...next[u.student_id],[u.exam_id]:{...next[u.student_id]?.[u.exam_id],dirty:false}}; return next; });
+      setMarks(m => {
+        const next = { ...m };
+        for (const u of upserts) {
+          next[u.student_id] = { ...next[u.student_id], [u.exam_id]: { ...next[u.student_id]?.[u.exam_id], dirty:false } };
+        }
+        return next;
+      });
     }
     setSaving(false);
   };
 
   const clearAllMarks = async () => {
-    if (!activeGroup||!window.confirm('Clear ALL marks for this exam group? This cannot be undone.')) return;
+    if (!activeGroup) return;
+    const isSectionScoped = !!activeGroup[0].section_id || !!selSec;
+    const confirmMsg = isSectionScoped
+      ? `Clear marks for this exam group (${activeGroup[0].section_name ? 'Section ' + activeGroup[0].section_name : 'selected section'})? This cannot be undone.`
+      : 'Clear ALL marks for this exam group across all sections? This cannot be undone.';
+    if (!window.confirm(confirmMsg)) return;
     setSaving(true); setError('');
-    const { error:err } = await supabase.from('marks').delete().in('exam_id', activeGroup.map(e=>e.id));
+    let err: any = null;
+    if (students.length > 0) {
+      const studentIds = students.map(s => s.id);
+      for (const ex of activeGroup) {
+        const { error: e } = await supabase.from('marks')
+          .delete()
+          .eq('exam_id', ex.id)
+          .in('student_id', studentIds);
+        if (e) { err = e; break; }
+      }
+    } else {
+      const { error: e } = await supabase.from('marks').delete().in('exam_id', activeGroup.map(e=>e.id));
+      err = e;
+    }
     if (err) setError(`Clear failed: ${err.message}`);
     else {
       const next:MarksState = {};
-      for (const s of students) { next[s.id]={}; for (const ex of activeGroup) next[s.id][ex.id]={marks:'',absent:false,remarks:'',dirty:false}; }
+      for (const s of students) {
+        next[s.id] = {};
+        for (const ex of activeGroup) next[s.id][ex.id] = { marks:'', absent:false, remarks:'', dirty:false };
+      }
       setMarks(next);
+      setSaved(false);
     }
     setSaving(false);
   };
@@ -229,7 +308,7 @@ export default function MultiMarksEntry() {
         </button>
         <div style={{flex:1}}>
           <h2 style={{fontSize:22,fontWeight:800,color:'#0F172A',letterSpacing:'-0.02em',margin:0}}>📝 Multi-Subject Marks Entry</h2>
-          <p style={{fontSize:13,color:'#94A3B8',marginTop:4}}>Enter, edit & manage marks — full CRUD for principal</p>
+          <p style={{fontSize:13,color:'#94A3B8',marginTop:4}}>Enter, edit &amp; manage marks — full CRUD for principal</p>
         </div>
         {activeGroup && (
           <div style={{display:'flex',gap:8}}>
@@ -249,27 +328,57 @@ export default function MultiMarksEntry() {
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 2fr',gap:12}}>
         <div>
           <label style={LS}>Class *</label>
-          <select value={selClass} onChange={e=>{setSelClass(e.target.value);setSelSec('');setSelGroup('');}} style={IS}>
+          <select value={selClass} onChange={e=>{setSelClass(e.target.value);setSelSec('');setSelGroup('');setAllExams([]);setSaved(false);setError('');}} style={IS}>
             <option value="">Select class…</option>
             {classes.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </div>
         <div>
           <label style={LS}>Section</label>
-          <select value={selSec} onChange={e=>setSelSec(e.target.value)} disabled={!selClass} style={{...IS,opacity:selClass?1:0.5}}>
+          <select 
+            value={selSec} 
+            onChange={e => {
+              const newSec = e.target.value;
+              setSelSec(newSec);
+              setSaved(false);
+              setError('');
+              // If current group does not belong to the selected section, reset it
+              if (activeGroup && activeGroup[0].section_id && activeGroup[0].section_id !== newSec) {
+                setSelGroup('');
+              }
+            }} 
+            disabled={!selClass} 
+            style={{...IS,opacity:selClass?1:0.5}}
+          >
             <option value="">All sections</option>
             {filtSecs.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </div>
         <div>
           <label style={LS}>Exam Group *</label>
-          <select value={selGroup} onChange={e=>setSelGroup(e.target.value)} disabled={!selClass||groups.length===0} style={{...IS,opacity:selClass?1:0.5}}>
+          <select 
+            value={selGroup} 
+            onChange={e => {
+              const newGroupKey = e.target.value;
+              setSelGroup(newGroupKey);
+              setSaved(false);
+              setError('');
+              // If this exam group belongs to a specific section, auto-sync the Section dropdown
+              const matched = allGroups.find(g => getExamGroupKey(g[0]) === newGroupKey);
+              if (matched && matched[0].section_id && matched[0].section_id !== selSec) {
+                setSelSec(matched[0].section_id);
+              }
+            }} 
+            disabled={!selClass||groups.length===0} 
+            style={{...IS,opacity:selClass?1:0.5}}
+          >
             <option value="">Select exam…</option>
-            {groups.map(g=>{
-              const key=`${g[0].name}§${g[0].exam_date}§${g[0].class_id}`;
-              const label=g.length>1
-                ?`${g[0].name} · ${new Date(g[0].exam_date).toLocaleDateString('en-IN',{day:'numeric',month:'short'})} · ${g.length} subjects`
-                :`${g[0].name} · ${g[0].subject_name} · ${new Date(g[0].exam_date).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}`;
+            {groups.map(g => {
+              const key = getExamGroupKey(g[0]);
+              const secLabel = g[0].section_name ? ` · Sec ${g[0].section_name}` : ' · All Sec';
+              const dateStr = new Date(g[0].exam_date + 'T00:00:00').toLocaleDateString('en-IN', { day:'numeric', month:'short' });
+              const subjectsList = g.map(e => e.subject_name).join(', ');
+              const label = `${g[0].name}${secLabel} · ${dateStr} · ${g.length} sub (${subjectsList})`;
               return <option key={key} value={key}>{label}</option>;
             })}
           </select>
@@ -279,7 +388,9 @@ export default function MultiMarksEntry() {
       {/* ── Exam Settings Panel ── */}
       {showSettings && activeGroup && (
         <div style={{background:'#F8FAFF',border:'1px solid #DBEAFE',borderRadius:14,padding:'18px 20px'}}>
-          <p style={{fontSize:13,fontWeight:700,color:'#1D4ED8',margin:'0 0 14px'}}>⚙️ Exam Settings — Edit Max Marks & Passing Marks per Subject</p>
+          <p style={{fontSize:13,fontWeight:700,color:'#1D4ED8',margin:'0 0 14px'}}>
+            ⚙️ Exam Settings — Edit Max Marks &amp; Passing Marks for {activeGroup[0].name} {activeGroup[0].section_name ? `(Section ${activeGroup[0].section_name})` : ''}
+          </p>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(250px,1fr))',gap:12}}>
             {activeGroup.map(ex=>(
               <div key={ex.id} style={{background:'white',border:'1px solid #E2E8F0',borderRadius:10,padding:'14px 16px'}}>
@@ -328,6 +439,12 @@ export default function MultiMarksEntry() {
             <p style={{fontSize:12,fontWeight:700,color:'#065F46',margin:0}}>Students</p>
             <p style={{fontSize:13,fontWeight:800,color:'#0F172A',margin:0}}>{students.length}</p>
           </div>
+          {activeGroup[0].section_name && (
+            <div style={{padding:'8px 14px',background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:10}}>
+              <p style={{fontSize:12,fontWeight:700,color:'#1D4ED8',margin:0}}>Section</p>
+              <p style={{fontSize:13,fontWeight:800,color:'#0F172A',margin:0}}>{activeGroup[0].section_name}</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -335,7 +452,7 @@ export default function MultiMarksEntry() {
       {!activeGroup && (
         <div style={{background:'white',borderRadius:16,border:'1px solid #E8ECF0',padding:'64px 24px',textAlign:'center'}}>
           <div style={{fontSize:36,marginBottom:12}}>📋</div>
-          <p style={{fontWeight:700,color:'#1E293B',fontSize:16,margin:0}}>Select Class & Exam</p>
+          <p style={{fontWeight:700,color:'#1E293B',fontSize:16,margin:0}}>Select Class &amp; Exam</p>
           <p style={{fontSize:13,color:'#94A3B8',marginTop:6}}>Multi-subject exams appear here. Create them in the Exams page.</p>
         </div>
       )}
@@ -344,7 +461,7 @@ export default function MultiMarksEntry() {
       {activeGroup && students.length===0 && (
         <div style={{background:'white',borderRadius:16,border:'1px solid #E8ECF0',padding:'48px 24px',textAlign:'center'}}>
           <div style={{fontSize:32,marginBottom:8}}>🎓</div>
-          <p style={{fontWeight:600,color:'#475569',margin:0}}>No students found for this class{selSec?' / section':''}.</p>
+          <p style={{fontWeight:600,color:'#475569',margin:0}}>No students found for this class{activeGroup[0].section_name ? ` / section ${activeGroup[0].section_name}` : selSec ? ' / section' : ''}.</p>
         </div>
       )}
 
@@ -374,15 +491,22 @@ export default function MultiMarksEntry() {
 
             {/* Rows */}
             {students.map((s,idx)=>{
-              const rowTotal = displayGroup.reduce((sum,ex)=>{
-                const cell=marks[s.id]?.[ex.id];
-                return sum+(cell?.absent?0:parseFloat(cell?.marks||'0')||0);
-              },0);
-              const grandMax  = displayGroup.reduce((sum,ex)=>sum+ex.total_marks,0);
-              const passMark  = displayGroup.reduce((sum,ex)=>sum+(ex.passing_marks??Math.round(ex.total_marks*0.35)),0);
-              const pct       = grandMax>0?Math.round((rowTotal/grandMax)*100):0;
-              const passing   = rowTotal>=passMark && grandMax>0;
-              const hasDirty  = Object.values(marks[s.id]??{}).some(c=>c.dirty);
+              const allAbsent = displayGroup.every(ex => marks[s.id]?.[ex.id]?.absent === true);
+
+              let rowTotal = 0;
+              let presentMax = 0;
+              for (const ex of displayGroup) {
+                const cell = marks[s.id]?.[ex.id];
+                if (cell?.absent) continue;
+                rowTotal += parseFloat(cell?.marks || '0') || 0;
+                presentMax += ex.total_marks;
+              }
+
+              const grandMax = displayGroup.reduce((sum,ex)=>sum+ex.total_marks,0);
+              const passMark = displayGroup.reduce((sum,ex)=>sum+(ex.passing_marks??Math.round(ex.total_marks*0.35)),0);
+              const pct = !allAbsent && presentMax>0 ? Math.round((rowTotal/presentMax)*100) : null;
+              const passing = !allAbsent && rowTotal>=passMark && grandMax>0;
+              const hasDirty = Object.values(marks[s.id]??{}).some(c=>c.dirty);
 
               return (
                 <div key={s.id} style={{display:'grid',gridTemplateColumns:`200px 55px repeat(${activeGroup.length},minmax(165px,1fr)) 82px 52px`,gap:0,borderBottom:idx<students.length-1?'1px solid #F1F5F9':'none',alignItems:'center',minWidth:600,background:hasDirty?'#FFFBEB':idx%2===0?'white':'#FAFBFC',transition:'background 0.15s'}}>
@@ -397,7 +521,7 @@ export default function MultiMarksEntry() {
                   {/* Roll */}
                   <div style={{padding:'8px',textAlign:'center',fontSize:12,color:'#94A3B8'}}>{s.roll_number??'—'}</div>
 
-                  {/* Subject cells */}
+                  {/* Subject cells — guaranteed each subject appears only once */}
                   {displayGroup.map(ex=>{
                     const cell=marks[s.id]?.[ex.id]??{marks:'',absent:false,remarks:'',dirty:false};
                     const mv=parseFloat(cell.marks);
@@ -433,9 +557,15 @@ export default function MultiMarksEntry() {
 
                   {/* Total */}
                   <div style={{padding:'8px',textAlign:'center',borderLeft:'2px solid #E2E8F0'}}>
-                    <p style={{fontSize:13,fontWeight:800,color:pct>=35?'#15803D':'#DC2626',margin:0}}>{rowTotal}</p>
-                    <p style={{fontSize:10,color:'#94A3B8',margin:0}}>{pct}%</p>
-                    <span style={{fontSize:9,fontWeight:700,padding:'1px 5px',borderRadius:4,background:passing?'#ECFDF5':'#FEF2F2',color:passing?'#065F46':'#DC2626'}}>{passing?'PASS':'FAIL'}</span>
+                    {allAbsent ? (
+                      <p style={{fontSize:13,fontWeight:700,color:'#94A3B8',margin:0}}>—</p>
+                    ) : (
+                      <>
+                        <p style={{fontSize:13,fontWeight:800,color:passing?'#15803D':'#DC2626',margin:0}}>{rowTotal}</p>
+                        <p style={{fontSize:10,color:'#94A3B8',margin:0}}>{pct ?? 0}%</p>
+                        <span style={{fontSize:9,fontWeight:700,padding:'1px 5px',borderRadius:4,background:passing?'#ECFDF5':'#FEF2F2',color:passing?'#065F46':'#DC2626'}}>{passing?'PASS':'FAIL'}</span>
+                      </>
+                    )}
                   </div>
 
                   {/* Delete */}

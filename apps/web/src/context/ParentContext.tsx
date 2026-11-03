@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 export interface ChildInfo {
   student_id: string;
   student_name: string;
+  roll_number?: number | null;
   section_id: string;
   class_id: string;
   class_name: string;
@@ -51,7 +52,7 @@ export function ParentProvider({ children: reactChildren }: { children: ReactNod
     // Fetch ALL linked children (not limit(1))
     const { data: links } = await supabase
       .from('student_parent_links')
-      .select('student_id, students(full_name, section_id, sections(id, name, classes(id, name)))')
+      .select('student_id, students(full_name, roll_number, section_id, sections(id, name, classes(id, name)))')
       .eq('parent_id', user.id);
 
     if (!links || links.length === 0) { setLoading(false); return; }
@@ -59,6 +60,7 @@ export function ParentProvider({ children: reactChildren }: { children: ReactNod
     const childList: ChildInfo[] = links.map((l: any) => ({
       student_id: l.student_id,
       student_name: l.students?.full_name || 'Unknown',
+      roll_number: l.students?.roll_number ?? null,
       section_id: l.students?.section_id || '',
       class_id: l.students?.sections?.classes?.id || '',
       // Get class_name via sections→classes join (more reliable than students.class_id)

@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { createNotification } from '@/components/NotificationBell';
 
-interface Exam { id:string; name:string; exam_type:string; exam_date:string; start_time:string|null; duration_minutes:number|null; total_marks:number; passing_marks:number|null; is_published:boolean; class_id:string; class_name?:string; subject_name?:string; subject_id:string; }
+interface Exam { id:string; name:string; exam_type:string; exam_date:string; start_time:string|null; duration_minutes:number|null; total_marks:number; passing_marks:number|null; is_published:boolean; class_id:string; class_name?:string; subject_name?:string; subject_id:string; section_id?:string|null; section_name?:string; }
 interface ClassItem { id:string; name:string; }
 interface Subject { id:string; name:string; class_id:string; }
 interface Section { id:string; name:string; class_id:string; }
@@ -20,9 +20,13 @@ const TYPE_MAP:Record<string,string> = { unit_test:'Unit Test', mid_term:'Mid Te
 function groupExams(exams:Exam[]) {
   const map = new Map<string,Exam[]>();
   for (const e of exams) {
-    const key = `${e.name}§${e.exam_date}§${e.class_id}`;
+    const secKey = e.section_id || 'all';
+    const key = `${e.name}§${e.exam_date}§${e.class_id}§${secKey}`;
     if (!map.has(key)) map.set(key,[]);
-    map.get(key)!.push(e);
+    const existing = map.get(key)!;
+    if (!existing.some(x => x.subject_id === e.subject_id)) {
+      existing.push(e);
+    }
   }
   return Array.from(map.values());
 }
@@ -67,7 +71,7 @@ export default function ExamsPage() {
     const { data:u } = await supabase.from('users').select('school_id').eq('id',uid).single();
     if (!u?.school_id) { setLoading(false); return; }
     setSchoolId(u.school_id);
-    let q = supabase.from('exams').select('*,classes(name),subjects(name)').eq('school_id',u.school_id).order('exam_date',{ascending:false});
+    let q = supabase.from('exams').select('*,classes(name),subjects(name),sections(name)').eq('school_id',u.school_id).order('exam_date',{ascending:false});
     if (filterType)     q = q.eq('exam_type', filterType);
     if (filterClass)    q = q.eq('class_id', filterClass);
     if (filterSection)  q = q.eq('section_id', filterSection);
@@ -76,7 +80,7 @@ export default function ExamsPage() {
     if (filterStatus === 'published') q = q.eq('is_published', true);
     if (filterStatus === 'draft')     q = q.eq('is_published', false);
     const { data } = await q;
-    if (data) setExams(data.map((e:any) => ({ ...e, class_name:e.classes?.name, subject_name:e.subjects?.name })));
+    if (data) setExams(data.map((e:any) => ({ ...e, class_name:e.classes?.name, subject_name:e.subjects?.name, section_name:e.sections?.name })));
     setLoading(false);
   }, [supabase, filterType, filterClass, filterSection, filterDateFrom, filterDateTo, filterStatus]);
 
@@ -127,6 +131,11 @@ export default function ExamsPage() {
     } else {
       const valid = multiRows.filter(r => r.subject_id && parseInt(r.total_marks) > 0);
       if (valid.length < 2) { setFormError('Add at least 2 subjects for a multi-subject exam.'); setSaving(false); return; }
+      const subjectIds = valid.map(r => r.subject_id);
+      if (new Set(subjectIds).size !== subjectIds.length) {
+        setFormError('Each subject in a multi-subject exam must be unique. Please remove duplicate subjects.');
+        setSaving(false); return;
+      }
       const { error } = await supabase.from('exams').insert(valid.map(r => ({ ...base, subject_id:r.subject_id, total_marks:parseInt(r.total_marks), passing_marks:r.passing_marks?parseInt(r.passing_marks):null })));
       if (error) { setFormError(error.message); setSaving(false); return; }
     }
@@ -159,7 +168,7 @@ export default function ExamsPage() {
   };
 
   const togglePublishGroup = async (group:Exam[]) => {
-    const groupKey = `${group[0].name}§${group[0].exam_date}§${group[0].class_id}`;
+    const groupKey = `${group[0].name}§${group[0].exam_date}§${group[0].class_id}§${group[0].section_id || 'all'}`;
     if (publishingId === groupKey) return; // prevent double-click
     setPublishingId(groupKey);
 
@@ -321,9 +330,12 @@ export default function ExamsPage() {
                 {/* Type */}
                 <span style={{ fontSize:11, fontWeight:600, padding:'3px 8px', borderRadius:6, background:'#F1F5F9', color:'#475569' }}>{TYPE_MAP[first.exam_type]??first.exam_type}</span>
                 {/* Class */}
-                <p style={{ fontSize:13, color:'#475569', margin:0 }}>{first.class_name}</p>
+                <div>
+                  <p style={{ fontSize:13, fontWeight:600, color:'#0F172A', margin:0 }}>{first.class_name}</p>
+                  <p style={{ fontSize:11, color:'#64748B', margin:'2px 0 0' }}>{first.section_name ? `Sec ${first.section_name}` : 'All Sections'}</p>
+                </div>
                 {/* Date */}
-                <p style={{ fontSize:13, color:'#475569', margin:0 }}>{new Date(first.exam_date).toLocaleDateString('en-IN',{ day:'numeric', month:'short', year:'numeric' })}</p>
+                <p style={{ fontSize:13, color:'#475569', margin:0 }}>{new Date(first.exam_date + 'T00:00:00').toLocaleDateString('en-IN',{ day:'numeric', month:'short', year:'numeric' })}</p>
                 {/* Subjects */}
                 <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
                   {group.map(e => (
@@ -339,9 +351,9 @@ export default function ExamsPage() {
                   <span style={{ fontSize:11, fontWeight:600, padding:'3px 9px', borderRadius:99, background:first.is_published?'#DCFCE7':'#FFFBEB', color:first.is_published?'#15803D':'#D97706' }}>
                     {first.is_published?'Published':'Draft'}
                   </span>
-                  <button onClick={() => togglePublishGroup(group)} disabled={publishingId===`${first.name}§${first.exam_date}§${first.class_id}`}
-                    style={{ fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:7, border:'none', cursor:publishingId===`${first.name}§${first.exam_date}§${first.class_id}`?'not-allowed':'pointer', background:first.is_published?'#FEE2E2':'#DCFCE7', color:first.is_published?'#DC2626':'#15803D', opacity:publishingId===`${first.name}§${first.exam_date}§${first.class_id}`?0.6:1, transition:'opacity 0.15s' }}>
-                    {publishingId===`${first.name}§${first.exam_date}§${first.class_id}`?'...':(first.is_published?'Unpublish':'Publish')}
+                  <button onClick={() => togglePublishGroup(group)} disabled={publishingId===`${first.name}§${first.exam_date}§${first.class_id}§${first.section_id || 'all'}`}
+                    style={{ fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:7, border:'none', cursor:publishingId===`${first.name}§${first.exam_date}§${first.class_id}§${first.section_id || 'all'}`?'not-allowed':'pointer', background:first.is_published?'#FEE2E2':'#DCFCE7', color:first.is_published?'#DC2626':'#15803D', opacity:publishingId===`${first.name}§${first.exam_date}§${first.class_id}§${first.section_id || 'all'}`?0.6:1, transition:'opacity 0.15s' }}>
+                    {publishingId===`${first.name}§${first.exam_date}§${first.class_id}§${first.section_id || 'all'}`?'...':(first.is_published?'Unpublish':'Publish')}
                   </button>
                   <button onClick={() => openEdit(group)} title="Edit exam"
                     style={{ fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:7, border:'1px solid #BFDBFE', background:'#EFF6FF', color:'#1D4ED8', cursor:'pointer' }}>✏️ Edit</button>

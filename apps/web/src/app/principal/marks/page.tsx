@@ -7,7 +7,7 @@ import * as XLSX from 'xlsx';
 
 interface ClassItem { id: string; name: string; }
 interface SectionItem { id: string; name: string; class_id: string; }
-interface ExamItem { id: string; name: string; exam_type: string; exam_date: string; total_marks: number; passing_marks: number | null; is_published: boolean; class_id: string | null; section_id: string | null; subject_id: string | null; subject_name?: string; }
+interface ExamItem { id: string; name: string; exam_type: string; exam_date: string; total_marks: number; passing_marks: number | null; is_published: boolean; class_id: string | null; section_id: string | null; subject_id: string | null; subject_name?: string; section_name?: string; }
 interface MarkRow { student_id: string; full_name: string; roll_number: number | null; marks_obtained: number | null; is_absent: boolean; remarks: string | null; }
 interface MarkEntry { marks: string; absent: boolean; remarks: string; }
 
@@ -19,6 +19,11 @@ function getGrade(obtained: number, total: number) {
   if (pct >= 45) return { letter:'C',  color:'#D97706', bg:'#FFFBEB' };
   if (pct >= 35) return { letter:'D',  color:'#EA580C', bg:'#FFF7ED' };
   return { letter:'F', color:'#DC2626', bg:'#FEF2F2' };
+}
+
+// Fix timezone: parse date strings as local time, not UTC midnight
+function parseLocalDate(dateStr: string): Date {
+  return new Date(dateStr + 'T00:00:00');
 }
 
 export default function PrincipalMarksPage() {
@@ -64,21 +69,21 @@ export default function PrincipalMarksPage() {
 
   // Fetch exams when class/section changes
   useEffect(() => {
-    if (!selectedClass) { setExams([]); setSelectedExam(''); setResults([]); return; }
+    if (!selectedClass) { setExams([]); setSelectedExam(''); setResults([]); setEditMarks({}); return; }
     const fetchExams = async () => {
-      let q = supabase.from('exams').select('*, subjects(name)')
+      let q = supabase.from('exams').select('*, subjects(name), sections(name)')
         .eq('school_id', schoolId).eq('class_id', selectedClass).order('exam_date', { ascending: false });
       if (selectedSection) q = q.or(`section_id.eq.${selectedSection},section_id.is.null`);
       const { data } = await q;
-      setExams((data||[]).map((e: any) => ({ ...e, subject_name: e.subjects?.name })));
-      setSelectedExam(''); setSelectedSubject(''); setResults([]);
+      setExams((data||[]).map((e: any) => ({ ...e, subject_name: e.subjects?.name, section_name: e.sections?.name })));
+      setSelectedExam(''); setSelectedSubject(''); setResults([]); setEditMarks({});
     };
     if (schoolId) fetchExams();
   }, [supabase, selectedClass, selectedSection, schoolId]);
 
   // Fetch results when exam changes
   useEffect(() => {
-    if (!selectedExam) { setResults([]); return; }
+    if (!selectedExam) { setResults([]); setEditMarks({}); return; }
     const fetchResults = async () => {
       setLoading(true);
       const exam = exams.find(e => e.id === selectedExam);
@@ -117,6 +122,24 @@ export default function PrincipalMarksPage() {
     setSaveStatus('idle');
   };
 
+  // Sorted results — sort based on live editMarks values so the sort is reactive
+  const sortedResults = [...results].sort((a, b) => {
+    if (sortField === 'name') return a.full_name.localeCompare(b.full_name);
+    const aEntry = editMarks[a.student_id];
+    const bEntry = editMarks[b.student_id];
+    const aAbsent = aEntry?.absent ?? a.is_absent;
+    const bAbsent = bEntry?.absent ?? b.is_absent;
+    const aMarks = aEntry?.marks !== '' && aEntry?.marks != null ? parseFloat(aEntry.marks) : (a.marks_obtained ?? -1);
+    const bMarks = bEntry?.marks !== '' && bEntry?.marks != null ? parseFloat(bEntry.marks) : (b.marks_obtained ?? -1);
+    if (sortField === 'marks') {
+      return (isNaN(bMarks) ? -1 : bMarks) - (isNaN(aMarks) ? -1 : aMarks);
+    }
+    // rank: sort by marks desc, absent last
+    if (aAbsent && !bAbsent) return 1;
+    if (!aAbsent && bAbsent) return -1;
+    return (isNaN(bMarks) ? -1 : bMarks) - (isNaN(aMarks) ? -1 : aMarks);
+  });
+
   const handleKeyDown = (e: React.KeyboardEvent, idx: number) => {
     if (e.key === 'Enter' || e.key === 'ArrowDown') {
       e.preventDefault();
@@ -133,6 +156,7 @@ export default function PrincipalMarksPage() {
   const handleSave = async () => {
     setSaving(true); setSaveStatus('idle'); setSaveError('');
     const userId = (await supabase.auth.getUser()).data.user?.id;
+    const exam = exams.find(e => e.id === selectedExam);
     if (!userId || !exam) { setSaving(false); return; }
     // Validate
     const invalid = results.find(s => {
@@ -161,26 +185,25 @@ export default function PrincipalMarksPage() {
   const exam = exams.find(e => e.id === selectedExam);
   const passThresh = exam ? (exam.passing_marks || exam.total_marks * 0.35) : 0;
 
-  const sortedResults = [...results].sort((a, b) => {
-    if (sortField === 'name') return a.full_name.localeCompare(b.full_name);
-    if (sortField === 'marks') {
-      const am = a.marks_obtained ?? -1; const bm = b.marks_obtained ?? -1;
-      return bm - am;
-    }
-    // rank: sort by marks desc, absent last
-    if (a.is_absent && !b.is_absent) return 1;
-    if (!a.is_absent && b.is_absent) return -1;
-    return (b.marks_obtained ?? -1) - (a.marks_obtained ?? -1);
+  // BUG FIX: Compute all stats from live editMarks (not stale `results` data)
+  const liveAbsentCount = results.filter(r => editMarks[r.student_id]?.absent === true).length;
+  const liveEnteredCount = results.filter(r => {
+    const e = editMarks[r.student_id];
+    return e?.absent === true || (e?.marks != null && e.marks !== '');
+  }).length;
+  const livePresentWithMarks = results.filter(r => {
+    const e = editMarks[r.student_id];
+    return e && !e.absent && e.marks !== '';
   });
-
-  const enteredCount = results.filter(r => r.marks_obtained !== null || r.is_absent).length;
-  const absentCount = results.filter(r => r.is_absent).length;
-  const presentResults = results.filter(r => !r.is_absent && r.marks_obtained !== null);
-  const passCount = presentResults.filter(r => (r.marks_obtained||0) >= passThresh).length;
-  const avg = presentResults.length > 0 ? Math.round(presentResults.reduce((s,r) => s+(r.marks_obtained||0),0)/presentResults.length*10)/10 : null;
-  const highest = presentResults.length > 0 ? Math.max(...presentResults.map(r => r.marks_obtained||0)) : null;
-  const lowest = presentResults.length > 0 ? Math.min(...presentResults.map(r => r.marks_obtained||0)) : null;
-  const passRate = presentResults.length > 0 ? Math.round((passCount/presentResults.length)*100) : null;
+  const livePassCount = livePresentWithMarks.filter(r => {
+    const val = parseFloat(editMarks[r.student_id]?.marks || '');
+    return !isNaN(val) && val >= passThresh;
+  }).length;
+  const liveMarkValues = livePresentWithMarks.map(r => parseFloat(editMarks[r.student_id]?.marks || '')).filter(v => !isNaN(v));
+  const avg = liveMarkValues.length > 0 ? Math.round(liveMarkValues.reduce((s, v) => s + v, 0) / liveMarkValues.length * 10) / 10 : null;
+  const highest = liveMarkValues.length > 0 ? Math.max(...liveMarkValues) : null;
+  const lowest = liveMarkValues.length > 0 ? Math.min(...liveMarkValues) : null;
+  const passRate = liveMarkValues.length > 0 ? Math.round((livePassCount / liveMarkValues.length) * 100) : null;
 
   const IS: React.CSSProperties = { width:'100%', padding:'10px 14px', border:'1px solid #E2E8F0', borderRadius:10, fontSize:13, outline:'none', background:'white', boxSizing:'border-box' };
   const filteredSections = sections.filter(s => !selectedClass || s.class_id === selectedClass);
@@ -211,8 +234,9 @@ export default function PrincipalMarksPage() {
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 2fr', gap:12 }}>
           <div>
             <label style={{ display:'block', fontSize:11, fontWeight:700, color:'#64748B', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>Class</label>
+            {/* BUG FIX: Changed "All Classes" to "Select Class..." — class is required for exam loading */}
             <select value={selectedClass} onChange={e => { setSelectedClass(e.target.value); setSelectedSection(''); setSelectedSubject(''); }} style={IS}>
-              <option value="">All Classes</option>
+              <option value="">Select Class...</option>
               {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
@@ -234,21 +258,22 @@ export default function PrincipalMarksPage() {
             <label style={{ display:'block', fontSize:11, fontWeight:700, color:'#64748B', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>Exam</label>
             <select value={selectedExam} onChange={e => setSelectedExam(e.target.value)} disabled={!selectedClass} style={{ ...IS, opacity:selectedClass?1:0.5 }}>
               <option value="">Select Exam...</option>
-              {filteredExams.map(e => <option key={e.id} value={e.id}>{e.name} · {e.subject_name} · {new Date(e.exam_date).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}{!e.is_published?' [DRAFT]':''}</option>)}
+              {/* BUG FIX: Use parseLocalDate to avoid UTC timezone off-by-one on exam dates */}
+              {filteredExams.map(e => <option key={e.id} value={e.id}>{e.name} · {e.subject_name}{e.section_name ? ` (${e.section_name})` : ''} · {parseLocalDate(e.exam_date).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}{!e.is_published?' [DRAFT]':''}</option>)}
             </select>
           </div>
         </div>
       )}
 
-      {/* Stats Cards */}
+      {/* Stats Cards — BUG FIX: now uses live editMarks values */}
       {selectedExam && exam && !loading && results.length > 0 && (
         <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:12 }}>
           {[
             { label:'Students', value:results.length, icon:'🎓', color:'#1D4ED8', bg:'#EFF6FF', border:'#DBEAFE' },
-            { label:'Entered', value:enteredCount, icon:'✏️', color:'#0F766E', bg:'#F0FDF4', border:'#CCFBF1' },
+            { label:'Entered', value:liveEnteredCount, icon:'✏️', color:'#0F766E', bg:'#F0FDF4', border:'#CCFBF1' },
             { label:'Pass Rate', value:passRate!=null?`${passRate}%`:'—', icon:'🏆', color:'#16A34A', bg:'#DCFCE7', border:'#BBF7D0' },
             { label:'Average', value:avg!=null?`${avg}`:' —', icon:'📊', color:'#7C3AED', bg:'#F5F3FF', border:'#EDE9FE' },
-            { label:'Absent', value:absentCount, icon:'❌', color:'#DC2626', bg:'#FEF2F2', border:'#FEE2E2' },
+            { label:'Absent', value:liveAbsentCount, icon:'❌', color:'#DC2626', bg:'#FEF2F2', border:'#FEE2E2' },
           ].map((stat,i) => (
             <div key={i} style={{ background:stat.bg, border:`1px solid ${stat.border}`, borderRadius:12, padding:'14px 16px' }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
@@ -261,8 +286,8 @@ export default function PrincipalMarksPage() {
         </div>
       )}
 
-      {/* Highest / Lowest / Pass bar */}
-      {selectedExam && exam && !loading && presentResults.length > 0 && (
+      {/* Highest / Lowest / Pass bar — BUG FIX: uses live computed values */}
+      {selectedExam && exam && !loading && liveMarkValues.length > 0 && (
         <div style={{ background:'white', border:'1px solid #E8ECF0', borderRadius:12, padding:'16px 20px', boxShadow:'0 1px 3px rgba(0,0,0,0.04)' }}>
           <p style={{ fontSize:13, fontWeight:700, color:'#0F172A', margin:'0 0 12px' }}>Class Performance Overview</p>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 2fr', gap:16, alignItems:'center' }}>
@@ -290,8 +315,8 @@ export default function PrincipalMarksPage() {
                 <div style={{ height:'100%', borderRadius:99, width:`${passRate ?? 0}%`, background: passRate!=null&&passRate>=50?'linear-gradient(90deg,#16A34A,#22C55E)':'linear-gradient(90deg,#DC2626,#EF4444)', transition:'width 0.5s' }} />
               </div>
               <div style={{ display:'flex', justifyContent:'space-between', marginTop:4 }}>
-                <span style={{ fontSize:11, color:'#94A3B8' }}>{passCount} passed</span>
-                <span style={{ fontSize:11, color:'#94A3B8' }}>{presentResults.length-passCount} failed</span>
+                <span style={{ fontSize:11, color:'#94A3B8' }}>{livePassCount} passed</span>
+                <span style={{ fontSize:11, color:'#94A3B8' }}>{liveMarkValues.length - livePassCount} failed</span>
               </div>
             </div>
           </div>
@@ -311,7 +336,7 @@ export default function PrincipalMarksPage() {
       {selectedExam && !loading && results.length > 0 && (
         <>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-            <p style={{ fontSize:13, fontWeight:600, color:'#475569', margin:0 }}>{results.length} students · {enteredCount} marks entered</p>
+            <p style={{ fontSize:13, fontWeight:600, color:'#475569', margin:0 }}>{results.length} students · {liveEnteredCount} marks entered</p>
             <div style={{ display:'flex', gap:8 }}>
               {(['rank','name','marks'] as const).map(f => (
                 <button key={f} onClick={() => setSortField(f)}
@@ -319,23 +344,26 @@ export default function PrincipalMarksPage() {
                   {f === 'rank' ? 'Rank' : f === 'name' ? 'Name' : 'Marks'}
                 </button>
               ))}
+              {/* BUG FIX: Export uses live editMarks values, not stale results data */}
               <button
                 onClick={() => {
                   if (!exam || sortedResults.length === 0) return;
                   const passT = exam.passing_marks || exam.total_marks * 0.35;
                   const data = sortedResults.map((row, idx) => {
-                    const pct = row.marks_obtained != null ? Math.round((row.marks_obtained / exam.total_marks) * 100) : null;
-                    const gr = row.marks_obtained != null ? getGrade(row.marks_obtained, exam.total_marks) : null;
+                    const entry = editMarks[row.student_id] || { marks: '', absent: false, remarks: '' };
+                    const marksNum = entry.absent ? null : (entry.marks ? parseFloat(entry.marks) : null);
+                    const pct = marksNum != null ? Math.round((marksNum / exam.total_marks) * 100) : null;
+                    const gr = marksNum != null ? getGrade(marksNum, exam.total_marks) : null;
                     return {
-                      'Rank': !row.is_absent && pct != null ? idx + 1 : '',
+                      'Rank': !entry.absent && pct != null ? idx + 1 : '',
                       'Student Name': row.full_name,
                       'Roll No': row.roll_number ?? '',
-                      'Marks': row.is_absent ? 'Absent' : (row.marks_obtained ?? 'Not Entered'),
+                      'Marks': entry.absent ? 'Absent' : (marksNum ?? 'Not Entered'),
                       'Total Marks': exam.total_marks,
                       'Percentage': pct != null ? `${pct}%` : '',
                       'Grade': gr?.letter ?? '',
-                      'Pass / Fail': row.is_absent ? 'Absent' : pct != null ? (row.marks_obtained! >= passT ? 'Pass' : 'Fail') : '',
-                      'Remarks': row.remarks ?? '',
+                      'Pass / Fail': entry.absent ? 'Absent' : pct != null ? (marksNum! >= passT ? 'Pass' : 'Fail') : '',
+                      'Remarks': entry.remarks ?? '',
                     };
                   });
                   const ws = XLSX.utils.json_to_sheet(data);

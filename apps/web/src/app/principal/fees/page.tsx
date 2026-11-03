@@ -5,6 +5,123 @@ import { createClient } from '@/lib/supabase/client';
 import { createNotification } from '@/components/NotificationBell';
 import * as XLSX from 'xlsx';
 
+// ─── Number to Words (Indian System) Helper ────────────────────────────────────
+export function numberToWordsIndian(n: number): string {
+  const num = Math.round(Math.abs(n));
+  if (num === 0) return 'Zero Rupees Only';
+  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+    'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+  function twoDigits(val: number): string {
+    if (val < 20) return ones[val];
+    const t = Math.floor(val / 10);
+    const u = val % 10;
+    return tens[t] + (u > 0 ? ' ' + ones[u] : '');
+  }
+
+  function threeDigits(val: number): string {
+    const h = Math.floor(val / 100);
+    const rem = val % 100;
+    let res = '';
+    if (h > 0) res += ones[h] + ' Hundred';
+    if (rem > 0) res += (res ? ' ' : '') + twoDigits(rem);
+    return res;
+  }
+
+  const crore = Math.floor(num / 10000000);
+  let rem = num % 10000000;
+  const lakh = Math.floor(rem / 100000);
+  rem = rem % 100000;
+  const thousand = Math.floor(rem / 1000);
+  rem = rem % 1000;
+  const hundreds = rem;
+
+  const parts: string[] = [];
+  if (crore > 0) parts.push(threeDigits(crore) + ' Crore');
+  if (lakh > 0) parts.push(twoDigits(lakh) + ' Lakh');
+  if (thousand > 0) parts.push(twoDigits(thousand) + ' Thousand');
+  if (hundreds > 0) parts.push(threeDigits(hundreds));
+
+  return 'Rupees ' + parts.join(' ') + ' Only';
+}
+
+export function mapFeeType(label: string): string {
+  const l = (label || '').toLowerCase();
+  if (l.includes('transport') || l.includes('bus') || l.includes('van') || l.includes('cab')) return 'transport';
+  if (l.includes('hostel') || l.includes('mess') || l.includes('boarding')) return 'hostel';
+  if (l.includes('exam') || l.includes('assessment') || l.includes('test')) return 'examination';
+  if (l.includes('activity') || l.includes('sports') || l.includes('event') || l.includes('annual') || l.includes('cultural')) return 'activity';
+  if (l.includes('lib') || l.includes('book')) return 'library';
+  if (l.includes('uniform') || l.includes('dress') || l.includes('attire')) return 'uniform';
+  if (l.includes('tuition') || l.includes('term') || l.includes('admission') || l.includes('coaching') || l.includes('course')) return 'tuition';
+  return 'miscellaneous';
+}
+
+export const STANDARD_FEE_CATEGORIES = [
+  'Tuition Fee',
+  'Term 1 Fee',
+  'Term 2 Fee',
+  'Term 3 Fee',
+  'Examination Fee',
+  'Admission Fee',
+  'Transport Fee',
+  'Hostel / Boarding Fee',
+  'Laboratory & Computer Fee',
+  'Books & Stationery Fee',
+  'Uniform & Attire Fee',
+  'Special Coaching Fee',
+  'Annual / Development Fee',
+  'Miscellaneous Fee',
+  'Custom Label...',
+];
+
+async function getOrCreateFeeStructure(supabase: any, schoolId: string, classId: string, label: string): Promise<string | null> {
+  const cleanLabel = (label || '').trim() || 'Tuition Fee';
+  try {
+    let query = supabase
+      .from('fee_structures')
+      .select('id')
+      .eq('school_id', schoolId)
+      .ilike('name', cleanLabel);
+
+    if (classId) {
+      query = query.or(`class_id.eq.${classId},class_id.is.null`);
+    }
+    const { data: existing } = await query.limit(1);
+    if (existing && existing.length > 0) {
+      return existing[0].id;
+    }
+
+    const feeType = mapFeeType(cleanLabel);
+    const { data: inserted, error } = await supabase
+      .from('fee_structures')
+      .insert({
+        school_id: schoolId,
+        class_id: classId || null,
+        name: cleanLabel,
+        fee_type: feeType,
+        amount: 0,
+      })
+      .select('id')
+      .single();
+
+    if (error) {
+      const { data: fallback } = await supabase
+        .from('fee_structures')
+        .select('id')
+        .eq('school_id', schoolId)
+        .ilike('name', cleanLabel)
+        .limit(1);
+      return fallback?.[0]?.id ?? null;
+    }
+    return inserted?.id ?? null;
+  } catch (err) {
+    console.error('Error resolving fee structure:', err);
+    return null;
+  }
+}
+
 // ─── Fee Receipt Modal ────────────────────────────────────────────────────────
 interface ReceiptInfo {
   feeId: string;
@@ -13,6 +130,9 @@ interface ReceiptInfo {
   feeDue: number;
   feeStatus: string;
   studentName: string;
+  rollNumber?: number | string | null;
+  feeName?: string | null;
+  academicYear?: string | null;
   className: string;
   sectionName: string;
   schoolName: string;
@@ -23,7 +143,6 @@ function PrincipalFeeReceiptModal({ data, onClose }: { data: ReceiptInfo; onClos
   const printRef = useRef<HTMLDivElement>(null);
   const receiptNo = `RCP-${data.feeId.slice(-8).toUpperCase()}`;
   const printDate = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
-  const isPaid = data.feeStatus === 'paid';
   const fmt2 = (n: number) => `₹${n.toLocaleString('en-IN')}`;
   const statusMap: Record<string, { bg: string; color: string; label: string }> = {
     paid:           { bg: '#DCFCE7', color: '#15803D', label: 'Paid' },
@@ -32,79 +151,211 @@ function PrincipalFeeReceiptModal({ data, onClose }: { data: ReceiptInfo; onClos
     overdue:        { bg: '#FEE2E2', color: '#991B1B', label: 'Overdue' },
   };
   const sc = statusMap[data.feeStatus] ?? { bg: '#F1F5F9', color: '#64748B', label: data.feeStatus };
+  const feeName = data.feeName || 'Tuition / Educational Fee';
 
   const handlePrint = () => {
     const contents = printRef.current?.innerHTML;
     if (!contents) return;
-    const win = window.open('', '_blank', 'width=700,height=900');
+    const win = window.open('', '_blank', 'width=780,height=960');
     if (!win) return;
-    win.document.write(`<!DOCTYPE html><html><head><title>Fee Receipt — ${receiptNo}</title><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet"><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'Inter',sans-serif;background:white;padding:32px;}@media print{body{padding:0;}@page{margin:20mm;}}</style></head><body>${contents}</body></html>`);
+    win.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Fee Receipt — ${receiptNo}</title>
+          <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+          <style>
+            * { margin:0; padding:0; box-sizing:border-box; }
+            body { font-family:'Inter',sans-serif; background:white; padding:24px; color:#0F172A; }
+            table { width:100%; border-collapse:collapse; }
+            @media print {
+              body { padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+              @page { margin:12mm; size:A4 portrait; }
+            }
+          </style>
+        </head>
+        <body>${contents}</body>
+      </html>
+    `);
     win.document.close(); win.focus();
     setTimeout(() => { win.print(); win.close(); }, 400);
   };
 
   return (
-    <div style={{ position:'fixed', inset:0, zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:16, background:'rgba(15,23,42,0.7)', backdropFilter:'blur(6px)' }}>
-      <div style={{ width:'100%', maxWidth:580, background:'white', borderRadius:20, boxShadow:'0 32px 80px rgba(0,0,0,0.3)', overflow:'hidden', maxHeight:'90vh', display:'flex', flexDirection:'column' }}>
-        <div style={{ padding:'14px 18px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid #E8ECF0', background:'#F8FAFC' }}>
-          <p style={{ fontWeight:800, color:'#0F172A', fontSize:15, margin:0 }}>🧾 Fee Receipt</p>
+    <div style={{ position:'fixed', inset:0, zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:16, background:'rgba(15,23,42,0.75)', backdropFilter:'blur(6px)' }}>
+      <div style={{ width:'100%', maxWidth:640, background:'white', borderRadius:16, boxShadow:'0 32px 80px rgba(0,0,0,0.35)', overflow:'hidden', maxHeight:'92vh', display:'flex', flexDirection:'column' }}>
+        {/* Modal action bar */}
+        <div style={{ padding:'14px 20px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid #E2E8F0', background:'#F8FAFC' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <span style={{ fontSize:16 }}>🧾</span>
+            <span style={{ fontWeight:800, color:'#0F172A', fontSize:14 }}>Official Institutional Fee Receipt</span>
+            <span style={{ fontSize:11, fontFamily:'monospace', fontWeight:700, background:'#EFF6FF', color:'#1E3A8A', padding:'2px 8px', borderRadius:4 }}>{receiptNo}</span>
+          </div>
           <div style={{ display:'flex', gap:8 }}>
-            <button onClick={handlePrint} style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', borderRadius:9, border:'none', background:'linear-gradient(135deg,#1E3A8A,#3B82F6)', color:'white', fontSize:12, fontWeight:700, cursor:'pointer' }}>🖨️ Print</button>
+            <button onClick={handlePrint} style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 16px', borderRadius:8, border:'none', background:'#0F2744', color:'white', fontSize:12, fontWeight:700, cursor:'pointer', boxShadow:'0 2px 6px rgba(15,39,68,0.25)' }}>
+              🖨️ Print Voucher
+            </button>
             <button onClick={onClose} style={{ width:30, height:30, borderRadius:'50%', border:'1px solid #E2E8F0', background:'white', cursor:'pointer', color:'#64748B', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
           </div>
         </div>
-        <div style={{ overflowY:'auto', padding:20 }}>
+
+        {/* Scrollable receipt sheet */}
+        <div style={{ overflowY:'auto', padding:'20px 24px', background:'#F1F5F9' }}>
           <div ref={printRef}>
-            <div style={{ fontFamily:"'Inter',sans-serif", background:'white', border:'1px solid #E2E8F0', borderRadius:14, overflow:'hidden' }}>
-              <div style={{ background:'linear-gradient(135deg,#1E3A8A,#3B82F6)', padding:'20px 24px', color:'white', position:'relative', overflow:'hidden' }}>
-                <div style={{ position:'absolute', top:-20, right:-20, width:110, height:110, borderRadius:'50%', background:'rgba(255,255,255,0.07)' }} />
-                <p style={{ fontSize:18, fontWeight:900, margin:'0 0 2px' }}>🏫 {data.schoolName}</p>
-                <p style={{ fontSize:11, opacity:0.7, margin:0 }}>Official Fee Receipt</p>
-                <div style={{ marginTop:14, display:'flex', justifyContent:'space-between', alignItems:'flex-end' }}>
-                  <div>
-                    <p style={{ fontSize:10, opacity:0.65, margin:'0 0 2px', textTransform:'uppercase', letterSpacing:'0.06em' }}>Student</p>
-                    <p style={{ fontSize:14, fontWeight:800, margin:0 }}>{data.studentName}</p>
-                    <p style={{ fontSize:11, opacity:0.8, margin:'2px 0 0' }}>{data.className} — {data.sectionName}</p>
+            {/* Formal Institutional Voucher Document */}
+            <div style={{ fontFamily:"'Inter',sans-serif", background:'white', maxWidth:580, margin:'0 auto', border:'2px solid #0F2744', borderRadius:8, padding:'24px 28px', color:'#0F172A', boxShadow:'0 4px 16px rgba(0,0,0,0.06)' }}>
+
+              {/* Institutional Letterhead Header */}
+              <div style={{ textAlign:'center', borderBottom:'2px solid #0F2744', paddingBottom:12, marginBottom:14 }}>
+                <div style={{ display:'flex', justifyContent:'center', alignItems:'center', gap:10, marginBottom:4 }}>
+                  <div style={{ width:34, height:34, borderRadius:'50%', background:'#0F2744', color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:900, fontSize:17, fontFamily:'serif' }}>
+                    🏛
                   </div>
-                  <div style={{ textAlign:'right' }}>
-                    <p style={{ fontSize:10, opacity:0.65, margin:'0 0 2px', textTransform:'uppercase', letterSpacing:'0.06em' }}>Receipt No.</p>
-                    <p style={{ fontSize:12, fontWeight:800, fontFamily:'monospace', margin:0 }}>{receiptNo}</p>
-                    <p style={{ fontSize:10, opacity:0.75, margin:'2px 0 0' }}>Printed: {printDate}</p>
+                  <div>
+                    <h1 style={{ fontFamily:"Georgia, 'Times New Roman', serif", fontSize:19, fontWeight:900, color:'#0F2744', textTransform:'uppercase', letterSpacing:'0.04em', margin:0 }}>
+                      {data.schoolName || 'INSTITUTION OF EDUCATION'}
+                    </h1>
+                    <p style={{ fontSize:10, fontWeight:700, color:'#475569', letterSpacing:'0.08em', textTransform:'uppercase', margin:'2px 0 0' }}>
+                      Affiliated Educational Institution · Central Accounts Department
+                    </p>
                   </div>
                 </div>
+                <div style={{ display:'inline-block', marginTop:6, padding:'4px 16px', background:'#0F2744', color:'white', borderRadius:4, fontSize:10, fontWeight:800, letterSpacing:'0.12em', textTransform:'uppercase' }}>
+                  Fee Receipt / Payment Voucher [ Accounts Copy ]
+                </div>
               </div>
-              <div style={{ position:'relative', padding:'18px 24px', borderBottom:'1px dashed #E2E8F0' }}>
-                <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%) rotate(-30deg)', fontSize:68, fontWeight:900, color:isPaid?'rgba(22,163,74,0.08)':'rgba(37,99,235,0.08)', pointerEvents:'none', userSelect:'none', whiteSpace:'nowrap' }}>{isPaid?'PAID':'PARTIAL'}</div>
-                <p style={{ fontSize:11, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', letterSpacing:'0.07em', margin:'0 0 12px' }}>Fee Summary</p>
-                {[['Fee Amount', fmt2(data.feeAmount)], ['Total Paid', fmt2(data.feePaid)], ['Balance Due', fmt2(data.feeDue)]].map(([l,v]) => (
-                  <div key={l} style={{ display:'flex', justifyContent:'space-between', marginBottom:7 }}>
-                    <span style={{ fontSize:13, color:'#64748B' }}>{l}</span>
-                    <span style={{ fontSize:13, fontWeight:700, color: l==='Balance Due' && data.feeDue>0 ? '#DC2626' : l==='Total Paid' ? '#16A34A' : '#0F172A' }}>{v}</span>
-                  </div>
-                ))}
+
+              {/* Metadata Grid */}
+              <table style={{ width:'100%', borderCollapse:'collapse', marginBottom:14, border:'1px solid #CBD5E1', fontSize:11 }}>
+                <tbody>
+                  <tr style={{ background:'#F8FAFC' }}>
+                    <td style={{ padding:'6px 10px', border:'1px solid #E2E8F0', width:'22%', fontWeight:700, color:'#64748B', textTransform:'uppercase', fontSize:9 }}>Receipt No.</td>
+                    <td style={{ padding:'6px 10px', border:'1px solid #E2E8F0', width:'28%', fontWeight:800, fontFamily:'monospace', color:'#0F172A' }}>{receiptNo}</td>
+                    <td style={{ padding:'6px 10px', border:'1px solid #E2E8F0', width:'22%', fontWeight:700, color:'#64748B', textTransform:'uppercase', fontSize:9 }}>Date of Issue</td>
+                    <td style={{ padding:'6px 10px', border:'1px solid #E2E8F0', width:'28%', fontWeight:700, color:'#0F172A' }}>{printDate}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding:'6px 10px', border:'1px solid #E2E8F0', fontWeight:700, color:'#64748B', textTransform:'uppercase', fontSize:9 }}>Student Name</td>
+                    <td style={{ padding:'6px 10px', border:'1px solid #E2E8F0', fontWeight:800, color:'#0F172A', textTransform:'uppercase' }}>{data.studentName}</td>
+                    <td style={{ padding:'6px 10px', border:'1px solid #E2E8F0', fontWeight:700, color:'#64748B', textTransform:'uppercase', fontSize:9 }}>Roll Number</td>
+                    <td style={{ padding:'6px 10px', border:'1px solid #E2E8F0', fontWeight:800, color:'#0F172A' }}>{data.rollNumber ?? '—'}</td>
+                  </tr>
+                  <tr style={{ background:'#F8FAFC' }}>
+                    <td style={{ padding:'6px 10px', border:'1px solid #E2E8F0', fontWeight:700, color:'#64748B', textTransform:'uppercase', fontSize:9 }}>Class &amp; Section</td>
+                    <td style={{ padding:'6px 10px', border:'1px solid #E2E8F0', fontWeight:700, color:'#0F172A' }}>{data.className} — {data.sectionName}</td>
+                    <td style={{ padding:'6px 10px', border:'1px solid #E2E8F0', fontWeight:700, color:'#64748B', textTransform:'uppercase', fontSize:9 }}>Payment Status</td>
+                    <td style={{ padding:'6px 10px', border:'1px solid #E2E8F0' }}>
+                      <span style={{ display:'inline-block', padding:'2px 8px', borderRadius:4, fontSize:10, fontWeight:800, textTransform:'uppercase', background:sc.bg, color:sc.color, border:`1px solid ${sc.color}40` }}>
+                        {sc.label}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+
+              {/* Itemized Fee Heads Table */}
+              <table style={{ width:'100%', borderCollapse:'collapse', marginBottom:12, border:'1px solid #94A3B8', fontSize:11 }}>
+                <thead>
+                  <tr style={{ background:'#0F2744', color:'white', textAlign:'left', fontSize:10, textTransform:'uppercase', letterSpacing:'0.04em' }}>
+                    <th style={{ padding:'7px 10px', border:'1px solid #0F2744', width:'8%', textAlign:'center' }}>#</th>
+                    <th style={{ padding:'7px 10px', border:'1px solid #0F2744' }}>Fee Particulars / Head</th>
+                    <th style={{ padding:'7px 10px', border:'1px solid #0F2744', textAlign:'right', width:'22%' }}>Assessed Fee</th>
+                    <th style={{ padding:'7px 10px', border:'1px solid #0F2744', textAlign:'right', width:'22%' }}>Paid Amount</th>
+                    <th style={{ padding:'7px 10px', border:'1px solid #0F2744', textAlign:'right', width:'22%' }}>Balance Due</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style={{ padding:'7px 10px', border:'1px solid #CBD5E1', textAlign:'center', color:'#64748B' }}>01</td>
+                    <td style={{ padding:'7px 10px', border:'1px solid #CBD5E1', fontWeight:700, color:'#0F172A' }}>{feeName}</td>
+                    <td style={{ padding:'7px 10px', border:'1px solid #CBD5E1', textAlign:'right', fontWeight:600 }}>{fmt2(data.feeAmount)}</td>
+                    <td style={{ padding:'7px 10px', border:'1px solid #CBD5E1', textAlign:'right', fontWeight:700, color:'#15803D' }}>{fmt2(data.feePaid)}</td>
+                    <td style={{ padding:'7px 10px', border:'1px solid #CBD5E1', textAlign:'right', fontWeight:700, color: data.feeDue > 0 ? '#DC2626' : '#15803D' }}>{fmt2(data.feeDue)}</td>
+                  </tr>
+                  <tr style={{ background:'#F1F5F9', fontWeight:800, borderTop:'2px solid #0F2744' }}>
+                    <td colSpan={2} style={{ padding:'7px 10px', border:'1px solid #CBD5E1', textAlign:'right', textTransform:'uppercase', fontSize:10, letterSpacing:'0.04em' }}>Grand Total (INR):</td>
+                    <td style={{ padding:'7px 10px', border:'1px solid #CBD5E1', textAlign:'right' }}>{fmt2(data.feeAmount)}</td>
+                    <td style={{ padding:'7px 10px', border:'1px solid #CBD5E1', textAlign:'right', color:'#15803D' }}>{fmt2(data.feePaid)}</td>
+                    <td style={{ padding:'7px 10px', border:'1px solid #CBD5E1', textAlign:'right', color: data.feeDue > 0 ? '#DC2626' : '#15803D' }}>{fmt2(data.feeDue)}</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              {/* Amount in Words Box */}
+              <div style={{ background:'#F8FAFC', border:'1px solid #E2E8F0', borderRadius:4, padding:'7px 12px', marginBottom:12 }}>
+                <p style={{ margin:0, fontSize:10.5, color:'#475569', lineHeight:1.5 }}>
+                  <strong>Amount Received in Words:</strong>{' '}
+                  <span style={{ color:'#0F172A', fontWeight:700 }}>{numberToWordsIndian(data.feePaid)}</span>
+                </p>
+                {data.feeDue > 0 && (
+                  <p style={{ margin:'3px 0 0', fontSize:10.5, color:'#DC2626', lineHeight:1.5 }}>
+                    <strong>Outstanding Balance Remaining:</strong>{' '}
+                    <span style={{ fontWeight:700 }}>{numberToWordsIndian(data.feeDue)}</span>
+                  </p>
+                )}
               </div>
+
+              {/* Payment Records Breakdown */}
               {data.payments.length > 0 && (
-                <div style={{ padding:'16px 24px', borderBottom:'1px dashed #E2E8F0' }}>
-                  <p style={{ fontSize:11, fontWeight:700, color:'#94A3B8', textTransform:'uppercase', letterSpacing:'0.07em', margin:'0 0 10px' }}>Payment History</p>
-                  {data.payments.map((p, i) => (
-                    <div key={p.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'7px 10px', background:'#F8FAFC', borderRadius:7, marginBottom:5, border:'1px solid #F1F5F9' }}>
-                      <div>
-                        <p style={{ fontSize:12, fontWeight:700, color:'#0F172A', margin:0 }}>Payment #{i+1}</p>
-                        <p style={{ fontSize:11, color:'#94A3B8', margin:'1px 0 0', textTransform:'capitalize' }}>{p.payment_mode.replace('_',' ')} · {new Date(p.payment_date).toLocaleDateString('en-IN')}</p>
-                        {p.notes && <p style={{ fontSize:10, color:'#CBD5E1', margin:'1px 0 0' }}>{p.notes}</p>}
-                      </div>
-                      <p style={{ fontSize:13, fontWeight:800, color:'#16A34A', margin:0 }}>{fmt2(p.amount_paid)}</p>
-                    </div>
-                  ))}
+                <div style={{ marginBottom:14 }}>
+                  <p style={{ fontSize:9.5, fontWeight:800, color:'#475569', textTransform:'uppercase', letterSpacing:'0.06em', margin:'0 0 5px' }}>
+                    Payment Audit Trail &amp; Transaction Details
+                  </p>
+                  <table style={{ width:'100%', borderCollapse:'collapse', border:'1px solid #CBD5E1', fontSize:10.5 }}>
+                    <thead>
+                      <tr style={{ background:'#F8FAFC', color:'#475569', textAlign:'left', fontSize:9.5, textTransform:'uppercase' }}>
+                        <th style={{ padding:'5px 8px', border:'1px solid #CBD5E1', width:'6%', textAlign:'center' }}>#</th>
+                        <th style={{ padding:'5px 8px', border:'1px solid #CBD5E1', width:'22%' }}>Payment Date</th>
+                        <th style={{ padding:'5px 8px', border:'1px solid #CBD5E1', width:'20%' }}>Mode</th>
+                        <th style={{ padding:'5px 8px', border:'1px solid #CBD5E1' }}>Reference / Remarks</th>
+                        <th style={{ padding:'5px 8px', border:'1px solid #CBD5E1', textAlign:'right', width:'22%' }}>Amount Paid</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.payments.map((p, idx) => (
+                        <tr key={p.id}>
+                          <td style={{ padding:'5px 8px', border:'1px solid #E2E8F0', textAlign:'center', color:'#64748B' }}>{idx + 1}</td>
+                          <td style={{ padding:'5px 8px', border:'1px solid #E2E8F0', color:'#0F172A' }}>{new Date(p.payment_date).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}</td>
+                          <td style={{ padding:'5px 8px', border:'1px solid #E2E8F0', fontWeight:600, textTransform:'uppercase', color:'#1E3A8A' }}>{p.payment_mode.replace('_',' ')}</td>
+                          <td style={{ padding:'5px 8px', border:'1px solid #E2E8F0', color:'#64748B' }}>{p.notes || 'Counter Payment'}</td>
+                          <td style={{ padding:'5px 8px', border:'1px solid #E2E8F0', textAlign:'right', fontWeight:700, color:'#15803D' }}>{fmt2(p.amount_paid)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
-              <div style={{ padding:'14px 24px', background:'#F8FAFC', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                <span style={{ fontSize:13, fontWeight:700, color:'#0F172A' }}>Status</span>
-                <span style={{ padding:'4px 12px', borderRadius:99, fontSize:12, fontWeight:800, background:sc.bg, color:sc.color }}>{sc.label}</span>
+
+              {/* Three-Column Formal Signatures & Stamp Area */}
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12, marginTop:20, paddingTop:12, borderTop:'1px solid #E2E8F0', textAlign:'center' }}>
+                <div>
+                  <div style={{ height:38 }} />
+                  <div style={{ borderTop:'1px dashed #64748B', width:'85%', margin:'0 auto 4px' }} />
+                  <p style={{ fontSize:9.5, fontWeight:700, color:'#0F172A', textTransform:'uppercase', margin:0 }}>Student / Depositor</p>
+                  <p style={{ fontSize:8.5, color:'#94A3B8', margin:'1px 0 0' }}>Signature</p>
+                </div>
+                <div>
+                  <div style={{ height:38 }} />
+                  <div style={{ borderTop:'1px dashed #64748B', width:'85%', margin:'0 auto 4px' }} />
+                  <p style={{ fontSize:9.5, fontWeight:700, color:'#0F172A', textTransform:'uppercase', margin:0 }}>Cashier / Bursar</p>
+                  <p style={{ fontSize:8.5, color:'#94A3B8', margin:'1px 0 0' }}>Accounts Department</p>
+                </div>
+                <div>
+                  <div style={{ width:64, height:34, border:'1px dashed #94A3B8', borderRadius:4, margin:'0 auto 4px', display:'flex', alignItems:'center', justifyContent:'center', color:'#94A3B8', fontSize:7.5, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.05em' }}>
+                    [ SEAL ]
+                  </div>
+                  <div style={{ borderTop:'1px solid #0F172A', width:'85%', margin:'0 auto 4px' }} />
+                  <p style={{ fontSize:9.5, fontWeight:800, color:'#0F172A', textTransform:'uppercase', margin:0 }}>Principal / Director</p>
+                  <p style={{ fontSize:8.5, color:'#94A3B8', margin:'1px 0 0' }}>Authorized Signatory</p>
+                </div>
               </div>
-              <div style={{ padding:'10px 24px', borderTop:'1px solid #E2E8F0', textAlign:'center' }}>
-                <p style={{ fontSize:10, color:'#CBD5E1', margin:0 }}>Computer-generated receipt — NxtStepEdu School Management System</p>
+
+              {/* Footer Terms */}
+              <div style={{ marginTop:14, paddingTop:8, borderTop:'1px solid #E2E8F0', fontSize:8.5, color:'#94A3B8', lineHeight:1.4 }}>
+                <p style={{ margin:0 }}><strong>Notice:</strong> 1. Receipts are issued subject to fund realization. 2. Fees once paid are non-refundable &amp; non-transferable under institutional rules. 3. This computer-generated voucher serves as official financial record.</p>
+                <p style={{ margin:'3px 0 0', textAlign:'center', letterSpacing:'0.04em' }}>NxtStepEdu Central School Management System · Institutional Accounts Ledger</p>
               </div>
+
             </div>
           </div>
         </div>
@@ -124,6 +375,8 @@ interface StudentFeeRow {
   current_amount: number;      // current total fee in DB (read-only display)
   amount: string;              // additive input — how much to ADD to the due
   status: string | null;
+  fee_label: string;           // the fee label to assign
+  current_label: string | null; // existing fee label in DB if any
   saving: boolean;
   saved: boolean;
   error: string | null;
@@ -172,6 +425,12 @@ function TabIndividual({ schoolId, academicYearId, classes, sections }: {
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const toastRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Fee labelling controls
+  const [selCategory, setSelCategory] = useState<string>('Tuition Fee');
+  const [customLabel, setCustomLabel] = useState<string>('');
+  const [batchDueDate, setBatchDueDate] = useState<string>('');
+
+  const activeLabel = selCategory === 'Custom Label...' ? customLabel.trim() : selCategory;
   const filteredSections = sections.filter(s => s.class_id === selClass);
 
   function showToast(msg: string, ok: boolean) {
@@ -194,11 +453,11 @@ function TabIndividual({ schoolId, academicYearId, classes, sections }: {
 
     if (!students || students.length === 0) { setRows([]); setLoading(false); return; }
 
-    // Fetch existing fees for these students
+    // Fetch existing fees with fee_structures to get current label
     const ids = students.map((s: any) => s.id);
     const { data: fees } = await supabase
       .from('fees')
-      .select('id, student_id, amount, status')
+      .select('id, student_id, amount, status, fee_structure_id, fee_structures(name, fee_type)')
       .eq('school_id', schoolId)
       .in('student_id', ids);
 
@@ -206,27 +465,41 @@ function TabIndividual({ schoolId, academicYearId, classes, sections }: {
 
     setRows(students.map((s: any) => {
       const fee: any = feeMap.get(s.id);
+      const existingLabel = fee?.fee_structures?.name || null;
       return {
         student_id: s.id,
         full_name: s.full_name,
         roll_number: s.roll_number,
         fee_id: fee?.id ?? null,
-        current_amount: fee?.amount ?? 0,   // existing total shown as label
-        amount: '0',                         // always start at 0 for additive input
+        current_amount: fee?.amount ?? 0,
+        amount: '0',
         status: fee?.status ?? null,
+        fee_label: existingLabel || activeLabel || 'Tuition Fee',
+        current_label: existingLabel,
         saving: false,
         saved: false,
         error: null,
       };
     }));
     setLoading(false);
-  }, [supabase, selClass, selSection, schoolId]);
+  }, [supabase, selClass, selSection, schoolId, activeLabel]);
 
   useEffect(() => { loadStudents(); }, [loadStudents]);
 
   function updateAmount(student_id: string, val: string) {
     setRows(r => r.map(row => row.student_id === student_id
       ? { ...row, amount: val, saved: false, error: null } : row));
+  }
+
+  function updateRowLabel(student_id: string, val: string) {
+    setRows(r => r.map(row => row.student_id === student_id
+      ? { ...row, fee_label: val, saved: false, error: null } : row));
+  }
+
+  function applyLabelToAll() {
+    const l = activeLabel || 'Tuition Fee';
+    setRows(r => r.map(row => ({ ...row, fee_label: l, saved: false })));
+    showToast(`Applied fee label "${l}" to all ${rows.length} rows`, true);
   }
 
   async function saveRow(student_id: string) {
@@ -237,13 +510,17 @@ function TabIndividual({ schoolId, academicYearId, classes, sections }: {
       setRows(r => r.map(x => x.student_id === student_id ? { ...x, error: 'Enter an amount greater than 0' } : x));
       return;
     }
+    const labelToSave = (row.fee_label || activeLabel).trim() || 'Tuition Fee';
     setRows(r => r.map(x => x.student_id === student_id ? { ...x, saving: true, error: null } : x));
+
+    // Resolve fee_structure_id
+    const structureId = await getOrCreateFeeStructure(supabase, schoolId, selClass, labelToSave);
 
     // ADDITIVE: new total = existing amount + what was entered
     const newTotal = row.current_amount + addAmt;
 
     const now = new Date();
-    const defaultDueDate = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+    const defaultDueDate = batchDueDate || new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
 
     const payload: Record<string, unknown> = {
       school_id: schoolId,
@@ -251,6 +528,7 @@ function TabIndividual({ schoolId, academicYearId, classes, sections }: {
       amount: newTotal,
       status: row.fee_id ? (row.status ?? 'pending') : 'pending',
       due_date: defaultDueDate,
+      ...(structureId ? { fee_structure_id: structureId } : {}),
       ...(academicYearId ? { academic_year_id: academicYearId } : {}),
     };
 
@@ -265,14 +543,32 @@ function TabIndividual({ schoolId, academicYearId, classes, sections }: {
       }
     }
 
+    if (!error) {
+      const { data: links } = await supabase
+        .from('student_parent_links')
+        .select('parent_id')
+        .eq('student_id', student_id);
+
+      if (links && links.length > 0) {
+        await Promise.all(links.map((l: any) => createNotification(supabase, {
+          recipient_id: l.parent_id,
+          school_id: schoolId,
+          type: 'fee_reminder',
+          title: `Fee Assigned: ${labelToSave} — ₹${addAmt.toLocaleString('en-IN')}`,
+          body: `A fee of ₹${addAmt.toLocaleString('en-IN')} (${labelToSave}) has been added for ${row.full_name}. Total due: ₹${newTotal.toLocaleString('en-IN')}. Due date: ${new Date(defaultDueDate).toLocaleDateString('en-IN')}.`,
+          link: '/parent/fees',
+        })));
+      }
+    }
+
     setRows(r => r.map(x => x.student_id === student_id
       ? {
           ...x,
           saving: false,
           saved: !error,
           error: error?.message ?? null,
-          // On success: update current_amount to the new total and reset input to 0
           current_amount: error ? x.current_amount : newTotal,
+          current_label: error ? x.current_label : labelToSave,
           amount: error ? x.amount : '0',
         }
       : x));
@@ -293,32 +589,87 @@ function TabIndividual({ schoolId, academicYearId, classes, sections }: {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {/* Filters */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 12, alignItems: 'flex-end' }}>
-        <div>
-          <label style={LABEL}>Class</label>
-          <select value={selClass} onChange={e => { setSelClass(e.target.value); setSelSection(''); setRows([]); }} style={IS}>
-            <option value="">Select class…</option>
-            {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+      {/* Filters & Fee Label Setup */}
+      <div style={{ background: 'white', borderRadius: 14, border: '1px solid #E8ECF0', padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 1.8fr auto', gap: 12, alignItems: 'flex-end' }}>
+          <div>
+            <label style={LABEL}>Class <span style={{ color: '#EF4444' }}>*</span></label>
+            <select value={selClass} onChange={e => { setSelClass(e.target.value); setSelSection(''); setRows([]); }} style={IS}>
+              <option value="">Select class…</option>
+              {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={LABEL}>Section <span style={{ color: '#EF4444' }}>*</span></label>
+            <select value={selSection} onChange={e => setSelSection(e.target.value)} disabled={!selClass} style={{ ...IS, opacity: selClass ? 1 : 0.5 }}>
+              <option value="">Select section…</option>
+              {filteredSections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={LABEL}>Default Fee Label / Purpose <span style={{ color: '#EF4444' }}>*</span></label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <select value={selCategory} onChange={e => setSelCategory(e.target.value)} style={{ ...IS, flex: 1, fontWeight: 600 }}>
+                {STANDARD_FEE_CATEGORIES.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+              {selCategory === 'Custom Label...' && (
+                <input
+                  type="text"
+                  placeholder="Type fee label…"
+                  value={customLabel}
+                  onChange={e => setCustomLabel(e.target.value)}
+                  style={{ ...IS, flex: 1 }}
+                />
+              )}
+              {rows.length > 0 && (
+                <button
+                  type="button"
+                  onClick={applyLabelToAll}
+                  title="Apply this fee label to all students in table"
+                  style={{
+                    padding: '8px 12px', borderRadius: 8, border: '1px solid #DBEAFE',
+                    background: '#EFF6FF', color: '#1D4ED8', fontSize: 12, fontWeight: 700,
+                    cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4,
+                  }}
+                >
+                  🏷️ Apply to All
+                </button>
+              )}
+            </div>
+          </div>
+          <div>
+            <label style={LABEL}>&nbsp;</label>
+            <button
+              onClick={saveAll}
+              disabled={saveAllBusy || filledCount === 0}
+              style={{
+                padding: '9px 22px', borderRadius: 9, border: 'none', cursor: filledCount === 0 ? 'not-allowed' : 'pointer',
+                background: filledCount === 0 ? '#E2E8F0' : 'linear-gradient(135deg,#1E3A8A,#3B82F6)',
+                color: filledCount === 0 ? '#94A3B8' : 'white', fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap',
+                boxShadow: filledCount > 0 ? '0 4px 12px rgba(59,130,246,0.3)' : 'none',
+              }}>
+              {saveAllBusy ? 'Saving…' : `Save All (${filledCount})`}
+            </button>
+          </div>
         </div>
-        <div>
-          <label style={LABEL}>Section</label>
-          <select value={selSection} onChange={e => setSelSection(e.target.value)} disabled={!selClass} style={{ ...IS, opacity: selClass ? 1 : 0.5 }}>
-            <option value="">Select section…</option>
-            {filteredSections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
+
+        {/* Due date picker line */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, paddingTop: 4, borderTop: '1px solid #F1F5F9' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#64748B' }}>Due Date for newly added fees:</span>
+            <input
+              type="date"
+              value={batchDueDate}
+              onChange={e => setBatchDueDate(e.target.value)}
+              style={{ ...IS, width: 'auto', padding: '5px 10px', fontSize: 12 }}
+            />
+            {!batchDueDate && (
+              <span style={{ fontSize: 11, color: '#94A3B8' }}>(defaults to next month-end)</span>
+            )}
+          </div>
         </div>
-        <button
-          onClick={saveAll}
-          disabled={saveAllBusy || filledCount === 0}
-          style={{
-            padding: '9px 22px', borderRadius: 9, border: 'none', cursor: filledCount === 0 ? 'not-allowed' : 'pointer',
-            background: filledCount === 0 ? '#E2E8F0' : 'linear-gradient(135deg,#1E3A8A,#3B82F6)',
-            color: filledCount === 0 ? '#94A3B8' : 'white', fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap',
-          }}>
-          {saveAllBusy ? 'Saving…' : `Save All (${filledCount})`}
-        </button>
       </div>
 
       {/* Toast */}
@@ -349,16 +700,23 @@ function TabIndividual({ schoolId, academicYearId, classes, sections }: {
         </div>
       ) : (
         <div style={{ background: 'white', borderRadius: 14, border: '1px solid #E8ECF0', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+          {/* Datalist for fast category suggestions */}
+          <datalist id="fee-category-options">
+            {STANDARD_FEE_CATEGORIES.filter(c => c !== 'Custom Label...').map(cat => (
+              <option key={cat} value={cat} />
+            ))}
+          </datalist>
+
           {/* Header */}
-          <div style={{ display: 'grid', gridTemplateColumns: '48px 2fr 120px 180px 90px', padding: '11px 20px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9', gap: 12 }}>
-            {['Roll','Student','Status','Add Fee Amount (₹)',''].map((h, i) => (
+          <div style={{ display: 'grid', gridTemplateColumns: '48px 1.8fr 110px 1.5fr 160px 85px', padding: '11px 20px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9', gap: 12, alignItems: 'center' }}>
+            {['Roll','Student','Status','Fee Label / Purpose','Add Fee Amount (₹)','Action'].map((h, i) => (
               <p key={i} style={{ fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>{h}</p>
             ))}
           </div>
           {/* Rows */}
           {rows.map((row, idx) => (
             <div key={row.student_id}
-              style={{ display: 'grid', gridTemplateColumns: '48px 2fr 120px 180px 90px', padding: '12px 20px', gap: 12,
+              style={{ display: 'grid', gridTemplateColumns: '48px 1.8fr 110px 1.5fr 160px 85px', padding: '12px 20px', gap: 12,
                 borderBottom: idx < rows.length - 1 ? '1px solid #F8FAFC' : 'none', alignItems: 'center',
                 background: row.saved ? 'rgba(220,252,231,0.3)' : 'white', transition: 'background 0.3s' }}>
               <span style={{ fontSize: 13, color: '#94A3B8', fontWeight: 600 }}>{row.roll_number ?? '—'}</span>
@@ -369,6 +727,28 @@ function TabIndividual({ schoolId, academicYearId, classes, sections }: {
                 <span style={{ fontSize: 13, fontWeight: 600, color: '#0F172A' }}>{row.full_name}</span>
               </div>
               <div>{statusBadge(row.status)}</div>
+
+              {/* Fee Label / Purpose */}
+              <div>
+                <input
+                  type="text"
+                  list="fee-category-options"
+                  placeholder="e.g. Tuition Fee"
+                  value={row.fee_label}
+                  onChange={e => updateRowLabel(row.student_id, e.target.value)}
+                  style={{ ...IS, padding: '7px 11px', fontSize: 12, fontWeight: 600, color: '#0F172A' }}
+                />
+                {row.current_label && (
+                  <p style={{ fontSize: 10, color: '#64748B', margin: '3px 0 0', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span>Existing:</span>
+                    <span style={{ fontWeight: 600, color: '#1E3A8A', background: '#EFF6FF', padding: '1px 6px', borderRadius: 4 }}>
+                      {row.current_label}
+                    </span>
+                  </p>
+                )}
+              </div>
+
+              {/* Add Fee Amount */}
               <div>
                 <input
                   type="text"
@@ -392,6 +772,8 @@ function TabIndividual({ schoolId, academicYearId, classes, sections }: {
                 )}
                 {row.error && <p style={{ fontSize: 11, color: '#EF4444', margin: '3px 0 0' }}>{row.error}</p>}
               </div>
+
+              {/* Action */}
               <button
                 onClick={() => saveRow(row.student_id)}
                 disabled={row.saving}
@@ -698,10 +1080,20 @@ interface PaymentRecord {
 }
 
 // ─── Aggregated per-student row ───────────────────────────────────────────────
-interface FeeDetail { fee_id: string; amount: number; paid: number; due: number; status: string; payments: PaymentRecord[]; }
+interface FeeDetail {
+  fee_id: string;
+  fee_name: string;
+  fee_type: string;
+  amount: number;
+  paid: number;
+  due: number;
+  status: string;
+  payments: PaymentRecord[];
+}
 interface OverviewRow {
   student_id:   string;
   student_name: string;
+  roll_number:  number | null;
   class_id:     string;
   section_id:   string;
   class_name:   string;
@@ -762,6 +1154,8 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
       feeDue:      detail.due,
       feeStatus:   detail.status,
       studentName: row.student_name,
+      rollNumber:  row.roll_number,
+      feeName:     detail.fee_name || 'Tuition / Educational Fee',
       className:   row.class_name,
       sectionName: row.section_name,
       schoolName,
@@ -887,7 +1281,7 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
 
     const { data: fees } = await supabase
       .from('fees')
-      .select('id, amount, status, student_id, students(full_name, class_id, section_id)')
+      .select('id, amount, status, student_id, fee_structure_id, fee_structures(name, fee_type), students(full_name, class_id, section_id, roll_number)')
       .eq('school_id', schoolId);
 
     if (!fees || fees.length === 0) { setRows([]); setLoading(false); return; }
@@ -935,7 +1329,21 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
       let derivedStatus = f.status ?? 'pending';
       if (feePaid >= feeAmt && feeAmt > 0) derivedStatus = 'paid';
       else if (feePaid > 0 && feePaid < feeAmt) derivedStatus = 'partially_paid';
-      const detail: FeeDetail = { fee_id: f.id, amount: feeAmt, paid: feePaid, due: Math.max(0, feeAmt - feePaid), status: derivedStatus, payments: payMap.get(f.id) ?? [] };
+
+      const feeName = f.fee_structures?.name || 'Tuition / Educational Fee';
+      const feeType = f.fee_structures?.fee_type || 'tuition';
+
+      const detail: FeeDetail = {
+        fee_id: f.id,
+        fee_name: feeName,
+        fee_type: feeType,
+        amount: feeAmt,
+        paid: feePaid,
+        due: Math.max(0, feeAmt - feePaid),
+        status: derivedStatus,
+        payments: payMap.get(f.id) ?? []
+      };
+
       if (studentMap.has(f.student_id)) {
         const row = studentMap.get(f.student_id)!;
         row.total_fee += feeAmt;
@@ -947,6 +1355,7 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
         studentMap.set(f.student_id, {
           student_id:   f.student_id,
           student_name: f.students.full_name,
+          roll_number:  f.students.roll_number ?? null,
           class_id:     f.students.class_id ?? '',
           section_id:   f.students.section_id ?? '',
           class_name:   cMap.get(f.students.class_id) ?? '—',
@@ -1289,7 +1698,16 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
                       <div key={d.fee_id} style={{ marginBottom: 14 }}>
                         {/* Fee header row */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: 'white', borderRadius: 8, border: '1px solid #E2E8F0', marginBottom: 4, flexWrap: 'wrap' }}>
-                          <p style={{ fontSize: 12, fontWeight: 700, color: '#475569', margin: 0, minWidth: 50 }}>Fee #{i + 1}</p>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 120 }}>
+                            <span style={{ fontSize: 11, fontWeight: 800, color: '#1E3A8A', background: '#EFF6FF', border: '1px solid #DBEAFE', padding: '2px 8px', borderRadius: 5 }}>
+                              {d.fee_name || `Fee #${i + 1}`}
+                            </span>
+                            {d.fee_type && (
+                              <span style={{ fontSize: 10, color: '#64748B', textTransform: 'capitalize' }}>
+                                ({d.fee_type.replace('_', ' ')})
+                              </span>
+                            )}
+                          </div>
                           <p style={{ fontSize: 12, fontWeight: 700, color: '#0F172A', margin: 0, flex: 1 }}>{fmt(d.amount)}</p>
                           <p style={{ fontSize: 12, color: '#15803D', fontWeight: 600, margin: 0 }}>Paid {fmt(d.paid)}</p>
                           <p style={{ fontSize: 12, color: d.due > 0 ? '#DC2626' : '#15803D', fontWeight: 700, margin: 0 }}>Due {fmt(d.due)}</p>
