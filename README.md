@@ -336,3 +336,26 @@ npx cap open android
   <p>Built with ❤️ for Indian K-12 Schools</p>
   <p><strong>NxtStepEdu</strong> — Digitizing School Operations, One Click at a Time</p>
 </div>
+
+## Engineering Highlights
+
+### Full-stack monorepo architecture
+
+NxtStepEdu is organized as a Turborepo monorepo with a Next.js App Router application, shared package space, Supabase migrations, and an Android delivery path through Capacitor. The feature surface is split into principal, teacher, and parent portals while shared data-access and validation patterns keep behavior consistent across roles.
+
+### Security and data boundaries
+
+- Supabase Auth provides identity; application middleware routes users to the correct portal.
+- PostgreSQL Row-Level Security is the database enforcement layer for school, role, and ownership boundaries.
+- Zod schemas and React Hook Form provide typed client-side validation for complex workflows.
+- Service-role credentials are isolated to server-side scripts and must never be exposed to the browser.
+
+### High-value workflows
+
+- Excel bulk import validates and links students, fee records, parents, and parent–student relationships.
+- The timetable generator uses constraint-aware backtracking to avoid teacher collisions while honoring period counts, breaks, priority subjects, and class-teacher placement.
+- Academic, attendance, fee, announcement, resource, and messaging modules share a relational model rather than isolated feature-specific stores.
+
+### Quality and delivery
+
+The repository includes Jest configuration, application tests, SQL migrations, repair scripts, and operational seed/verification utilities. The project is suitable for CI checks that run formatting, type-checking, tests, and a production build before deployment.
