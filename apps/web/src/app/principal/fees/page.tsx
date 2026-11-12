@@ -1178,6 +1178,11 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
   const [editFeeSaving,  setEditFeeSaving]  = useState(false);
   const [editFeeError,   setEditFeeError]   = useState('');
 
+  // Delete fee state
+  const [deleteFeeModal,   setDeleteFeeModal]   = useState<{ feeId: string; feeName: string; studentName: string; amount: number } | null>(null);
+  const [deleting,         setDeleting]         = useState(false);
+  const [deleteError,      setDeleteError]      = useState('');
+
   // ── Fee Reminder state ────────────────────────────────────────────────────
   const [reminderSending, setReminderSending] = useState(false);
   const [reminderResult,  setReminderResult]  = useState<{ sent: number; skipped: number } | null>(null);
@@ -1411,6 +1416,19 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
     const newStatus = paid >= newAmt ? 'paid' : paid > 0 ? 'partially_paid' : 'pending';
     await supabase.from('fees').update({ status: newStatus }).eq('id', editFeeModal.feeId);
     setEditFeeSaving(false); setEditFeeModal(null);
+    fetchOverview();
+  }
+
+  async function confirmDeleteFee() {
+    if (!deleteFeeModal) return;
+    setDeleting(true); setDeleteError('');
+    // Delete associated payment records first (to avoid FK constraint violations)
+    const { error: payErr } = await supabase.from('fee_payments').delete().eq('fee_id', deleteFeeModal.feeId);
+    if (payErr) { setDeleteError(`Failed to remove payments: ${payErr.message}`); setDeleting(false); return; }
+    // Now delete the fee record
+    const { error: feeErr } = await supabase.from('fees').delete().eq('id', deleteFeeModal.feeId);
+    if (feeErr) { setDeleteError(`Failed to delete fee: ${feeErr.message}`); setDeleting(false); return; }
+    setDeleting(false); setDeleteFeeModal(null);
     fetchOverview();
   }
 
@@ -1722,6 +1740,10 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
                             onClick={() => { setEditFeeModal({ feeId: d.fee_id, currentAmount: d.amount, studentName: row.student_name }); setEditFeeVal(String(d.amount)); setEditFeeError(''); }}
                             style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 7, border: '1px solid #DBEAFE', background: '#EFF6FF', color: '#1D4ED8', cursor: 'pointer', whiteSpace: 'nowrap' }}
                           >✏️ Edit Amount</button>
+                          <button
+                            onClick={() => { setDeleteFeeModal({ feeId: d.fee_id, feeName: d.fee_name, studentName: row.student_name, amount: d.amount }); setDeleteError(''); }}
+                            style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 7, border: '1px solid #FEE2E2', background: '#FEF2F2', color: '#DC2626', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                          >🗑️ Delete Fee</button>
                         </div>
                         {/* Payment records */}
                         {d.payments.length > 0 && (
@@ -1753,6 +1775,56 @@ function TabOverview({ schoolId, classes, sections }: { schoolId: string; classe
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Delete Fee Modal */}
+      {deleteFeeModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)' }}>
+          <div style={{ width: '100%', maxWidth: 420, background: 'white', borderRadius: 18, boxShadow: '0 24px 64px rgba(0,0,0,0.25)', overflow: 'hidden' }}>
+            {/* Header */}
+            <div style={{ padding: '18px 22px 14px', borderBottom: '1px solid #FEE2E2', background: 'linear-gradient(135deg,#FFF1F2,#FEE2E2)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <p style={{ fontSize: 15, fontWeight: 800, color: '#991B1B', margin: 0 }}>🗑️ Delete Fee Record</p>
+                  <p style={{ fontSize: 13, color: '#64748B', marginTop: 4 }}>{deleteFeeModal.studentName}</p>
+                </div>
+                <button onClick={() => setDeleteFeeModal(null)} style={{ width: 30, height: 30, borderRadius: '50%', border: '1px solid #FEE2E2', background: 'white', cursor: 'pointer', color: '#64748B', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+              </div>
+            </div>
+            {/* Body */}
+            <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {/* Fee details */}
+              <div style={{ padding: '12px 16px', background: '#FEF2F2', border: '1px solid #FEE2E2', borderRadius: 10 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: '#DC2626', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 8px' }}>Fee to be Deleted</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                  {[['Fee Name', deleteFeeModal.feeName], ['Amount', `₹${deleteFeeModal.amount.toLocaleString('en-IN')}`]].map(([l, v]) => (
+                    <div key={l}>
+                      <p style={{ fontSize: 10, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>{l}</p>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: '#0F172A', margin: '2px 0 0' }}>{v}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {/* Warning */}
+              <div style={{ padding: '10px 14px', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 9, fontSize: 12, color: '#92400E' }}>
+                <strong>⚠ Warning:</strong> This will <strong>permanently delete</strong> this fee record <em>and all its payment records</em>. This action cannot be undone.
+              </div>
+              {deleteError && (
+                <div style={{ padding: '9px 13px', background: '#FEF2F2', border: '1px solid #FEE2E2', borderRadius: 8, fontSize: 13, color: '#DC2626' }}>{deleteError}</div>
+              )}
+            </div>
+            {/* Actions */}
+            <div style={{ padding: '0 22px 20px', display: 'flex', gap: 10 }}>
+              <button onClick={() => setDeleteFeeModal(null)} style={{ flex: 1, padding: 11, borderRadius: 9, border: '1px solid #E2E8F0', background: 'white', fontSize: 13, fontWeight: 600, color: '#475569', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={confirmDeleteFee} disabled={deleting}
+                style={{ flex: 1, padding: 11, borderRadius: 9, border: 'none', fontSize: 13, fontWeight: 700,
+                  background: deleting ? '#FCA5A5' : 'linear-gradient(135deg,#991B1B,#DC2626)',
+                  color: 'white', cursor: deleting ? 'not-allowed' : 'pointer' }}>
+                {deleting ? 'Deleting…' : '🗑️ Confirm Delete'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
