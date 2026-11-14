@@ -35,6 +35,13 @@ export default function PrincipalsPage() {
   const [resetResult, setResetResult] = useState<{ name: string; username: string; password: string } | null>(null);
   const [resetError, setResetError] = useState('');
 
+  // ── Edit Principal state ──
+  const [editPrincipal, setEditPrincipal] = useState<Principal | null>(null);
+  const [editForm, setEditForm] = useState({ full_name: '', phone: '', email: '', is_active: true });
+  const [editError, setEditError] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  const [editToast, setEditToast] = useState('');
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     const [{ data: principalUsers }, { data: allSchools }] = await Promise.all([
@@ -110,6 +117,31 @@ export default function PrincipalsPage() {
     setResetting(null);
   };
 
+  const openEditPrincipal = (p: Principal) => {
+    setEditPrincipal(p);
+    setEditForm({ full_name: p.full_name, phone: p.phone || '', email: p.email || '', is_active: p.is_active });
+    setEditError('');
+  };
+
+  const handleEditPrincipalSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editPrincipal) return;
+    if (!editForm.full_name.trim()) { setEditError('Full name is required.'); return; }
+    setEditSaving(true); setEditError('');
+    const { error } = await supabase.from('users').update({
+      full_name: editForm.full_name.trim(),
+      phone: editForm.phone.trim() || null,
+      email: editForm.email.trim() || null,
+      is_active: editForm.is_active,
+    }).eq('id', editPrincipal.id);
+    if (error) { setEditError(error.message); setEditSaving(false); return; }
+    setEditSaving(false);
+    setEditPrincipal(null);
+    setEditToast('✅ Principal details updated successfully!');
+    setTimeout(() => setEditToast(''), 3500);
+    fetchData();
+  };
+
   return (
     <div className="dashboard-container">
 
@@ -153,7 +185,7 @@ export default function PrincipalsPage() {
       {/* List */}
       <div style={{ background: 'white', borderRadius: 14, border: '1px solid #E8ECF0', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
         {/* Header Row */}
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr 140px 100px 140px 120px', padding: '12px 20px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr 140px 100px 140px 180px', padding: '12px 20px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
           {['Name', 'School', 'Phone', 'Status', 'Last Login', 'Actions'].map(h => (
             <p key={h} style={{ fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>{h}</p>
           ))}
@@ -173,7 +205,7 @@ export default function PrincipalsPage() {
           </div>
         ) : (
           filtered.map((p, idx) => (
-            <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr 140px 100px 140px 120px', padding: '14px 20px', borderBottom: idx < filtered.length - 1 ? '1px solid #F8FAFC' : 'none', alignItems: 'center' }}>
+            <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr 140px 100px 140px 180px', padding: '14px 20px', borderBottom: idx < filtered.length - 1 ? '1px solid #F8FAFC' : 'none', alignItems: 'center' }}>
               {/* Name */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg, #1E3A8A, #3B82F6)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
@@ -204,16 +236,25 @@ export default function PrincipalsPage() {
               <p style={{ fontSize: 12, color: '#64748B', margin: 0 }}>
                 {p.last_login_at ? new Date(p.last_login_at).toLocaleDateString('en-IN') : <span style={{ color: '#CBD5E1', fontStyle: 'italic' }}>Never</span>}
               </p>
-              {/* Reset Password */}
-              <button
-                onClick={() => handleResetPassword(p)}
-                disabled={resetting === p.id}
-                title="Reset principal password"
-                style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #FEE2E2', background: resetting === p.id ? '#FEF2F2' : 'white', color: resetting === p.id ? '#94A3B8' : '#DC2626', fontSize: 12, fontWeight: 700, cursor: resetting === p.id ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                {resetting === p.id ? '…' : 'Reset Pwd'}
-              </button>
+              {/* Actions */}
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <button
+                  onClick={() => openEditPrincipal(p)}
+                  title="Edit principal details"
+                  style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #DBEAFE', background: '#EFF6FF', color: '#1D4ED8', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  ✏️ Edit
+                </button>
+                <button
+                  onClick={() => handleResetPassword(p)}
+                  disabled={resetting === p.id}
+                  title="Reset principal password"
+                  style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #FEE2E2', background: resetting === p.id ? '#FEF2F2' : 'white', color: resetting === p.id ? '#94A3B8' : '#DC2626', fontSize: 12, fontWeight: 700, cursor: resetting === p.id ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                  {resetting === p.id ? '…' : 'Reset Pwd'}
+                </button>
+              </div>
             </div>
           ))
         )}
@@ -310,6 +351,73 @@ export default function PrincipalsPage() {
           </div>
         </div>
       )}
+
+      {/* Edit Principal Modal */}
+      {editPrincipal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(4px)' }}>
+          <div style={{ width: '100%', maxWidth: 480, background: 'white', borderRadius: 18, boxShadow: '0 24px 64px rgba(0,0,0,0.2)', overflow: 'hidden', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+            {/* Header */}
+            <div style={{ padding: '22px 28px 18px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'linear-gradient(135deg,#EFF6FF,#DBEAFE)', flexShrink: 0 }}>
+              <div>
+                <h3 style={{ fontSize: 17, fontWeight: 800, color: '#1E3A8A', margin: 0 }}>✏️ Edit Principal</h3>
+                <p style={{ fontSize: 12, color: '#3B82F6', marginTop: 3 }}>{editPrincipal.school?.name || 'No school assigned'}</p>
+              </div>
+              <button onClick={() => setEditPrincipal(null)} style={{ width: 32, height: 32, borderRadius: '50%', border: '1px solid #BFDBFE', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#64748B', fontSize: 16 }}>✕</button>
+            </div>
+            {/* Body */}
+            <div style={{ padding: '22px 28px', overflowY: 'auto', flex: 1 }}>
+              {editError && (
+                <div style={{ marginBottom: 14, padding: '10px 14px', background: '#FEF2F2', border: '1px solid #FEE2E2', borderRadius: 9, fontSize: 13, color: '#DC2626' }}>{editError}</div>
+              )}
+              <form id="edit-principal-form" onSubmit={handleEditPrincipalSave} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div>
+                  <label style={labelStyle}>Full Name <span style={{ color: '#EF4444' }}>*</span></label>
+                  <input type="text" value={editForm.full_name} style={inputStyle} required
+                    onChange={e => setEditForm(f => ({ ...f, full_name: e.target.value }))} />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label style={labelStyle}>Phone</label>
+                    <input type="tel" value={editForm.phone} style={inputStyle}
+                      onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Email</label>
+                    <input type="email" value={editForm.email} style={inputStyle}
+                      onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))} />
+                  </div>
+                </div>
+                <div>
+                  <label style={labelStyle}>Account Status</label>
+                  <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                    {[{ val: true, label: '✅ Active', bg: '#F0FDF4', border: '#DCFCE7', color: '#16A34A' }, { val: false, label: '🚫 Inactive', bg: '#FEF2F2', border: '#FEE2E2', color: '#DC2626' }].map(opt => (
+                      <label key={String(opt.val)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 16px', borderRadius: 9, border: `1.5px solid ${editForm.is_active === opt.val ? opt.border : '#E2E8F0'}`, background: editForm.is_active === opt.val ? opt.bg : 'white', cursor: 'pointer', flex: 1, fontWeight: 600, fontSize: 13, color: editForm.is_active === opt.val ? opt.color : '#64748B', transition: 'all 0.15s' }}>
+                        <input type="radio" name="principal_status" checked={editForm.is_active === opt.val} onChange={() => setEditForm(f => ({ ...f, is_active: opt.val }))} style={{ accentColor: opt.color }} />
+                        {opt.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </form>
+            </div>
+            {/* Footer */}
+            <div style={{ padding: '16px 28px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: 10, flexShrink: 0 }}>
+              <button type="button" onClick={() => setEditPrincipal(null)} style={{ flex: 1, padding: 11, borderRadius: 10, border: '1px solid #E2E8F0', background: 'white', fontSize: 13, fontWeight: 600, color: '#475569', cursor: 'pointer' }}>Cancel</button>
+              <button type="submit" form="edit-principal-form" disabled={editSaving} style={{ flex: 1, padding: 11, borderRadius: 10, border: 'none', background: editSaving ? '#93C5FD' : 'linear-gradient(135deg,#1E3A8A,#3B82F6)', color: 'white', fontSize: 13, fontWeight: 700, cursor: editSaving ? 'not-allowed' : 'pointer', boxShadow: '0 4px 12px rgba(59,130,246,0.25)' }}>
+                {editSaving ? 'Saving…' : '✓ Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Success Toast */}
+      {editToast && (
+        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 100, background: '#F0FDF4', border: '1px solid #DCFCE7', borderRadius: 12, padding: '12px 20px', fontSize: 13, color: '#15803D', fontWeight: 700, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', whiteSpace: 'nowrap' }}>
+          {editToast}
+        </div>
+      )}
+
       {/* Reset Error Banner */}
       {resetError && (
         <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 60, background: '#FEF2F2', border: '1px solid #FEE2E2', borderRadius: 12, padding: '12px 20px', fontSize: 13, color: '#DC2626', fontWeight: 600, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', display: 'flex', alignItems: 'center', gap: 10 }}>

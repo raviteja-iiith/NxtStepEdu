@@ -44,6 +44,16 @@ export default function SchoolsPage() {
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // ── Edit School state ──
+  const [editSchool, setEditSchool] = useState<School | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: '', city: '', state: '', phone: '', email: '',
+    subscription_plan: 'basic', subscription_end: '',
+  });
+  const [editError, setEditError] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  const [editToast, setEditToast] = useState('');
+
   const fetchSchools = useCallback(async () => {
     setLoading(true);
     let query = supabase.from('schools').select('id, name, code, city, state, phone, email, is_active, subscription_plan, subscription_end, created_at, attendance_sms_enabled').is('deleted_at', null).order('created_at', { ascending: false });
@@ -108,6 +118,42 @@ export default function SchoolsPage() {
   const suggestCode = (name: string) => {
     const code = name.split(' ').filter(w => w.length > 0).map(w => w[0].toLowerCase()).join('').slice(0, 8);
     setForm(f => ({ ...f, code }));
+  };
+
+  const openEdit = (school: School) => {
+    setEditSchool(school);
+    setEditForm({
+      name: school.name,
+      city: school.city || '',
+      state: school.state || '',
+      phone: school.phone || '',
+      email: school.email || '',
+      subscription_plan: school.subscription_plan,
+      subscription_end: school.subscription_end ? school.subscription_end.split('T')[0] : '',
+    });
+    setEditError('');
+  };
+
+  const handleEditSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editSchool) return;
+    if (!editForm.name.trim()) { setEditError('School name is required.'); return; }
+    setEditSaving(true); setEditError('');
+    const { error } = await supabase.from('schools').update({
+      name: editForm.name.trim(),
+      city: editForm.city.trim() || null,
+      state: editForm.state.trim() || null,
+      phone: editForm.phone.trim() || null,
+      email: editForm.email.trim() || null,
+      subscription_plan: editForm.subscription_plan,
+      subscription_end: editForm.subscription_end || null,
+    }).eq('id', editSchool.id);
+    if (error) { setEditError(error.message); setEditSaving(false); return; }
+    setEditSaving(false);
+    setEditSchool(null);
+    setEditToast('✅ School details updated successfully!');
+    setTimeout(() => setEditToast(''), 3500);
+    fetchSchools();
   };
 
   return (
@@ -178,7 +224,7 @@ export default function SchoolsPage() {
       {/* Table */}
       <div style={{ background: 'white', borderRadius: 14, border: '1px solid #E8ECF0', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
         {/* Table Header */}
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 100px 120px 110px 100px 130px 160px 120px', padding: '12px 20px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 100px 120px 110px 100px 130px 160px 150px', padding: '12px 20px', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
           {['School', 'Code', 'City', 'Plan', 'Status', 'Expiry', 'SMS Attendance', 'Actions'].map((h, i) => (
             <p key={h} style={{ fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0, textAlign: i === 7 ? 'right' : 'left' }}>{h}</p>
           ))}
@@ -198,7 +244,7 @@ export default function SchoolsPage() {
         ) : (
           filtered.map((school, idx) => (
             <div key={school.id}
-              style={{ display: 'grid', gridTemplateColumns: '2fr 100px 120px 110px 100px 130px 160px 120px', padding: '14px 20px', borderBottom: idx < filtered.length - 1 ? '1px solid #F8FAFC' : 'none', alignItems: 'center' }}>
+              style={{ display: 'grid', gridTemplateColumns: '2fr 100px 120px 110px 100px 130px 160px 150px', padding: '14px 20px', borderBottom: idx < filtered.length - 1 ? '1px solid #F8FAFC' : 'none', alignItems: 'center' }}>
               {/* School */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ width: 34, height: 34, borderRadius: 9, background: '#EFF6FF', color: '#1D4ED8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, flexShrink: 0 }}>
@@ -257,7 +303,11 @@ export default function SchoolsPage() {
                 </button>
               </div>
               {/* Actions */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+                <button onClick={() => openEdit(school)}
+                  style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 8, border: '1px solid #DBEAFE', background: '#EFF6FF', color: '#1D4ED8', cursor: 'pointer' }}>
+                  ✏️ Edit
+                </button>
                 {school.is_active ? (
                   <button onClick={() => setShowPauseModal(school.id)}
                     style={{ fontSize: 12, fontWeight: 600, padding: '6px 14px', borderRadius: 8, border: '1px solid #FEE2E2', background: '#FEF2F2', color: '#DC2626', cursor: 'pointer' }}>
@@ -357,6 +407,98 @@ export default function SchoolsPage() {
               <button type="submit" form="create-school-form" disabled={saving}
                 style={{ flex: 1, padding: '11px', borderRadius: 10, border: 'none', background: saving ? '#93C5FD' : 'linear-gradient(135deg, #1E3A8A, #3B82F6)', color: 'white', fontSize: 13, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', boxShadow: '0 4px 12px rgba(59,130,246,0.25)' }}>
                 {saving ? 'Creating...' : 'Create School'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast notification */}
+      {editToast && (
+        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 100, background: '#F0FDF4', border: '1px solid #DCFCE7', borderRadius: 12, padding: '12px 20px', fontSize: 13, color: '#15803D', fontWeight: 700, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', whiteSpace: 'nowrap' }}>
+          {editToast}
+        </div>
+      )}
+
+      {/* Edit School Modal */}
+      {editSchool && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(4px)' }}>
+          <div style={{ width: '100%', maxWidth: 540, background: 'white', borderRadius: 18, boxShadow: '0 24px 64px rgba(0,0,0,0.2)', overflow: 'hidden', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+            {/* Header */}
+            <div style={{ padding: '22px 28px 18px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'linear-gradient(135deg,#EFF6FF,#DBEAFE)', flexShrink: 0 }}>
+              <div>
+                <h3 style={{ fontSize: 17, fontWeight: 800, color: '#1E3A8A', margin: 0 }}>✏️ Edit School Details</h3>
+                <p style={{ fontSize: 12, color: '#3B82F6', marginTop: 3 }}>
+                  <code style={{ background: '#DBEAFE', padding: '1px 6px', borderRadius: 4 }}>{editSchool.code}</code>
+                  &nbsp;· Code cannot be changed
+                </p>
+              </div>
+              <button onClick={() => setEditSchool(null)} style={{ width: 32, height: 32, borderRadius: '50%', border: '1px solid #BFDBFE', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#64748B', fontSize: 16 }}>✕</button>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: '22px 28px', overflowY: 'auto', flex: 1 }}>
+              {editError && (
+                <div style={{ marginBottom: 16, padding: '10px 14px', background: '#FEF2F2', border: '1px solid #FEE2E2', borderRadius: 9, fontSize: 13, color: '#DC2626' }}>{editError}</div>
+              )}
+              <form id="edit-school-form" onSubmit={handleEditSave} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div>
+                  <label style={labelStyle}>School Name <span style={{ color: '#EF4444' }}>*</span></label>
+                  <input type="text" value={editForm.name} style={inputStyle} required
+                    onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label style={labelStyle}>City</label>
+                    <input type="text" value={editForm.city} style={inputStyle}
+                      onChange={e => setEditForm(f => ({ ...f, city: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>State</label>
+                    <input type="text" value={editForm.state} style={inputStyle}
+                      onChange={e => setEditForm(f => ({ ...f, state: e.target.value }))} />
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label style={labelStyle}>Phone</label>
+                    <input type="tel" value={editForm.phone} style={inputStyle}
+                      onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Email</label>
+                    <input type="email" value={editForm.email} style={inputStyle}
+                      onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))} />
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label style={labelStyle}>Subscription Plan</label>
+                    <select value={editForm.subscription_plan} style={{ ...inputStyle, cursor: 'pointer' }}
+                      onChange={e => setEditForm(f => ({ ...f, subscription_plan: e.target.value }))}>
+                      <option value="basic">Basic</option>
+                      <option value="standard">Standard</option>
+                      <option value="premium">Premium</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Subscription End Date</label>
+                    <input type="date" value={editForm.subscription_end} style={inputStyle}
+                      onChange={e => setEditForm(f => ({ ...f, subscription_end: e.target.value }))} />
+                  </div>
+                </div>
+              </form>
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: '16px 28px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: 10, flexShrink: 0 }}>
+              <button type="button" onClick={() => setEditSchool(null)}
+                style={{ flex: 1, padding: 11, borderRadius: 10, border: '1px solid #E2E8F0', background: 'white', fontSize: 13, fontWeight: 600, color: '#475569', cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button type="submit" form="edit-school-form" disabled={editSaving}
+                style={{ flex: 1, padding: 11, borderRadius: 10, border: 'none', background: editSaving ? '#93C5FD' : 'linear-gradient(135deg,#1E3A8A,#3B82F6)', color: 'white', fontSize: 13, fontWeight: 700, cursor: editSaving ? 'not-allowed' : 'pointer', boxShadow: '0 4px 12px rgba(59,130,246,0.25)' }}>
+                {editSaving ? 'Saving…' : '✓ Save Changes'}
               </button>
             </div>
           </div>
